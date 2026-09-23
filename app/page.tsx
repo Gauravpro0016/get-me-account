@@ -1,69 +1,335 @@
+"use client";
+
 import Image from "next/image";
+import { Fascinate_Inline } from "next/font/google";
+import { useState } from "react";
+
+const f = Fascinate_Inline({ subsets: ["latin"], weight: "400" });
+
+type Step = 1 | 2 | 3;
 
 export default function Home() {
+  const [step, setStep] = useState<Step>(1);
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [paymentId, setPaymentId] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<"idle" | "success" | "failed">("idle");
+
+  const validateEmail = (val: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+
+  const handleEmailNext = () => {
+    if (!validateEmail(email)) {
+      setEmailError("Please enter a valid email address.");
+      return;
+    }
+    setEmailError("");
+    setStep(2);
+  };
+
+  const handlePayment = () => {
+    const options = {
+      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID, // 🔑 Replace with your Razorpay Key ID
+      amount: 2500, // Amount in paise (rs 25)
+      currency: "INR",
+      name: "Get Your Account",
+      description: "Account Access Payment",
+      prefill: { email },
+      theme: { color: "#6366f1" },
+      handler: (response: { razorpay_payment_id: string }) => {
+        setPaymentId(response.razorpay_payment_id);
+        setStep(3);
+        verifyPayment(response.razorpay_payment_id);
+      },
+    };
+    // @ts-expect-error - Razorpay is loaded via CDN script tag
+    const rzp = new window.Razorpay(options);
+    rzp.open();
+  };
+
+
+  const verifyPayment = async (pid: string) => {
+    setChecking(true);
+    try {
+      const res = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, paymentId: pid }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPaymentStatus("success");
+      } else {
+        console.error("Email send error:", data.error);
+        setPaymentStatus("failed");
+      }
+    } catch (err) {
+      console.error("Network error:", err);
+      setPaymentStatus("failed");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+
+  const steps = [
+    { id: 1, label: "Email" },
+    { id: 2, label: "Payment" },
+    { id: 3, label: "Delivery" },
+  ];
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="flex flex-col md:flex-row min-h-screen">
+      {/* ── Left Panel ── */}
+      <div className="bg-amber-50 w-full md:w-1/2 min-h-screen flex flex-col">
+
+        {/* Header */}
+        <div className={`${f.className} text-2xl sm:text-3xl md:text-4xl pt-5 pl-5 md:pt-6 md:pl-6 text-amber-900`}>
+          Get Your Account
+        </div>
+
+        {/* Step Progress Bar */}
+        <div className="flex items-center gap-0 px-5 md:px-6 pt-5 md:pt-6 pb-2">
+          {steps.map((s, i) => (
+            <div key={s.id} className="flex items-center">
+              <div className="flex flex-col items-center">
+                <div
+                  className={`w-8 h-8 md:w-9 md:h-9 rounded-full flex items-center justify-center text-xs md:text-sm font-bold border-2 transition-all duration-300
+                    ${step > s.id
+                      ? "bg-indigo-500 border-indigo-500 text-white"
+                      : step === s.id
+                      ? "bg-white border-indigo-500 text-indigo-600"
+                      : "bg-white border-gray-300 text-gray-400"
+                    }`}
+                >
+                  {step > s.id ? "✓" : s.id}
+                </div>
+                <span
+                  className={`text-xs mt-1 font-medium ${
+                    step >= s.id ? "text-indigo-600" : "text-gray-400"
+                  }`}
+                >
+                  {s.label}
+                </span>
+              </div>
+              {i < steps.length - 1 && (
+                <div
+                  className={`h-0.5 w-10 sm:w-14 md:w-16 mb-4 mx-1 transition-all duration-500 ${
+                    step > s.id ? "bg-indigo-500" : "bg-gray-300"
+                  }`}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Step Content */}
+        <div className="flex-1 flex flex-col justify-center px-5 sm:px-8 pb-10 md:pb-12">
+
+          {/* STEP 1 — Email */}
+          {step === 1 && (
+            <div className="space-y-5 w-full max-w-sm mx-auto md:mx-0">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Enter your email</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  We&apos;ll send your account details here after payment.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700" htmlFor="email-input">
+                  Email Address
+                </label>
+                <input
+                  id="email-input"
+                  type="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (emailError) setEmailError("");
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && handleEmailNext()}
+                  placeholder="you@example.com"
+                  className={`w-full px-4 py-3 rounded-xl border-2 bg-white outline-none text-gray-800 placeholder-gray-400 transition-all duration-200
+                    ${emailError
+                      ? "border-red-400 focus:border-red-500"
+                      : "border-gray-200 focus:border-indigo-400"
+                    }`}
+                />
+                {emailError && (
+                  <p className="text-xs text-red-500 flex items-center gap-1">
+                    <span>⚠</span> {emailError}
+                  </p>
+                )}
+              </div>
+              <button
+                id="email-next-btn"
+                onClick={handleEmailNext}
+                className="w-full bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg"
+              >
+                Continue →
+              </button>
+            </div>
+          )}
+
+          {/* STEP 2 — Payment */}
+          {step === 2 && (
+            <div className="space-y-5 w-full max-w-sm mx-auto md:mx-0">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Complete Payment</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Paying as <span className="font-medium text-indigo-600 break-all">{email}</span>
+                </p>
+              </div>
+
+              {/* Order Summary */}
+              <div className="bg-white rounded-2xl border-2 border-gray-100 p-4 sm:p-5 space-y-3 shadow-sm">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600 text-sm">Account Access</span>
+                  <span className="font-semibold text-gray-800">₹25</span>
+                </div>
+                <div className="border-t pt-3 flex justify-between items-center">
+                  <span className="font-bold text-gray-800">Total</span>
+                  <span className="font-bold text-indigo-600 text-lg">₹25</span>
+                </div>
+              </div>
+
+              <button
+                id="pay-now-btn"
+                onClick={handlePayment}
+                className="w-full bg-linear-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 active:scale-95 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-200 shadow-md hover:shadow-xl flex items-center justify-center gap-2 text-sm sm:text-base"
+              >
+                <span>🔒</span> Pay Securely with Razorpay
+              </button>
+
+              <button
+                id="back-to-email-btn"
+                onClick={() => setStep(1)}
+                className="w-full text-gray-500 hover:text-gray-700 text-sm py-2 transition-colors"
+              >
+                ← Back
+              </button>
+
+              <p className="text-xs text-gray-400 text-center">
+                Secured by Razorpay · 256-bit SSL encryption
+              </p>
+            </div>
+          )}
+
+          {/* STEP 3 — Delivery / Verification */}
+          {step === 3 && (
+            <div className="space-y-5 w-full max-w-sm mx-auto md:mx-0">
+              {checking && (
+                <div className="flex flex-col items-center gap-4 py-8">
+                  <div className="w-14 h-14 rounded-full border-4 border-indigo-300 border-t-indigo-600 animate-spin" />
+                  <p className="text-gray-600 font-medium">Verifying your payment…</p>
+                </div>
+              )}
+
+              {!checking && paymentStatus === "success" && (
+                <div className="space-y-4">
+                  <div className="flex flex-col items-center gap-3 py-4">
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center text-3xl">
+                      ✅
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Payment Successful!</h2>
+                    <p className="text-sm text-gray-500 text-center">
+                      Your account details are being sent to{" "}
+                      <span className="font-semibold text-indigo-600 break-all">{email}</span>
+                    </p>
+                  </div>
+                  <div className="bg-white rounded-2xl border-2 border-green-100 p-4 space-y-2 shadow-sm">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span className="text-green-500 shrink-0">✔</span> Payment ID:{" "}
+                      <span className="font-mono text-xs text-gray-500 truncate">{paymentId}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span className="text-green-500 shrink-0">✔</span> Details delivered to your email
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span className="text-green-500 shrink-0">✔</span> Check your inbox (and spam folder)
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!checking && paymentStatus === "failed" && (
+                <div className="flex flex-col items-center gap-3 py-4">
+                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-3xl">
+                    ❌
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Payment Failed</h2>
+                  <p className="text-sm text-gray-500 text-center">
+                    We couldn&apos;t verify your payment. Please try again.
+                  </p>
+                  <button
+                    id="retry-pay-btn"
+                    onClick={() => { setStep(2); setPaymentStatus("idle"); }}
+                    className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Mobile-only mini guide (shown below form on small screens) */}
+        <div className="md:hidden flex gap-3 overflow-x-auto px-5 pb-8 scrollbar-hide">
+          {[
+            { icon: "✉️", title: "Enter Email", desc: "Your delivery address" },
+            { icon: "💳", title: "Pay Securely", desc: "Via Razorpay — ₹25" },
+            { icon: "📬", title: "Get Details", desc: "Delivered instantly" },
+          ].map((item, i) => (
+            <div
+              key={i}
+              className={`shrink-0 flex items-center gap-2 bg-white/80 rounded-xl px-3 py-2.5 shadow-sm border transition-all duration-300
+                ${step === i + 1 ? "border-indigo-400 scale-105 shadow-md" : "border-gray-200"}`}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+              <span className="text-lg">{item.icon}</span>
+              <div>
+                <p className="text-xs font-semibold text-gray-800 whitespace-nowrap">{item.title}</p>
+                <p className="text-xs text-gray-500 whitespace-nowrap">{item.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Right Panel (hidden on mobile, visible on md+) ── */}
+      <div className="hidden md:flex bg-blue-100 w-1/2 min-h-screen flex-col items-center justify-center gap-6">
+        <Image src="/light.svg" alt="light" width={220} height={220} className="drop-shadow-2xl" loading="eager" />
+
+        <div className="text-center space-y-2 px-8">
+          <p className="text-blue-900 font-bold text-xl">Simple. Secure. Instant.</p>
+          <p className="text-blue-700 text-sm leading-relaxed">
+            Enter your email, complete the payment, and receive your account details immediately.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        {/* Desktop Guide Cards */}
+        <div className="flex flex-col gap-3 w-64">
+          {[
+            { icon: "✉️", title: "Enter Email", desc: "Your delivery address" },
+            { icon: "💳", title: "Pay Securely", desc: "Via Razorpay — ₹25" },
+            { icon: "📬", title: "Get Details", desc: "Delivered instantly" },
+          ].map((item, i) => (
+            <div
+              key={i}
+              className={`flex items-center gap-3 bg-white/60 backdrop-blur rounded-xl px-4 py-3 shadow-sm border transition-all duration-300
+                ${step === i + 1 ? "border-indigo-400 scale-105 shadow-md" : "border-transparent"}`}
+            >
+              <span className="text-xl">{item.icon}</span>
+              <div>
+                <p className="text-sm font-semibold text-gray-800">{item.title}</p>
+                <p className="text-xs text-gray-500">{item.desc}</p>
+              </div>
+            </div>
+          ))}
         </div>
-      </main>
+      </div>
     </div>
   );
 }
+
