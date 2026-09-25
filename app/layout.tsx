@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Script from "next/script";
 import "./globals.css";
-import { Analytics } from "@vercel/analytics/next"
+import { Analytics } from "@vercel/analytics/next";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,11 +14,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Get Your Account",
-  description: "Secure account access — pay with crypto via Atlos and get instant delivery.",
+  title: "Get Your Account — Nitro Booster ID [with 2 Boosts]",
+  description:
+    "Buy Discord Nitro Booster ID [with 2 Boosts]. Instant automated UPI delivery via FamGateway, full replacement warranty, and 24/7 Discord support.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html
       lang="en"
@@ -27,8 +31,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col bg-[#7289da]">
         {children}
-        {/* Atlos Crypto Payment Widget */}
-        <Script src="https://atlos.io/packages/app/atlos.js" strategy="lazyOnload" />
+        <Analytics />
       </body>
     </html>
   );

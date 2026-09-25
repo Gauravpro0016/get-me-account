@@ -11,6 +11,10 @@ export type Credential = {
   id: string;
   email: string;
   password: string;
+  token?: string;
+  domain?: string;
+  twoFactorKey?: string;
+  keyweb?: string;
   addedAt: string;
 };
 
@@ -40,18 +44,76 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ credentials: pool, count: pool.length });
 }
 
-// POST — add a credential
+// POST — add a credential (single or bulk batch)
 export async function POST(req: NextRequest) {
   if (!checkAdmin(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await req.json();
-  const { email, password } = body as { email?: string; password?: string };
+  const body = await req.json().catch(() => ({}));
+
+  // Support batch import if an array or { credentials: [...] } is passed
+  if (Array.isArray(body) || Array.isArray(body.credentials)) {
+    const list: Record<string, unknown>[] = Array.isArray(body) ? body : body.credentials;
+    const pool = await readPool();
+    const addedList: Credential[] = [];
+
+    for (const item of list) {
+      if (item && item.email && item.password) {
+        const cred: Credential = {
+          id: randomUUID(),
+          email: String(item.email).trim(),
+          password: String(item.password).trim(),
+          token: item.token ? String(item.token).trim() : undefined,
+          domain: item.domain ? String(item.domain).trim() : undefined,
+          twoFactorKey: (item.twoFactorKey || item.twoFactor || item["2faKey"] || item["2fa"])
+            ? String(item.twoFactorKey || item.twoFactor || item["2faKey"] || item["2fa"]).trim()
+            : undefined,
+          keyweb: (item.keyweb || item.webkey)
+            ? String(item.keyweb || item.webkey).trim()
+            : undefined,
+          addedAt: new Date().toISOString(),
+        };
+        pool.push(cred);
+        addedList.push(cred);
+      }
+    }
+
+    if (addedList.length > 0) {
+      await writePool(pool);
+      return NextResponse.json(
+        { success: true, count: addedList.length, credentials: addedList },
+        { status: 201 }
+      );
+    } else {
+      return NextResponse.json({ error: "No valid credentials found in batch" }, { status: 400 });
+    }
+  }
+
+  // Single credential
+  const {
+    email,
+    password,
+    token,
+    domain,
+    twoFactorKey,
+    keyweb,
+    twoFactor,
+    webkey,
+  } = body as {
+    email?: string;
+    password?: string;
+    token?: string;
+    domain?: string;
+    twoFactorKey?: string;
+    keyweb?: string;
+    twoFactor?: string;
+    webkey?: string;
+  };
 
   if (!email || !password) {
     return NextResponse.json(
-      { error: "email and password are required" },
+      { error: "Account email and password are required" },
       { status: 400 }
     );
   }
@@ -61,6 +123,11 @@ export async function POST(req: NextRequest) {
     id: randomUUID(),
     email: email.trim(),
     password: password.trim(),
+    token: token?.trim() || undefined,
+    domain: domain?.trim() || undefined,
+    twoFactorKey:
+      (twoFactorKey || twoFactor || (body as Record<string, unknown>)["2faKey"])?.trim() || undefined,
+    keyweb: (keyweb || webkey)?.trim() || undefined,
     addedAt: new Date().toISOString(),
   };
 

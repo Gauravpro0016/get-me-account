@@ -6,6 +6,10 @@ type Credential = {
   id: string;
   email: string;
   password: string;
+  token?: string;
+  domain?: string;
+  twoFactorKey?: string;
+  keyweb?: string;
   addedAt: string;
 };
 
@@ -144,10 +148,36 @@ export async function POST(req: NextRequest) {
                         <p style="margin:0 0 12px;font-size:13px;font-weight:600;color:#3b82f6;text-transform:uppercase;letter-spacing:0.5px;">
                           Your Account Details
                         </p>
-                        <p style="margin:0;color:#1e40af;font-size:14px;line-height:1.8;">
-                          <strong>Email:</strong> ${credential.email}<br/>
-                          <strong>Password:</strong> ${credential.password}
-                        </p>
+                        <table width="100%" cellpadding="0" cellspacing="0">
+                          <tr>
+                            <td style="color:#6b7280;font-size:13px;padding:4px 0;width:90px;"><strong>Email:</strong></td>
+                            <td style="color:#1e40af;font-size:14px;font-weight:600;font-family:monospace;">${credential.email}</td>
+                          </tr>
+                          <tr>
+                            <td style="color:#6b7280;font-size:13px;padding:4px 0;width:90px;"><strong>Password:</strong></td>
+                            <td style="color:#1e40af;font-size:14px;font-weight:600;font-family:monospace;">${credential.password}</td>
+                          </tr>
+                          ${credential.domain ? `
+                          <tr>
+                            <td style="color:#6b7280;font-size:13px;padding:4px 0;width:90px;"><strong>Domain:</strong></td>
+                            <td style="color:#1e40af;font-size:14px;font-weight:600;font-family:monospace;">${credential.domain}</td>
+                          </tr>` : ""}
+                          ${credential.token ? `
+                          <tr>
+                            <td style="color:#6b7280;font-size:13px;padding:4px 0;width:90px;"><strong>Token:</strong></td>
+                            <td style="color:#1e40af;font-size:13px;font-weight:600;font-family:monospace;word-break:break-all;">${credential.token}</td>
+                          </tr>` : ""}
+                          ${credential.twoFactorKey ? `
+                          <tr>
+                            <td style="color:#6b7280;font-size:13px;padding:4px 0;width:90px;"><strong>2FA Key:</strong></td>
+                            <td style="color:#1e40af;font-size:14px;font-weight:600;font-family:monospace;">${credential.twoFactorKey}</td>
+                          </tr>` : ""}
+                          ${credential.keyweb ? `
+                          <tr>
+                            <td style="color:#6b7280;font-size:13px;padding:4px 0;width:90px;"><strong>Keyweb:</strong></td>
+                            <td style="color:#1e40af;font-size:13px;font-weight:600;font-family:monospace;word-break:break-all;">${credential.keyweb}</td>
+                          </tr>` : ""}
+                        </table>
                       </div>
 
                       <p style="margin:24px 0 0;color:#6b7280;font-size:13px;line-height:1.6;">
