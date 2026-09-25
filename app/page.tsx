@@ -60,6 +60,7 @@ export default function Home() {
       orderId,
       orderAmount: 0.01, // USD equivalent – update as needed
       currency: "USD",
+      asset: "LTC",     // Lock to Litecoin
       onSuccess: (data: { orderId: string; txId: string }) => {
         setPaymentId(data.txId ?? data.orderId);
         setStep(3);
