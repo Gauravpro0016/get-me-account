@@ -36,7 +36,7 @@ export default function Home() {
     atlos.Pay({
       merchantId: process.env.NEXT_PUBLIC_ATLOS_MERCHANT_ID,
       orderId,
-      orderAmount: 0.00, // USD equivalent – update as needed
+      orderAmount: 0.01, // USD equivalent – update as needed
       currency: "USD",
       onSuccess: (data: { orderId: string; txId: string }) => {
         setPaymentId(data.txId ?? data.orderId);
