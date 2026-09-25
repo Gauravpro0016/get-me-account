@@ -97,25 +97,49 @@ export default function Home() {
       setConfirmationMsg(messages[msgIdx]);
     }, 15_000);
 
-    try {
-      const res = await fetch("/api/confirm-payment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Long-poll — this request may take up to 10 minutes
-        body: JSON.stringify({ email, orderId, paymentId }),
-      });
-      const data = await res.json();
+    const startTime = Date.now();
+    const maxWaitMs = 15 * 60 * 1000; // 15 minutes client timeout
+    const pollIntervalMs = 5000;      // check every 5 seconds
 
-      if ((res.ok && data.status === "confirmed") || data.status === "already_sent") {
-        setPaymentStatus("success");
-      } else {
-        console.error("Confirmation error:", data);
-        setFailReason(data.reason ?? data.error ?? "Payment could not be confirmed.");
-        setPaymentStatus("failed");
+    try {
+      while (Date.now() - startTime < maxWaitMs) {
+        try {
+          const res = await fetch("/api/confirm-payment", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, orderId, paymentId }),
+          });
+          const data = await res.json();
+
+          if ((res.ok && data.status === "confirmed") || data.status === "already_sent") {
+            setPaymentStatus("success");
+            return;
+          }
+
+          if (data.status === "failed") {
+            console.error("Payment failed:", data);
+            setFailReason(data.reason ?? data.error ?? "Payment could not be confirmed.");
+            setPaymentStatus("failed");
+            return;
+          }
+
+          // If pending, continue to wait and poll again
+        } catch (fetchErr) {
+          console.warn("Polling network blip, retrying...", fetchErr);
+        }
+
+        // Wait before next check
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
       }
+
+      // If loop times out after 15 minutes
+      setFailReason(
+        "Confirmation is taking longer than usual on the network. Once the blockchain finishes validating, your account details will still be sent to your email automatically."
+      );
+      setPaymentStatus("failed");
     } catch (err) {
       console.error("Network error:", err);
-      setFailReason("Network error — please check your internet connection and contact support.");
+      setFailReason("Network error — please check your internet connection.");
       setPaymentStatus("failed");
     } finally {
       clearInterval(msgTimer);

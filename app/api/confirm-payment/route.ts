@@ -2,9 +2,8 @@ import nodemailer from "nodemailer";
 import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 
-// Tell Next.js/Vercel this route may run for up to 11 minutes
-// (our polling window is 10 min — this gives a 1-min buffer)
-export const maxDuration = 660;
+// Vercel Serverless Function timeout (valid on Hobby: 1 to 300 seconds)
+export const maxDuration = 60;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -52,7 +51,7 @@ async function claimCredential(): Promise<Credential | null> {
 async function markAsSent(orderId: string): Promise<boolean> {
   const result = await redis.set(SENT_KEY(orderId), "1", {
     nx: true,
-    ex: 60 * 60 * 24 * 7,
+    ex: 60 * 60 * 24 * 7, // 7 days TTL
   });
   return result === "OK";
 }
@@ -149,10 +148,8 @@ async function sendCredentialEmail(
 // ─── Atlos API ────────────────────────────────────────────────────────────────
 
 const ATLOS_API_BASE = "https://api.atlos.io/gateway/rest/";
-const POLL_INTERVAL_MS = 6000;
-const MAX_WAIT_MS = 10 * 60 * 1000;
 
-async function getAtlosPaymentStatus(paymentId: string): Promise<AtlosStatus | null> {
+async function getAtlosPaymentStatus(paymentId: string, orderId?: string): Promise<AtlosStatus | null> {
   try {
     const res = await fetch(`${ATLOS_API_BASE}Payment/Get`, {
       method: "POST",
@@ -162,16 +159,37 @@ async function getAtlosPaymentStatus(paymentId: string): Promise<AtlosStatus | n
       },
       body: JSON.stringify({ PaymentId: paymentId }),
     });
-    if (!res.ok) {
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.Status !== undefined) return data.Status;
+    } else {
       console.warn(`Atlos API returned ${res.status} for PaymentId=${paymentId}`);
-      return null;
     }
-    const data = await res.json();
-    return data?.Status ?? null;
   } catch (err) {
     console.error("Atlos API fetch error:", err);
-    return null;
   }
+
+  // Fallback: If paymentId was txId or different, try with orderId if provided
+  if (orderId && orderId !== paymentId) {
+    try {
+      const res = await fetch(`${ATLOS_API_BASE}Payment/Get`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ApiSecret: process.env.ATLOS_API_SECRET!,
+        },
+        body: JSON.stringify({ PaymentId: orderId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.Status !== undefined) return data.Status;
+      }
+    } catch (err) {
+      console.error("Atlos API fallback fetch error:", err);
+    }
+  }
+
+  return null;
 }
 
 // ─── Route Handler ────────────────────────────────────────────────────────────
@@ -199,54 +217,56 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Malformed orderId" }, { status: 400 });
     }
 
-    // Idempotency guard — prevent double-delivery
-    const isFirstSend = await markAsSent(orderId);
-    if (!isFirstSend) {
-      console.log("Duplicate request for orderId:", orderId);
-      return NextResponse.json({ status: "already_sent" });
+    // Check if credentials have already been delivered for this order
+    const alreadySent = await redis.get(SENT_KEY(orderId));
+    if (alreadySent) {
+      console.log("Credentials already delivered for orderId:", orderId);
+      return NextResponse.json({ status: "confirmed", already_sent: true });
     }
 
-    // Poll Atlos until confirmed or failed
-    const deadline = Date.now() + MAX_WAIT_MS;
-    let atlosStatus: AtlosStatus | null = null;
+    // Query Atlos for current on-chain status
+    const atlosStatus = await getAtlosPaymentStatus(paymentId, orderId);
+    console.log(`Atlos status for ${paymentId}:`, atlosStatus);
 
-    while (Date.now() < deadline) {
-      atlosStatus = await getAtlosPaymentStatus(paymentId);
-      console.log(`Atlos status for ${paymentId}:`, atlosStatus);
+    // Status 100 = Fully confirmed on-chain
+    if (atlosStatus === 100) {
+      // Idempotency lock: only one process will succeed in marking as sent
+      const isFirst = await markAsSent(orderId);
+      if (!isFirst) {
+        return NextResponse.json({ status: "confirmed", already_sent: true });
+      }
 
-      if (atlosStatus === 100) break;
-      if (atlosStatus === 55 || atlosStatus === 59) break;
+      // Claim a credential from the pool
+      const credential = await claimCredential();
+      if (!credential) {
+        // Rollback lock so it can be fulfilled when restocked
+        await redis.del(SENT_KEY(orderId));
+        console.error("Credential pool is empty.");
+        return NextResponse.json(
+          { error: "No credentials available in stock. Please contact support." },
+          { status: 503 }
+        );
+      }
 
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      // Send the email with account details
+      await sendCredentialEmail(email, orderId, credential);
+      console.log(`Credentials delivered to ${email} for orderId=${orderId}`);
+
+      return NextResponse.json({ status: "confirmed" });
     }
 
-    if (atlosStatus !== 100) {
-      await redis.del(SENT_KEY(orderId));
-      const reason =
-        atlosStatus === 55
-          ? "Payment was canceled."
-          : atlosStatus === 59
-          ? "Payment expired."
-          : "Payment not confirmed within the allowed time.";
-      return NextResponse.json({ status: "failed", reason }, { status: 402 });
+    // Status 55 = Canceled
+    if (atlosStatus === 55) {
+      return NextResponse.json({ status: "failed", reason: "Payment was canceled." });
     }
 
-    // Claim a credential from the pool
-    const credential = await claimCredential();
-    if (!credential) {
-      await redis.del(SENT_KEY(orderId));
-      console.error("Credential pool is empty.");
-      return NextResponse.json(
-        { error: "No credentials available. Please contact support." },
-        { status: 503 }
-      );
+    // Status 59 = Expired
+    if (atlosStatus === 59) {
+      return NextResponse.json({ status: "failed", reason: "Payment window expired." });
     }
 
-    // Send the email
-    await sendCredentialEmail(email, orderId, credential);
-    console.log(`Credentials delivered to ${email} for orderId=${orderId}`);
-
-    return NextResponse.json({ status: "confirmed" });
+    // Status 10 (pending in mempool) or 0 (new) or awaiting blockchain
+    return NextResponse.json({ status: "pending", atlosStatus: atlosStatus ?? "awaiting" });
   } catch (err) {
     console.error("confirm-payment error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
