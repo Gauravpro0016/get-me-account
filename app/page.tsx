@@ -53,8 +53,15 @@ export default function Home() {
 
     setStockChecking(false);
 
+    const cleanEmail = email.trim().toLowerCase();
     // Build a unique orderId that embeds the buyer email (base64) + timestamp
-    const orderId = `${btoa(email)}_${Date.now()}`;
+    let encodedEmail = "";
+    try {
+      encodedEmail = btoa(cleanEmail);
+    } catch {
+      encodedEmail = encodeURIComponent(cleanEmail);
+    }
+    const orderId = `${encodedEmail}_${Date.now()}`;
 
     // @ts-expect-error - Atlos widget is loaded via CDN script tag
     atlos.Pay({
@@ -63,14 +70,18 @@ export default function Home() {
       orderAmount: 0.3, // USD equivalent – update as needed
       currency: "USD",
       asset: "LTC",     // Lock to Litecoin
-      onSuccess: (data: { orderId: string; txId: string; paymentId?: string }) => {
-        // Atlos may return paymentId (their internal UUID) or txId (the blockchain tx hash)
-        const atlasPaymentId = data.paymentId ?? data.txId ?? data.orderId;
-        setPaymentId(atlasPaymentId);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onSuccess: (data?: any) => {
+        console.log("Atlos onSuccess payload:", data);
+        const resolvedOrderId = data?.orderId || data?.OrderId || orderId;
+        const resolvedPaymentId = data?.paymentId || data?.PaymentId || data?.txId || data?.TxId || resolvedOrderId;
+        setPaymentId(resolvedPaymentId);
         setStep(3);
-        verifyPayment(data.orderId, atlasPaymentId);
+        verifyPayment(resolvedOrderId, resolvedPaymentId);
       },
-      onError: () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onError: (err?: any) => {
+        console.warn("Atlos onError:", err);
         setPaymentStatus("failed");
         setFailReason("The payment was canceled or encountered an error.");
         setStep(3);
@@ -83,6 +94,10 @@ export default function Home() {
     setChecking(true);
     setFailReason("");
     setConfirmationMsg("Transaction detected — waiting for blockchain confirmation…");
+
+    const effectiveOrderId = orderId || paymentId;
+    const effectivePaymentId = paymentId || orderId;
+    const cleanEmail = email.trim().toLowerCase();
 
     // Start a message rotation so the user knows we are actively waiting
     const messages = [
@@ -107,7 +122,11 @@ export default function Home() {
           const res = await fetch("/api/confirm-payment", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, orderId, paymentId }),
+            body: JSON.stringify({
+              email: cleanEmail,
+              orderId: effectiveOrderId,
+              paymentId: effectivePaymentId,
+            }),
           });
           const data = await res.json();
 

@@ -192,29 +192,39 @@ async function getAtlosPaymentStatus(paymentId: string, orderId?: string): Promi
   return null;
 }
 
-// ─── Route Handler ────────────────────────────────────────────────────────────
-
 export async function POST(req: NextRequest) {
   try {
-    const { email, orderId, paymentId } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const email = typeof body.email === "string" ? body.email.trim() : "";
+    const orderId = (body.orderId || body.paymentId || "")?.toString().trim();
+    const paymentId = (body.paymentId || body.orderId || "")?.toString().trim();
 
-    if (!email || !orderId || !paymentId) {
+    console.log("POST /api/confirm-payment received:", { email, orderId, paymentId });
+
+    if (!email || !orderId) {
+      console.warn("Missing email or orderId:", { email, orderId });
       return NextResponse.json(
-        { error: "Missing email, orderId, or paymentId" },
+        { error: "Missing required fields (email or orderId)" },
         { status: 400 }
       );
     }
 
-    // Validate orderId integrity
-    try {
-      const [encodedEmail] = orderId.split("_");
-      const decodedEmail = Buffer.from(encodedEmail, "base64").toString("utf8");
-      if (decodedEmail.toLowerCase() !== email.toLowerCase()) {
-        console.warn("orderId/email mismatch:", { email, orderId });
-        return NextResponse.json({ error: "Invalid order" }, { status: 403 });
+    // Validate orderId integrity if email prefix is present
+    if (orderId.includes("_")) {
+      try {
+        const [encodedEmail] = orderId.split("_");
+        const decodedEmail = Buffer.from(encodedEmail, "base64").toString("utf8");
+        if (
+          decodedEmail &&
+          decodedEmail.includes("@") &&
+          decodedEmail.toLowerCase() !== email.toLowerCase()
+        ) {
+          console.warn("orderId/email mismatch:", { email, decodedEmail, orderId });
+          return NextResponse.json({ error: "Invalid order email" }, { status: 403 });
+        }
+      } catch (err) {
+        console.warn("Could not decode orderId prefix, skipping integrity check:", err);
       }
-    } catch {
-      return NextResponse.json({ error: "Malformed orderId" }, { status: 400 });
     }
 
     // Check if credentials have already been delivered for this order
