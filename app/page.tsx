@@ -29,33 +29,35 @@ export default function Home() {
   };
 
   const handlePayment = () => {
-    const options = {
-      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID, // 🔑 Replace with your Razorpay Key ID
-      amount: 2500, // Amount in paise (rs 25)
-      currency: "INR",
-      name: "Get Your Account",
-      description: "Account Access Payment",
-      prefill: { email },
-      theme: { color: "#6366f1" },
-      handler: (response: { razorpay_payment_id: string }) => {
-        setPaymentId(response.razorpay_payment_id);
+    // Build a unique orderId that embeds the buyer email (base64) + timestamp
+    const orderId = `${btoa(email)}_${Date.now()}`;
+
+    // @ts-expect-error - Atlos widget is loaded via CDN script tag
+    atlos.Pay({
+      merchantId: process.env.NEXT_PUBLIC_ATLOS_MERCHANT_ID,
+      orderId,
+      orderAmount: 0.30, // USD equivalent – update as needed
+      currency: "USD",
+      onSuccess: (data: { orderId: string; txId: string }) => {
+        setPaymentId(data.txId ?? data.orderId);
         setStep(3);
-        verifyPayment(response.razorpay_payment_id);
+        verifyPayment(data.orderId, data.txId ?? "");
       },
-    };
-    // @ts-expect-error - Razorpay is loaded via CDN script tag
-    const rzp = new window.Razorpay(options);
-    rzp.open();
+      onError: () => {
+        setPaymentStatus("failed");
+        setStep(3);
+      },
+    });
   };
 
 
-  const verifyPayment = async (pid: string) => {
+  const verifyPayment = async (orderId: string, txId: string) => {
     setChecking(true);
     try {
       const res = await fetch("/api/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, paymentId: pid }),
+        body: JSON.stringify({ email, orderId, txId }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -199,7 +201,7 @@ export default function Home() {
                 onClick={handlePayment}
                 className="w-full bg-linear-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 active:scale-95 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-200 shadow-md hover:shadow-xl flex items-center justify-center gap-2 text-sm sm:text-base"
               >
-                <span>🔒</span> Pay Securely with Razorpay
+                <span>🔒</span> Pay with Crypto (Atlos)
               </button>
 
               <button
@@ -211,7 +213,7 @@ export default function Home() {
               </button>
 
               <p className="text-xs text-gray-400 text-center">
-                Secured by Razorpay · 256-bit SSL encryption
+                Secured by Atlos Crypto Gateway · 256-bit SSL encryption
               </p>
             </div>
           )}
@@ -279,7 +281,7 @@ export default function Home() {
         <div className="md:hidden flex gap-3 overflow-x-auto px-5 pb-8 scrollbar-hide">
           {[
             { icon: "✉️", title: "Enter Email", desc: "Your delivery address" },
-            { icon: "💳", title: "Pay Securely", desc: "Via Razorpay — ₹25" },
+            { icon: "💳", title: "Pay with Crypto", desc: "Via Atlos — instant" },
             { icon: "📬", title: "Get Details", desc: "Delivered instantly" },
           ].map((item, i) => (
             <div
@@ -312,7 +314,7 @@ export default function Home() {
         <div className="flex flex-col gap-3 w-64">
           {[
             { icon: "✉️", title: "Enter Email", desc: "Your delivery address" },
-            { icon: "💳", title: "Pay Securely", desc: "Via Razorpay — ₹25" },
+            { icon: "💳", title: "Pay with Crypto", desc: "Via Atlos — instant" },
             { icon: "📬", title: "Get Details", desc: "Delivered instantly" },
           ].map((item, i) => (
             <div

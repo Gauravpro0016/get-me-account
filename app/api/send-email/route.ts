@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer";
+﻿import nodemailer from "nodemailer";
 import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 
@@ -45,11 +45,11 @@ const transporter = nodemailer.createTransport({
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, paymentId } = await req.json();
+    const { email, orderId, txId } = await req.json();
 
-    if (!email || !paymentId) {
+    if (!email || !orderId) {
       return NextResponse.json(
-        { error: "Missing email or paymentId" },
+        { error: "Missing email or orderId" },
         { status: 400 }
       );
     }
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
                         <table width="100%" cellpadding="0" cellspacing="0">
                           <tr>
                             <td style="color:#374151;font-size:14px;padding:4px 0;">Payment ID</td>
-                            <td style="color:#6366f1;font-size:14px;font-weight:600;text-align:right;font-family:monospace;">${paymentId}</td>
+                            <td style="color:#6366f1;font-size:14px;font-weight:600;text-align:right;font-family:monospace;">${orderId}</td>
                           </tr>
                           <tr>
                             <td style="color:#374151;font-size:14px;padding:4px 0;">Email</td>
@@ -146,7 +146,7 @@ export async function POST(req: NextRequest) {
                   <tr>
                     <td style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:24px 40px;text-align:center;">
                       <p style="margin:0;color:#9ca3af;font-size:12px;">
-                        © ${new Date().getFullYear()} Get Your Account · Secured by Razorpay
+                        © ${new Date().getFullYear()} Get Your Account &middot; Secured by Atlos Crypto Gateway
                       </p>
                     </td>
                   </tr>

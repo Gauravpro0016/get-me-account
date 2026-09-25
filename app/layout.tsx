@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Get Your Account",
-  description: "Secure account access — pay with Razorpay and get instant delivery.",
+  description: "Secure account access — pay with crypto via Atlos and get instant delivery.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -26,8 +26,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col bg-[#7289da]">
         {children}
-        {/* Razorpay Checkout SDK */}
-        <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
+        {/* Atlos Crypto Payment Widget */}
+        <Script src="https://atlos.io/packages/app/atlos.js" strategy="lazyOnload" />
       </body>
     </html>
   );
