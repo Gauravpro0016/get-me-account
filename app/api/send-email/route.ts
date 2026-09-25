@@ -1,4 +1,4 @@
-﻿import nodemailer from "nodemailer";
+import nodemailer from "nodemailer";
 import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 
@@ -52,6 +52,20 @@ export async function POST(req: NextRequest) {
         { error: "Missing email or orderId" },
         { status: 400 }
       );
+    }
+
+    // ── Basic orderId integrity check ─────────────────────────────────────
+    // orderId format: base64(email)_timestamp  (set in page.tsx handlePayment)
+    // Verify the embedded email matches the claimed email to prevent spoofing
+    try {
+      const [encodedEmail] = orderId.split("_");
+      const decodedEmail = Buffer.from(encodedEmail, "base64").toString("utf8");
+      if (decodedEmail.toLowerCase() !== email.toLowerCase()) {
+        console.warn("orderId/email mismatch — possible spoofing attempt:", { email, orderId });
+        return NextResponse.json({ error: "Invalid order" }, { status: 403 });
+      }
+    } catch {
+      return NextResponse.json({ error: "Malformed orderId" }, { status: 400 });
     }
 
     // ── Pick a credential from the pool ──────────────────────────────────

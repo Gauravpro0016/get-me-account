@@ -17,6 +17,8 @@ export default function Home() {
   const [paymentStatus, setPaymentStatus] = useState<"idle" | "success" | "failed">("idle");
   const [stockError, setStockError] = useState("");
   const [stockChecking, setStockChecking] = useState(false);
+  const [confirmationMsg, setConfirmationMsg] = useState("");
+  const [failReason, setFailReason] = useState("");
 
   const validateEmail = (val: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
@@ -61,38 +63,62 @@ export default function Home() {
       orderAmount: 0.01, // USD equivalent – update as needed
       currency: "USD",
       asset: "LTC",     // Lock to Litecoin
-      onSuccess: (data: { orderId: string; txId: string }) => {
-        setPaymentId(data.txId ?? data.orderId);
+      onSuccess: (data: { orderId: string; txId: string; paymentId?: string }) => {
+        // Atlos may return paymentId (their internal UUID) or txId (the blockchain tx hash)
+        const atlasPaymentId = data.paymentId ?? data.txId ?? data.orderId;
+        setPaymentId(atlasPaymentId);
         setStep(3);
-        verifyPayment(data.orderId, data.txId ?? "");
+        verifyPayment(data.orderId, atlasPaymentId);
       },
       onError: () => {
         setPaymentStatus("failed");
+        setFailReason("The payment was canceled or encountered an error.");
         setStep(3);
       },
     });
   };
 
 
-  const verifyPayment = async (orderId: string, txId: string) => {
+  const verifyPayment = async (orderId: string, paymentId: string) => {
     setChecking(true);
+    setFailReason("");
+    setConfirmationMsg("Transaction detected — waiting for blockchain confirmation…");
+
+    // Start a message rotation so the user knows we are actively waiting
+    const messages = [
+      "Transaction detected — waiting for blockchain confirmation…",
+      "Confirming on the blockchain (this may take a few minutes)…",
+      "Still confirming — crypto networks need a moment…",
+      "Almost there — verifying your payment on-chain…",
+    ];
+    let msgIdx = 0;
+    const msgTimer = setInterval(() => {
+      msgIdx = (msgIdx + 1) % messages.length;
+      setConfirmationMsg(messages[msgIdx]);
+    }, 15_000);
+
     try {
-      const res = await fetch("/api/send-email", {
+      const res = await fetch("/api/confirm-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, orderId, txId }),
+        // Long-poll — this request may take up to 10 minutes
+        body: JSON.stringify({ email, orderId, paymentId }),
       });
       const data = await res.json();
-      if (res.ok && data.success) {
+
+      if ((res.ok && data.status === "confirmed") || data.status === "already_sent") {
         setPaymentStatus("success");
       } else {
-        console.error("Email send error:", data.error);
+        console.error("Confirmation error:", data);
+        setFailReason(data.reason ?? data.error ?? "Payment could not be confirmed.");
         setPaymentStatus("failed");
       }
     } catch (err) {
       console.error("Network error:", err);
+      setFailReason("Network error — please check your internet connection and contact support.");
       setPaymentStatus("failed");
     } finally {
+      clearInterval(msgTimer);
       setChecking(false);
     }
   };
@@ -254,56 +280,92 @@ export default function Home() {
           {/* STEP 3 — Delivery / Verification */}
           {step === 3 && (
             <div className="space-y-5 w-full max-w-sm mx-auto md:mx-0">
+
+              {/* Waiting for on-chain confirmation */}
               {checking && (
-                <div className="flex flex-col items-center gap-4 py-8">
-                  <div className="w-14 h-14 rounded-full border-4 border-indigo-300 border-t-indigo-600 animate-spin" />
-                  <p className="text-gray-600 font-medium">Verifying your payment…</p>
+                <div className="flex flex-col items-center gap-5 py-8">
+                  {/* Pulsing ring animation */}
+                  <div className="relative w-20 h-20">
+                    <div className="absolute inset-0 rounded-full border-4 border-indigo-100 animate-ping opacity-50" />
+                    <div className="absolute inset-0 rounded-full border-4 border-indigo-300 border-t-indigo-600 animate-spin" />
+                    <div className="absolute inset-0 flex items-center justify-center text-2xl">🔗</div>
+                  </div>
+                  <div className="text-center space-y-1">
+                    <p className="text-gray-800 font-semibold text-base">Waiting for blockchain confirmation</p>
+                    <p className="text-gray-500 text-sm leading-relaxed max-w-xs">{confirmationMsg}</p>
+                  </div>
+                  {/* Progress dots */}
+                  <div className="flex gap-1.5">
+                    {[0, 1, 2].map((i) => (
+                      <div
+                        key={i}
+                        className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce"
+                        style={{ animationDelay: `${i * 0.15}s` }}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 text-center max-w-xs">
+                    This page will update automatically. You do not need to refresh.
+                  </p>
                 </div>
               )}
 
+              {/* Success */}
               {!checking && paymentStatus === "success" && (
                 <div className="space-y-4">
                   <div className="flex flex-col items-center gap-3 py-4">
                     <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center text-3xl">
                       ✅
                     </div>
-                    <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Payment Successful!</h2>
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Payment Confirmed!</h2>
                     <p className="text-sm text-gray-500 text-center">
-                      Your account details are being sent to{" "}
+                      Your account details have been sent to{" "}
                       <span className="font-semibold text-indigo-600 break-all">{email}</span>
                     </p>
                   </div>
                   <div className="bg-white rounded-2xl border-2 border-green-100 p-4 space-y-2 shadow-sm">
                     <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <span className="text-green-500 shrink-0">✔</span> Payment ID:{" "}
-                      <span className="font-mono text-xs text-gray-500 truncate">{paymentId}</span>
+                      <span className="text-green-500 shrink-0">✔</span> On-chain payment verified
                     </div>
                     <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <span className="text-green-500 shrink-0">✔</span> Details delivered to your email
+                      <span className="text-green-500 shrink-0">✔</span> Account details sent to your email
                     </div>
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <span className="text-green-500 shrink-0">✔</span> Check your inbox (and spam folder)
                     </div>
+                    {paymentId && (
+                      <div className="flex items-start gap-2 text-sm text-gray-600 pt-1 border-t border-gray-100">
+                        <span className="text-gray-400 shrink-0 mt-0.5">ID</span>
+                        <span className="font-mono text-xs text-gray-400 break-all">{paymentId}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
+              {/* Failed */}
               {!checking && paymentStatus === "failed" && (
-                <div className="flex flex-col items-center gap-3 py-4">
+                <div className="flex flex-col items-center gap-4 py-4">
                   <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-3xl">
                     ❌
                   </div>
-                  <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Payment Failed</h2>
-                  <p className="text-sm text-gray-500 text-center">
-                    We couldn&apos;t verify your payment. Please try again.
-                  </p>
+                  <div className="text-center space-y-1">
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Payment Not Confirmed</h2>
+                    <p className="text-sm text-gray-500">
+                      {failReason || "We couldn't verify your payment. Please try again."}
+                    </p>
+                  </div>
                   <button
                     id="retry-pay-btn"
-                    onClick={() => { setStep(2); setPaymentStatus("idle"); }}
+                    onClick={() => { setStep(2); setPaymentStatus("idle"); setFailReason(""); }}
                     className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200"
                   >
                     Try Again
                   </button>
+                  <p className="text-xs text-gray-400 text-center">
+                    If you believe this is an error, contact support with your payment ID:
+                    <span className="block font-mono break-all mt-1">{paymentId}</span>
+                  </p>
                 </div>
               )}
             </div>
