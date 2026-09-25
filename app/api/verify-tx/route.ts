@@ -4,6 +4,8 @@ import { Redis } from "@upstash/redis";
 
 export const maxDuration = 60;
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 type Credential = {
   id: string;
   email: string;
@@ -12,6 +14,8 @@ type Credential = {
 };
 
 type AtlosStatus = 0 | 10 | 100 | 55 | 59;
+
+// ─── Redis ───────────────────────────────────────────────────────────────────
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL!,
@@ -37,6 +41,8 @@ async function claimCredential(): Promise<Credential | null> {
   return claimed;
 }
 
+// ─── Nodemailer ──────────────────────────────────────────────────────────────
+
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -53,7 +59,7 @@ async function sendCredentialEmail(
   await transporter.sendMail({
     from: `"Get Your Account" <${process.env.GMAIL_USER}>`,
     to: email,
-    subject: "Your Account Details � Payment Confirmed",
+    subject: "Your Account Details - Payment Confirmed",
     html: `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"/><title>Account Details</title></head>
@@ -62,7 +68,6 @@ async function sendCredentialEmail(
     <tr><td align="center">
       <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
         <tr><td style="background:linear-gradient(135deg,#6366f1,#7c3aed);padding:36px 40px;text-align:center;">
-          <div style="font-size:36px;margin-bottom:8px;">&#10003;</div>
           <h1 style="margin:0;color:#fff;font-size:24px;font-weight:700;">Payment Confirmed!</h1>
           <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">Your account is ready to use</p>
         </td></tr>
@@ -93,8 +98,14 @@ async function sendCredentialEmail(
   });
 }
 
+// ─── Atlos API ────────────────────────────────────────────────────────────────
+
 const ATLOS_API_BASE = "https://api.atlos.io/gateway/rest/";
 
+/**
+ * Search Atlos Transaction/List for a transaction matching the given blockchain tx hash.
+ * Returns the internal PaymentId + status if found, or null.
+ */
 async function findPaymentIdByTxHash(
   txHash: string
 ): Promise<{ paymentId: string; status: AtlosStatus } | null> {
@@ -140,6 +151,9 @@ async function findPaymentIdByTxHash(
   }
 }
 
+/**
+ * Verify payment status by Atlos internal PaymentId.
+ */
 async function getAtlosPaymentStatus(
   paymentId: string
 ): Promise<AtlosStatus | null> {
@@ -162,6 +176,8 @@ async function getAtlosPaymentStatus(
   return null;
 }
 
+// ─── POST Handler ─────────────────────────────────────────────────────────────
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -179,6 +195,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Idempotency key based on the tx hash
     const sentKey = `txhash:${txHash.toLowerCase()}`;
 
     const alreadySent = await redis.get(sentKey);
@@ -187,6 +204,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "confirmed", already_sent: true });
     }
 
+    // Step 1: Find Atlos PaymentId by searching recent transactions
     console.log("Searching Atlos transactions for txHash:", txHash);
     const txMatch = await findPaymentIdByTxHash(txHash);
 
@@ -196,19 +214,15 @@ export async function POST(req: NextRequest) {
         {
           status: "not_found",
           error:
-            "Transaction not found on Atlos. It may still be propagating � please wait a few minutes and try again.",
+            "Transaction not found on Atlos. It may still be propagating - please wait a few minutes and try again.",
         },
         { status: 404 }
       );
     }
 
-    console.log(
-      "Found Atlos PaymentId:",
-      txMatch.paymentId,
-      "Status:",
-      txMatch.status
-    );
+    console.log("Found Atlos PaymentId:", txMatch.paymentId, "Status:", txMatch.status);
 
+    // Step 2: Double-check with Payment/Get for fresh status
     let finalStatus: AtlosStatus | null = txMatch.status;
     if (txMatch.paymentId) {
       const freshStatus = await getAtlosPaymentStatus(txMatch.paymentId);
@@ -216,16 +230,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (finalStatus === 55) {
-      return NextResponse.json({
-        status: "failed",
-        reason: "Payment was canceled.",
-      });
+      return NextResponse.json({ status: "failed", reason: "Payment was canceled." });
     }
     if (finalStatus === 59) {
-      return NextResponse.json({
-        status: "failed",
-        reason: "Payment window expired.",
-      });
+      return NextResponse.json({ status: "failed", reason: "Payment window expired." });
     }
     if (finalStatus !== 100) {
       return NextResponse.json({
@@ -236,6 +244,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // Step 3: Idempotency lock
     const isFirst = await redis.set(sentKey, "1", {
       nx: true,
       ex: 60 * 60 * 24 * 7,
@@ -245,6 +254,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "confirmed", already_sent: true });
     }
 
+    // Step 4: Claim credential
     const credential = await claimCredential();
     if (!credential) {
       await redis.del(sentKey);
@@ -255,15 +265,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Step 5: Send email with account details
     await sendCredentialEmail(email, txHash, credential);
     console.log(`Credentials delivered to ${email} for txHash=${txHash}`);
 
     return NextResponse.json({ status: "confirmed" });
   } catch (err) {
     console.error("verify-tx error:", err);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

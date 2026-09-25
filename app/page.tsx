@@ -19,6 +19,11 @@ export default function Home() {
   const [stockChecking, setStockChecking] = useState(false);
   const [confirmationMsg, setConfirmationMsg] = useState("");
   const [failReason, setFailReason] = useState("");
+  // Manual tx hash submission
+  const [manualTxHash, setManualTxHash] = useState("");
+  const [manualChecking, setManualChecking] = useState(false);
+  const [manualMsg, setManualMsg] = useState("");
+  const [manualSuccess, setManualSuccess] = useState(false);
 
   const validateEmail = (val: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
@@ -163,6 +168,45 @@ export default function Home() {
     } finally {
       clearInterval(msgTimer);
       setChecking(false);
+    }
+  };
+
+  const verifyByTxHash = async () => {
+    if (!manualTxHash.trim()) {
+      setManualMsg("Please enter your transaction hash.");
+      return;
+    }
+    if (!email.trim()) {
+      setManualMsg("Please go back and enter your email address first.");
+      return;
+    }
+    setManualChecking(true);
+    setManualMsg("Searching for your transaction on Atlos...");
+    setManualSuccess(false);
+    try {
+      const res = await fetch("/api/verify-tx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), txHash: manualTxHash.trim() }),
+      });
+      const data = await res.json();
+      if (data.status === "confirmed" || data.status === "already_sent") {
+        setManualSuccess(true);
+        setManualMsg("");
+        setPaymentStatus("success");
+      } else if (data.status === "pending") {
+        setManualMsg("Transaction found but not yet fully confirmed on-chain. Please wait a few minutes and try again.");
+      } else if (data.status === "not_found") {
+        setManualMsg("Transaction not found on Atlos. Double-check the hash or wait a few minutes for it to propagate.");
+      } else if (data.status === "failed") {
+        setManualMsg(data.reason ?? "Payment was not successful.");
+      } else {
+        setManualMsg(data.error ?? "Could not verify. Please try again.");
+      }
+    } catch {
+      setManualMsg("Network error — please check your connection and try again.");
+    } finally {
+      setManualChecking(false);
     }
   };
 
@@ -386,29 +430,61 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Failed */}
+              {/* Failed / Timeout — with manual tx hash entry */}
               {!checking && paymentStatus === "failed" && (
-                <div className="flex flex-col items-center gap-4 py-4">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-3xl">
-                    ❌
-                  </div>
-                  <div className="text-center space-y-1">
-                    <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Payment Not Confirmed</h2>
-                    <p className="text-sm text-gray-500">
-                      {failReason || "We couldn't verify your payment. Please try again."}
+                <div className="flex flex-col gap-4 py-2">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center text-2xl">❌</div>
+                    <h2 className="text-xl font-bold text-gray-800">Payment Not Confirmed</h2>
+                    <p className="text-sm text-gray-500 text-center">
+                      {failReason || "We couldn't verify your payment automatically."}
                     </p>
                   </div>
+
+                  {/* Manual hash entry */}
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+                    <p className="text-sm font-semibold text-amber-800">Already paid? Enter your transaction hash</p>
+                    <p className="text-xs text-amber-700">Paste the blockchain transaction hash from your crypto wallet and we will verify it on Atlos automatically.</p>
+                    <div className="space-y-2">
+                      <input
+                        id="manual-tx-hash-input"
+                        type="text"
+                        value={manualTxHash}
+                        onChange={(e) => { setManualTxHash(e.target.value); setManualMsg(""); }}
+                        placeholder="e.g. a1b2c3d4e5f6..."
+                        className="w-full px-3 py-2.5 rounded-xl border-2 border-amber-200 bg-white outline-none text-gray-800 placeholder-gray-400 font-mono text-xs focus:border-indigo-400 transition-colors"
+                      />
+                      {manualMsg && !manualSuccess && (
+                        <p className="text-xs text-red-600 flex items-start gap-1">
+                          <span className="shrink-0">⚠</span> {manualMsg}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      id="manual-verify-btn"
+                      onClick={verifyByTxHash}
+                      disabled={manualChecking || !manualTxHash.trim()}
+                      className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-4 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 text-sm"
+                    >
+                      {manualChecking
+                        ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Verifying...
+                        </>
+                        : <>🔍 Verify Transaction</>}
+                    </button>
+                  </div>
+
                   <button
                     id="retry-pay-btn"
-                    onClick={() => { setStep(2); setPaymentStatus("idle"); setFailReason(""); }}
+                    onClick={() => { setStep(2); setPaymentStatus("idle"); setFailReason(""); setManualTxHash(""); setManualMsg(""); }}
                     className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200"
                   >
-                    Try Again
+                    Try Again with New Payment
                   </button>
-                  <p className="text-xs text-gray-400 text-center">
-                    If you believe this is an error, contact support with your payment ID:
-                    <span className="block font-mono break-all mt-1">{paymentId}</span>
-                  </p>
+                  {paymentId && (
+                    <p className="text-xs text-gray-400 text-center">
+                      Payment ref: <span className="font-mono break-all">{paymentId}</span>
+                    </p>
+                  )}
                 </div>
               )}
             </div>
