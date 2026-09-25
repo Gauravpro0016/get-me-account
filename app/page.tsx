@@ -24,6 +24,7 @@ export default function Home() {
   const [manualChecking, setManualChecking] = useState(false);
   const [manualMsg, setManualMsg] = useState("");
   const [manualSuccess, setManualSuccess] = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(false);
 
   const validateEmail = (val: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
@@ -120,6 +121,8 @@ export default function Home() {
     const startTime = Date.now();
     const maxWaitMs = 15 * 60 * 1000; // 15 minutes client timeout
     const pollIntervalMs = 5000;      // check every 5 seconds
+    const showManualAfterMs = 2 * 60 * 1000; // show manual entry after 2 minutes
+    let manualShown = false;
 
     try {
       while (Date.now() - startTime < maxWaitMs) {
@@ -148,6 +151,11 @@ export default function Home() {
           }
 
           // If pending, continue to wait and poll again
+          // After 2 minutes show manual hash entry as an option
+          if (!manualShown && Date.now() - startTime >= showManualAfterMs) {
+            manualShown = true;
+            setShowManualEntry(true);
+          }
         } catch (fetchErr) {
           console.warn("Polling network blip, retrying...", fetchErr);
         }
@@ -370,7 +378,7 @@ export default function Home() {
 
               {/* Waiting for on-chain confirmation */}
               {checking && (
-                <div className="flex flex-col items-center gap-5 py-8">
+                <div className="flex flex-col items-center gap-4 py-6">
                   {/* Pulsing ring animation */}
                   <div className="relative w-20 h-20">
                     <div className="absolute inset-0 rounded-full border-4 border-indigo-100 animate-ping opacity-50" />
@@ -394,6 +402,37 @@ export default function Home() {
                   <p className="text-xs text-gray-400 text-center max-w-xs">
                     This page will update automatically. You do not need to refresh.
                   </p>
+
+                  {/* Manual hash entry — shown after 2 minutes */}
+                  {showManualEntry && (
+                    <div className="w-full bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+                      <p className="text-sm font-semibold text-amber-800">Taking too long? Enter your tx hash</p>
+                      <p className="text-xs text-amber-700">Paste the blockchain transaction hash from your crypto wallet to verify immediately.</p>
+                      <input
+                        id="manual-tx-hash-input-checking"
+                        type="text"
+                        value={manualTxHash}
+                        onChange={(e) => { setManualTxHash(e.target.value); setManualMsg(""); }}
+                        placeholder="Paste your transaction hash here…"
+                        className="w-full px-3 py-2.5 rounded-xl border-2 border-amber-200 bg-white outline-none text-gray-800 placeholder-gray-400 font-mono text-xs focus:border-indigo-400 transition-colors"
+                      />
+                      {manualMsg && !manualSuccess && (
+                        <p className="text-xs text-red-600 flex items-start gap-1">
+                          <span className="shrink-0">⚠</span> {manualMsg}
+                        </p>
+                      )}
+                      <button
+                        id="manual-verify-btn-checking"
+                        onClick={verifyByTxHash}
+                        disabled={manualChecking || !manualTxHash.trim()}
+                        className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-4 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 text-sm"
+                      >
+                        {manualChecking
+                          ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Verifying...</>
+                          : <>🔍 Verify Now</>}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

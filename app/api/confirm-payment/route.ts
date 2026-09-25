@@ -149,7 +149,10 @@ async function sendCredentialEmail(
 
 const ATLOS_API_BASE = "https://api.atlos.io/gateway/rest/";
 
-async function getAtlosPaymentStatus(paymentId: string, orderId?: string): Promise<AtlosStatus | null> {
+/**
+ * Try Payment/Get with a given id. Returns the status or null.
+ */
+async function fetchPaymentStatus(id: string): Promise<{ status: AtlosStatus; raw: Record<string, unknown> } | null> {
   try {
     const res = await fetch(`${ATLOS_API_BASE}Payment/Get`, {
       method: "POST",
@@ -157,36 +160,89 @@ async function getAtlosPaymentStatus(paymentId: string, orderId?: string): Promi
         "Content-Type": "application/json",
         ApiSecret: process.env.ATLOS_API_SECRET!,
       },
-      body: JSON.stringify({ PaymentId: paymentId }),
+      body: JSON.stringify({ PaymentId: id }),
     });
     if (res.ok) {
       const data = await res.json();
-      if (data?.Status !== undefined) return data.Status;
+      if (data?.Status !== undefined) {
+        console.log(`Payment/Get (${id}) => Status:${data.Status}`);
+        return { status: data.Status as AtlosStatus, raw: data };
+      }
     } else {
-      console.warn(`Atlos API returned ${res.status} for PaymentId=${paymentId}`);
+      console.warn(`Atlos Payment/Get returned ${res.status} for id=${id}`);
     }
   } catch (err) {
-    console.error("Atlos API fetch error:", err);
+    console.error("Atlos Payment/Get error:", err);
+  }
+  return null;
+}
+
+/**
+ * Search Transaction/List for a transaction whose OrderId or Txid matches.
+ * Returns the Atlos PaymentId + status if found.
+ */
+async function findByOrderOrTxId(
+  orderId: string
+): Promise<{ paymentId: string; status: AtlosStatus } | null> {
+  try {
+    const res = await fetch(`${ATLOS_API_BASE}Transaction/List`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ApiSecret: process.env.ATLOS_API_SECRET!,
+      },
+      body: JSON.stringify({ PageSize: 50, PageNumber: 1 }),
+    });
+    if (!res.ok) {
+      console.warn(`Atlos Transaction/List returned ${res.status}`);
+      return null;
+    }
+    const data = await res.json();
+    const items: Array<Record<string, unknown>> = Array.isArray(data)
+      ? data
+      : (data?.Items ?? data?.items ?? []);
+
+    const normalized = orderId.trim().toLowerCase();
+    for (const item of items) {
+      const itemOrderId = String(item.OrderId ?? item.orderId ?? "").trim().toLowerCase();
+      const itemTxId = String(item.Txid ?? item.TxId ?? "").trim().toLowerCase();
+      const itemPaymentId = String(item.PaymentId ?? "");
+      if ((itemOrderId && itemOrderId === normalized) || (itemTxId && itemTxId === normalized)) {
+        console.log(`Transaction/List match: PaymentId=${itemPaymentId} Status=${item.Status}`);
+        return { paymentId: itemPaymentId, status: (item.Status ?? 0) as AtlosStatus };
+      }
+    }
+  } catch (err) {
+    console.error("Atlos Transaction/List error:", err);
+  }
+  return null;
+}
+
+/**
+ * Main lookup: try Payment/Get with paymentId, then orderId, then scan Transaction/List.
+ */
+async function getAtlosPaymentStatus(paymentId: string, orderId?: string): Promise<AtlosStatus | null> {
+  // 1. Try with the paymentId directly
+  const r1 = await fetchPaymentStatus(paymentId);
+  if (r1) return r1.status;
+
+  // 2. Try with the orderId if different
+  if (orderId && orderId !== paymentId) {
+    const r2 = await fetchPaymentStatus(orderId);
+    if (r2) return r2.status;
   }
 
-  // Fallback: If paymentId was txId or different, try with orderId if provided
-  if (orderId && orderId !== paymentId) {
-    try {
-      const res = await fetch(`${ATLOS_API_BASE}Payment/Get`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ApiSecret: process.env.ATLOS_API_SECRET!,
-        },
-        body: JSON.stringify({ PaymentId: orderId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.Status !== undefined) return data.Status;
-      }
-    } catch (err) {
-      console.error("Atlos API fallback fetch error:", err);
+  // 3. Last resort: scan Transaction/List for the orderId
+  //    (covers the case where orderId is our custom base64_timestamp key)
+  const searchKey = orderId || paymentId;
+  const match = await findByOrderOrTxId(searchKey);
+  if (match) {
+    // If we found it via list, re-confirm with Payment/Get for freshest status
+    if (match.paymentId) {
+      const r3 = await fetchPaymentStatus(match.paymentId);
+      if (r3) return r3.status;
     }
+    return match.status;
   }
 
   return null;
