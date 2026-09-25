@@ -119,15 +119,21 @@ export async function POST(req: NextRequest) {
   }
 
   const pool = await readPool();
+  const raw2fa =
+    twoFactorKey ||
+    twoFactor ||
+    (body as Record<string, unknown>)["2faKey"] ||
+    (body as Record<string, unknown>)["2fa"];
+  const rawKeyweb = keyweb || webkey;
+
   const newCredential: Credential = {
     id: randomUUID(),
     email: email.trim(),
     password: password.trim(),
     token: token?.trim() || undefined,
     domain: domain?.trim() || undefined,
-    twoFactorKey:
-      (twoFactorKey || twoFactor || (body as Record<string, unknown>)["2faKey"])?.trim() || undefined,
-    keyweb: (keyweb || webkey)?.trim() || undefined,
+    twoFactorKey: raw2fa ? String(raw2fa).trim() : undefined,
+    keyweb: rawKeyweb ? String(rawKeyweb).trim() : undefined,
     addedAt: new Date().toISOString(),
   };
 
