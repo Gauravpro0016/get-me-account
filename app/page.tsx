@@ -60,7 +60,7 @@ export default function Home() {
     atlos.Pay({
       merchantId: process.env.NEXT_PUBLIC_ATLOS_MERCHANT_ID,
       orderId,
-      orderAmount: 0.1, // USD equivalent – update as needed
+      orderAmount: 0.3, // USD equivalent – update as needed
       currency: "USD",
       asset: "LTC",     // Lock to Litecoin
       onSuccess: (data: { orderId: string; txId: string; paymentId?: string }) => {
