@@ -15,6 +15,8 @@ export default function Home() {
   const [paymentId, setPaymentId] = useState("");
   const [checking, setChecking] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<"idle" | "success" | "failed">("idle");
+  const [stockError, setStockError] = useState("");
+  const [stockChecking, setStockChecking] = useState(false);
 
   const validateEmail = (val: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
@@ -28,7 +30,27 @@ export default function Home() {
     setStep(2);
   };
 
-  const handlePayment = () => {
+  const handlePayment = async () => {
+    setStockError("");
+    setStockChecking(true);
+
+    // ── Pre-check: ensure stock is available before charging the customer ──
+    try {
+      const res = await fetch("/api/check-stock");
+      const data = await res.json();
+      if (!data.inStock) {
+        setStockError("Sorry, we're currently out of stock. No payment has been taken. Please try again later.");
+        setStockChecking(false);
+        return; // ← abort: never open the payment widget
+      }
+    } catch {
+      setStockError("Could not verify stock availability. Please try again.");
+      setStockChecking(false);
+      return;
+    }
+
+    setStockChecking(false);
+
     // Build a unique orderId that embeds the buyer email (base64) + timestamp
     const orderId = `${btoa(email)}_${Date.now()}`;
 
@@ -196,12 +218,22 @@ export default function Home() {
                 </div>
               </div>
 
+              {stockError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600 flex items-start gap-2">
+                  <span className="shrink-0 mt-0.5">⚠️</span>
+                  <span>{stockError}</span>
+                </div>
+              )}
+
               <button
                 id="pay-now-btn"
                 onClick={handlePayment}
-                className="w-full bg-linear-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 active:scale-95 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-200 shadow-md hover:shadow-xl flex items-center justify-center gap-2 text-sm sm:text-base"
+                disabled={stockChecking}
+                className="w-full bg-linear-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-200 shadow-md hover:shadow-xl flex items-center justify-center gap-2 text-sm sm:text-base"
               >
-                <span>🔒</span> Pay with Crypto (Atlos)
+                {stockChecking
+                  ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Checking availability…</>
+                  : <><span>🔒</span> Pay with Crypto (Atlos)</>}
               </button>
 
               <button
