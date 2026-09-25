@@ -23,7 +23,9 @@ interface FamGatewayOrder {
 
 interface CredentialResult {
   email: string;
-  password: string;
+  emailPassword?: string;
+  discordPassword?: string;
+  password?: string;
   token?: string;
   domain?: string;
   twoFactorKey?: string;
@@ -58,9 +60,11 @@ export default function Home() {
   const [deliveredCreds, setDeliveredCreds] = useState<CredentialResult | null>(null);
   const [deliveredList, setDeliveredList] = useState<CredentialResult[]>([]);
   const [confirmedUtr, setConfirmedUtr] = useState<string>("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [showEmailPassword, setShowEmailPassword] = useState(false);
+  const [showDiscordPassword, setShowDiscordPassword] = useState(false);
   const [showToken, setShowToken] = useState(false);
-  const [revealedPasswords, setRevealedPasswords] = useState<Set<number>>(new Set());
+  const [revealedEmailPasswords, setRevealedEmailPasswords] = useState<Set<number>>(new Set());
+  const [revealedDiscordPasswords, setRevealedDiscordPasswords] = useState<Set<number>>(new Set());
   const [revealedTokens, setRevealedTokens] = useState<Set<number>>(new Set());
   const [copiedField, setCopiedField] = useState<string>("");
 
@@ -319,8 +323,17 @@ export default function Home() {
     }
   };
 
-  const toggleRevealPwd = (idx: number) => {
-    setRevealedPasswords((prev) => {
+  const toggleRevealEmailPwd = (idx: number) => {
+    setRevealedEmailPasswords((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const toggleRevealDiscordPwd = (idx: number) => {
+    setRevealedDiscordPasswords((prev) => {
       const next = new Set(prev);
       if (next.has(idx)) next.delete(idx);
       else next.add(idx);
@@ -346,7 +359,10 @@ export default function Home() {
         : [];
     const formatted = list
       .map((c, i) => {
-        let text = `Account #${i + 1}:\nEmail: ${c.email}\nPassword: ${c.password}`;
+        let text = `Account #${i + 1}:\nEmail: ${c.email}`;
+        const ep = c.emailPassword || c.password;
+        if (ep) text += `\nEmail Password: ${ep}`;
+        if (c.discordPassword) text += `\nDiscord Password: ${c.discordPassword}`;
         if (c.domain) text += `\nDomain: ${c.domain}`;
         if (c.token) text += `\nToken: ${c.token}`;
         if (c.twoFactorKey) text += `\n2FA: ${c.twoFactorKey}`;
@@ -885,10 +901,30 @@ export default function Home() {
                         </span>
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => toggleRevealPwd(idx)}
+                            onClick={() => {
+                              const isAnyRevealed =
+                                revealedEmailPasswords.has(idx) || revealedDiscordPasswords.has(idx);
+                              if (isAnyRevealed) {
+                                setRevealedEmailPasswords((prev) => {
+                                  const n = new Set(prev);
+                                  n.delete(idx);
+                                  return n;
+                                });
+                                setRevealedDiscordPasswords((prev) => {
+                                  const n = new Set(prev);
+                                  n.delete(idx);
+                                  return n;
+                                });
+                              } else {
+                                setRevealedEmailPasswords((prev) => new Set(prev).add(idx));
+                                setRevealedDiscordPasswords((prev) => new Set(prev).add(idx));
+                              }
+                            }}
                             className="text-xs text-gray-500 hover:text-gray-700 cursor-pointer"
                           >
-                            {revealedPasswords.has(idx) ? "Hide Password" : "Show Password"}
+                            {revealedEmailPasswords.has(idx) || revealedDiscordPasswords.has(idx)
+                              ? "Hide Passwords"
+                              : "Show Passwords"}
                           </button>
                         </div>
                       </div>
@@ -909,20 +945,68 @@ export default function Home() {
                           </div>
                         </div>
 
-                        <div>
-                          <span className="text-xs text-gray-500 block">Password</span>
-                          <div className="flex items-center justify-between bg-gray-50 rounded-lg p-2 mt-0.5 border">
-                            <span className="font-mono text-xs text-gray-800 select-all break-all">
-                              {revealedPasswords.has(idx) || showPassword ? cred.password : "••••••••••••"}
-                            </span>
-                            <button
-                              onClick={() => copyToClipboard(cred.password, `password-${idx}`)}
-                              className="ml-2 text-xs text-indigo-600 hover:text-indigo-800 font-medium shrink-0 cursor-pointer"
-                            >
-                              {copiedField === `password-${idx}` ? "Copied!" : "Copy"}
-                            </button>
+                        {(cred.emailPassword || cred.password) && (
+                          <div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 block">Email Password</span>
+                              <button
+                                onClick={() => toggleRevealEmailPwd(idx)}
+                                className="text-[11px] text-gray-400 hover:text-gray-600 cursor-pointer"
+                              >
+                                {revealedEmailPasswords.has(idx) || showEmailPassword ? "Hide" : "Show"}
+                              </button>
+                            </div>
+                            <div className="flex items-center justify-between bg-gray-50 rounded-lg p-2 mt-0.5 border">
+                              <span className="font-mono text-xs text-gray-800 select-all break-all">
+                                {revealedEmailPasswords.has(idx) || showEmailPassword
+                                  ? (cred.emailPassword || cred.password)
+                                  : "••••••••••••"}
+                              </span>
+                              <button
+                                onClick={() =>
+                                  copyToClipboard(
+                                    cred.emailPassword || cred.password!,
+                                    `email-pwd-${idx}`
+                                  )
+                                }
+                                className="ml-2 text-xs text-indigo-600 hover:text-indigo-800 font-medium shrink-0 cursor-pointer"
+                              >
+                                {copiedField === `email-pwd-${idx}` ? "Copied!" : "Copy"}
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                        )}
+
+                        {cred.discordPassword && (
+                          <div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500 block">Discord Password</span>
+                              <button
+                                onClick={() => toggleRevealDiscordPwd(idx)}
+                                className="text-[11px] text-gray-400 hover:text-gray-600 cursor-pointer"
+                              >
+                                {revealedDiscordPasswords.has(idx) || showDiscordPassword
+                                  ? "Hide"
+                                  : "Show"}
+                              </button>
+                            </div>
+                            <div className="flex items-center justify-between bg-gray-50 rounded-lg p-2 mt-0.5 border">
+                              <span className="font-mono text-xs text-gray-800 select-all break-all">
+                                {revealedDiscordPasswords.has(idx) || showDiscordPassword
+                                  ? cred.discordPassword
+                                  : "••••••••••••"}
+                              </span>
+                              <button
+                                onClick={() =>
+                                  copyToClipboard(cred.discordPassword!, `discord-pwd-${idx}`)
+                                }
+                                className="ml-2 text-xs text-indigo-600 hover:text-indigo-800 font-medium shrink-0 cursor-pointer"
+                              >
+                                {copiedField === `discord-pwd-${idx}` ? "Copied!" : "Copy"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         {cred.domain && (
                           <div>

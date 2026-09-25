@@ -10,7 +10,9 @@ const redis = new Redis({
 export type Credential = {
   id: string;
   email: string;
-  password: string;
+  emailPassword?: string;
+  discordPassword?: string;
+  password?: string;
   token?: string;
   domain?: string;
   twoFactorKey?: string;
@@ -59,11 +61,18 @@ export async function POST(req: NextRequest) {
     const addedList: Credential[] = [];
 
     for (const item of list) {
-      if (item && item.email && item.password) {
+      if (
+        item &&
+        item.email &&
+        (item.emailPassword || item.discordPassword || item.email_password || item.discord_password || item.password)
+      ) {
+        const ep = item.emailPassword ?? item.email_password ?? item.password;
+        const dp = item.discordPassword ?? item.discord_password;
         const cred: Credential = {
           id: randomUUID(),
           email: String(item.email).trim(),
-          password: String(item.password).trim(),
+          emailPassword: ep ? String(ep).trim() : undefined,
+          discordPassword: dp ? String(dp).trim() : undefined,
           token: item.token ? String(item.token).trim() : undefined,
           domain: item.domain ? String(item.domain).trim() : undefined,
           twoFactorKey: (item.twoFactorKey || item.twoFactor || item["2faKey"] || item["2fa"])
@@ -93,6 +102,10 @@ export async function POST(req: NextRequest) {
   // Single credential
   const {
     email,
+    emailPassword,
+    discordPassword,
+    email_password,
+    discord_password,
     password,
     token,
     domain,
@@ -102,6 +115,10 @@ export async function POST(req: NextRequest) {
     webkey,
   } = body as {
     email?: string;
+    emailPassword?: string;
+    discordPassword?: string;
+    email_password?: string;
+    discord_password?: string;
     password?: string;
     token?: string;
     domain?: string;
@@ -111,9 +128,12 @@ export async function POST(req: NextRequest) {
     webkey?: string;
   };
 
-  if (!email || !password) {
+  const finalEmailPass = (emailPassword || email_password || password)?.trim();
+  const finalDiscordPass = (discordPassword || discord_password)?.trim();
+
+  if (!email || (!finalEmailPass && !finalDiscordPass)) {
     return NextResponse.json(
-      { error: "Account email and password are required" },
+      { error: "Account email and at least one password (email password or discord password) are required" },
       { status: 400 }
     );
   }
@@ -129,7 +149,8 @@ export async function POST(req: NextRequest) {
   const newCredential: Credential = {
     id: randomUUID(),
     email: email.trim(),
-    password: password.trim(),
+    emailPassword: finalEmailPass || undefined,
+    discordPassword: finalDiscordPass || undefined,
     token: token?.trim() || undefined,
     domain: domain?.trim() || undefined,
     twoFactorKey: raw2fa ? String(raw2fa).trim() : undefined,

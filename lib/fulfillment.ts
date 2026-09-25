@@ -5,7 +5,9 @@ import { APP_CONFIG } from "@/lib/config";
 export type Credential = {
   id: string;
   email: string;
-  password: string;
+  emailPassword?: string;
+  discordPassword?: string;
+  password?: string;
   token?: string;
   domain?: string;
   twoFactorKey?: string;
@@ -160,10 +162,16 @@ export async function sendCredentialEmail({
           <td style="color:#64748b;font-size:14px;padding:5px 0;width:105px;"><strong>Email:</strong></td>
           <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${cred.email}</td>
         </tr>
+        ${(cred.emailPassword || cred.password) ? `
         <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:105px;"><strong>Password:</strong></td>
-          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${cred.password}</td>
-        </tr>
+          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>Email Password:</strong></td>
+          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${cred.emailPassword || cred.password}</td>
+        </tr>` : ""}
+        ${cred.discordPassword ? `
+        <tr>
+          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>Discord Password:</strong></td>
+          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${cred.discordPassword}</td>
+        </tr>` : ""}
         ${cred.domain ? `
         <tr>
           <td style="color:#64748b;font-size:14px;padding:5px 0;width:105px;"><strong>Domain:</strong></td>
@@ -273,7 +281,7 @@ export async function sendCredentialEmail({
                     </div>
 
                     <p style="margin:20px 0 0;color:#94a3b8;font-size:12px;line-height:1.6;text-align:center;">
-                      Please save these credentials safely and change the password if desired.
+                      Please save these credentials safely and change the passwords if desired.
                     </p>
                   </td>
                 </tr>
@@ -398,6 +406,8 @@ export type StoredOrder = {
   senderName?: string;
   deliveredCredential?: {
     email: string;
+    emailPassword?: string;
+    discordPassword?: string;
     password?: string;
     token?: string;
     domain?: string;

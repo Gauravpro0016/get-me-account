@@ -5,7 +5,9 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 type Credential = {
   id: string;
   email: string;
-  password: string;
+  emailPassword?: string;
+  discordPassword?: string;
+  password?: string;
   token?: string;
   domain?: string;
   twoFactorKey?: string;
@@ -25,6 +27,8 @@ type StoredOrder = {
   senderName?: string;
   deliveredCredential?: {
     email: string;
+    emailPassword?: string;
+    discordPassword?: string;
     password?: string;
     token?: string;
     domain?: string;
@@ -33,6 +37,8 @@ type StoredOrder = {
   };
   deliveredCredentials?: Array<{
     email: string;
+    emailPassword?: string;
+    discordPassword?: string;
     password?: string;
     token?: string;
     domain?: string;
@@ -66,15 +72,19 @@ export default function AdminPage() {
   const [orders, setOrders] = useState<StoredOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [revealedOrderCreds, setRevealedOrderCreds] = useState<Set<string>>(new Set());
+  const [revealedOrderEmailCreds, setRevealedOrderEmailCreds] = useState<Set<string>>(new Set());
+  const [revealedOrderDiscordCreds, setRevealedOrderDiscordCreds] = useState<Set<string>>(new Set());
 
   // ── Add form state ───────────────────────────────────────────────────────
   const [newEmail, setNewEmail] = useState("");
-  const [newPassword, setNewPassword] = useState("");
+  const [newEmailPassword, setNewEmailPassword] = useState("");
+  const [newDiscordPassword, setNewDiscordPassword] = useState("");
   const [newToken, setNewToken] = useState("");
   const [newDomain, setNewDomain] = useState("");
   const [newTwoFactorKey, setNewTwoFactorKey] = useState("");
   const [newKeyweb, setNewKeyweb] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [showEmailPassword, setShowEmailPassword] = useState(false);
+  const [showDiscordPassword, setShowDiscordPassword] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [addStatus, setAddStatus] = useState<Status>("idle");
   const [addError, setAddError] = useState("");
@@ -90,6 +100,8 @@ export default function AdminPage() {
 
   // ── Visible secrets in tables ────────────────────────────────────────────
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
+  const [revealedEmailIds, setRevealedEmailIds] = useState<Set<string>>(new Set());
+  const [revealedDiscordIds, setRevealedDiscordIds] = useState<Set<string>>(new Set());
   const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set());
   const [revealed2fa, setRevealed2fa] = useState<Set<string>>(new Set());
   const [copiedKey, setCopiedKey] = useState<string>("");
@@ -161,8 +173,8 @@ export default function AdminPage() {
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEmail.trim() || !newPassword.trim()) {
-      setAddError("Both email and password are required.");
+    if (!newEmail.trim() || (!newEmailPassword.trim() && !newDiscordPassword.trim())) {
+      setAddError("Account email and at least one password (Email Password or Discord Password) are required.");
       return;
     }
     setAddError("");
@@ -176,7 +188,8 @@ export default function AdminPage() {
         },
         body: JSON.stringify({
           email: newEmail.trim(),
-          password: newPassword.trim(),
+          emailPassword: newEmailPassword.trim() || undefined,
+          discordPassword: newDiscordPassword.trim() || undefined,
           token: newToken.trim() || undefined,
           domain: newDomain.trim() || undefined,
           twoFactorKey: newTwoFactorKey.trim() || undefined,
@@ -185,7 +198,8 @@ export default function AdminPage() {
       });
       if (!res.ok) throw new Error("Add failed");
       setNewEmail("");
-      setNewPassword("");
+      setNewEmailPassword("");
+      setNewDiscordPassword("");
       setNewToken("");
       setNewDomain("");
       setNewTwoFactorKey("");
@@ -211,7 +225,9 @@ export default function AdminPage() {
       const lines = bulkText.split("\n").map((l) => l.trim()).filter(Boolean);
       const parsed: Array<{
         email: string;
-        password: string;
+        emailPassword?: string;
+        discordPassword?: string;
+        password?: string;
         token?: string;
         domain?: string;
         twoFactorKey?: string;
@@ -229,21 +245,30 @@ export default function AdminPage() {
           ? ","
           : ":";
         const parts = line.split(delim).map((p) => p.trim());
-        if (parts.length >= 2) {
+        if (parts.length >= 3) {
           parsed.push({
             email: parts[0],
-            password: parts[1],
-            token: parts[2] || undefined,
-            domain: parts[3] || undefined,
-            twoFactorKey: parts[4] || undefined,
-            keyweb: parts[5] || undefined,
+            emailPassword: parts[1],
+            discordPassword: parts[2],
+            token: parts[3] || undefined,
+            domain: parts[4] || undefined,
+            twoFactorKey: parts[5] || undefined,
+            keyweb: parts[6] || undefined,
+          });
+        } else if (parts.length === 2) {
+          parsed.push({
+            email: parts[0],
+            emailPassword: parts[1],
+            discordPassword: parts[1],
           });
         }
       }
 
       if (parsed.length === 0) {
         setBulkStatus("error");
-        setBulkMsg("No valid account rows found. Example: email:password or email:password:token:domain:2fa:keyweb");
+        setBulkMsg(
+          "No valid account rows found. Example: email:emailPassword:discordPassword or email:emailPassword:discordPassword:token:domain:2fa:keyweb"
+        );
         return;
       }
 
@@ -299,6 +324,24 @@ export default function AdminPage() {
     });
   };
 
+  const toggleRevealEmail = (id: string) => {
+    setRevealedEmailIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleRevealDiscord = (id: string) => {
+    setRevealedDiscordIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const toggleRevealToken = (id: string) => {
     setRevealedTokens((prev) => {
       const next = new Set(prev);
@@ -331,6 +374,24 @@ export default function AdminPage() {
       const next = new Set(prev);
       if (next.has(orderId)) next.delete(orderId);
       else next.add(orderId);
+      return next;
+    });
+  };
+
+  const toggleRevealOrderEmailCred = (key: string) => {
+    setRevealedOrderEmailCreds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleRevealOrderDiscordCred = (key: string) => {
+    setRevealedOrderDiscordCreds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   };
@@ -438,7 +499,10 @@ export default function AdminPage() {
               onClick={() => {
                 const text = deliveredList
                   .map((c, i) => {
-                    let t = `Account #${i + 1}:\nEmail: ${c.email}\nPassword: ${c.password || ""}`;
+                    let t = `Account #${i + 1}:\nEmail: ${c.email}`;
+                    const ep = c.emailPassword || c.password;
+                    if (ep) t += `\nEmail Password: ${ep}`;
+                    if (c.discordPassword) t += `\nDiscord Password: ${c.discordPassword}`;
                     if (c.domain) t += `\nDomain: ${c.domain}`;
                     if (c.token) t += `\nToken: ${c.token}`;
                     if (c.twoFactorKey) t += `\n2FA: ${c.twoFactorKey}`;
@@ -457,8 +521,13 @@ export default function AdminPage() {
 
         {deliveredList.map((cred, cIdx) => {
           const credKey = `${ord.orderId}-${cIdx}`;
-          const isPwdRevealed =
-            revealedOrderCreds.has(credKey) || (cIdx === 0 && revealedOrderCreds.has(ord.orderId));
+          const isEmailPwdRevealed =
+            revealedOrderEmailCreds.has(credKey) ||
+            revealedOrderCreds.has(credKey) ||
+            (cIdx === 0 && (revealedOrderEmailCreds.has(ord.orderId) || revealedOrderCreds.has(ord.orderId)));
+          const isDiscordPwdRevealed =
+            revealedOrderDiscordCreds.has(credKey) ||
+            (cIdx === 0 && revealedOrderDiscordCreds.has(ord.orderId));
           const isTokRevealed =
             revealedTokens.has(credKey) || (cIdx === 0 && revealedTokens.has(ord.orderId));
 
@@ -493,30 +562,59 @@ export default function AdminPage() {
                 </button>
               </div>
 
-              {/* Password */}
-              {cred.password && (
+              {/* Email Password */}
+              {(cred.emailPassword || cred.password) && (
                 <div className="flex items-center justify-between gap-1.5 font-mono">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-white/40 text-[11px] w-11 shrink-0 font-sans font-medium">Pass:</span>
+                    <span className="text-white/40 text-[11px] w-20 shrink-0 font-sans font-medium">Email Pass:</span>
                     <span className="text-white/80 truncate">
-                      {isPwdRevealed ? cred.password : "••••••••"}
+                      {isEmailPwdRevealed ? (cred.emailPassword || cred.password) : "••••••••"}
                     </span>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
-                      onClick={() => toggleRevealOrderCred(credKey)}
+                      onClick={() => toggleRevealOrderEmailCred(credKey)}
                       className="text-[10px] text-white/60 hover:text-white px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
                     >
-                      {isPwdRevealed ? "Hide" : "Show"}
+                      {isEmailPwdRevealed ? "Hide" : "Show"}
                     </button>
                     <button
                       type="button"
-                      onClick={() => copyVal(cred.password, `ord-pwd-${credKey}`)}
+                      onClick={() => copyVal(cred.emailPassword || cred.password, `ord-epwd-${credKey}`)}
                       className="text-white/50 hover:text-white p-1 rounded hover:bg-white/10 transition-colors text-xs cursor-pointer"
-                      title="Copy Password"
+                      title="Copy Email Password"
                     >
-                      {copiedKey === `ord-pwd-${credKey}` ? "✓" : "📋"}
+                      {copiedKey === `ord-epwd-${credKey}` ? "✓" : "📋"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Discord Password */}
+              {cred.discordPassword && (
+                <div className="flex items-center justify-between gap-1.5 font-mono">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-white/40 text-[11px] w-20 shrink-0 font-sans font-medium">Discord Pass:</span>
+                    <span className="text-white/80 truncate">
+                      {isDiscordPwdRevealed ? cred.discordPassword : "••••••••"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleRevealOrderDiscordCred(credKey)}
+                      className="text-[10px] text-white/60 hover:text-white px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+                    >
+                      {isDiscordPwdRevealed ? "Hide" : "Show"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => copyVal(cred.discordPassword, `ord-dpwd-${credKey}`)}
+                      className="text-white/50 hover:text-white p-1 rounded hover:bg-white/10 transition-colors text-xs cursor-pointer"
+                      title="Copy Discord Password"
+                    >
+                      {copiedKey === `ord-dpwd-${credKey}` ? "✓" : "📋"}
                     </button>
                   </div>
                 </div>
@@ -1196,29 +1294,56 @@ export default function AdminPage() {
                       />
                     </div>
 
-                    {/* Password */}
+                    {/* Email Password */}
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <label htmlFor="cred-password" className="block text-xs font-bold text-white/70 uppercase tracking-wider">
-                          Password <span className="text-red-400">*</span>
+                        <label htmlFor="cred-email-password" className="block text-xs font-bold text-white/70 uppercase tracking-wider">
+                          Email Password <span className="text-red-400">*</span>
                         </label>
                         <button
                           type="button"
-                          onClick={() => setShowPassword(!showPassword)}
+                          onClick={() => setShowEmailPassword(!showEmailPassword)}
                           className="text-[11px] text-white/40 hover:text-white cursor-pointer"
                         >
-                          {showPassword ? "Hide" : "Show"}
+                          {showEmailPassword ? "Hide" : "Show"}
                         </button>
                       </div>
                       <input
-                        id="cred-password"
-                        type={showPassword ? "text" : "password"}
-                        value={newPassword}
+                        id="cred-email-password"
+                        type={showEmailPassword ? "text" : "password"}
+                        value={newEmailPassword}
                         onChange={(e) => {
-                          setNewPassword(e.target.value);
+                          setNewEmailPassword(e.target.value);
                           setAddError("");
                         }}
-                        placeholder="Account password"
+                        placeholder="Mailbox / Webmail password"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.06] border border-white/10 text-white placeholder-white/30 text-sm outline-none focus:border-indigo-500 transition-colors"
+                      />
+                    </div>
+
+                    {/* Discord Password */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label htmlFor="cred-discord-password" className="block text-xs font-bold text-white/70 uppercase tracking-wider">
+                          Discord Password <span className="text-red-400">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowDiscordPassword(!showDiscordPassword)}
+                          className="text-[11px] text-white/40 hover:text-white cursor-pointer"
+                        >
+                          {showDiscordPassword ? "Hide" : "Show"}
+                        </button>
+                      </div>
+                      <input
+                        id="cred-discord-password"
+                        type={showDiscordPassword ? "text" : "password"}
+                        value={newDiscordPassword}
+                        onChange={(e) => {
+                          setNewDiscordPassword(e.target.value);
+                          setAddError("");
+                        }}
+                        placeholder="Discord account password"
                         className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.06] border border-white/10 text-white placeholder-white/30 text-sm outline-none focus:border-indigo-500 transition-colors"
                       />
                     </div>
@@ -1333,9 +1458,9 @@ export default function AdminPage() {
                   <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-white/80 space-y-1">
                     <p className="font-semibold text-indigo-300">Supported formats (one per line):</p>
                     <div className="font-mono text-[11px] text-white/70 space-y-0.5">
-                      <div>email:password</div>
-                      <div>email:password:token:domain:2fakey:keyweb</div>
-                      <div>email----password----token (supports :, |, \t, or ---- delimiters)</div>
+                      <div>email:emailPassword:discordPassword</div>
+                      <div>email:emailPassword:discordPassword:token:domain:2fakey:keyweb</div>
+                      <div>email----emailPassword----discordPassword----token (supports :, |, \t, or ---- delimiters)</div>
                     </div>
                   </div>
 
@@ -1346,7 +1471,7 @@ export default function AdminPage() {
                       setBulkText(e.target.value);
                       setBulkMsg("");
                     }}
-                    placeholder={`acc1@domain.com:Pass123:mfa.token123:domain.com:2FAKEY:KEYWEB\nacc2@domain.com:Pass456:mfa.token456\nacc3@domain.com:Pass789`}
+                    placeholder={`acc1@domain.com:EmailPass123:DiscordPass123:mfa.token123:domain.com:2FAKEY:KEYWEB\nacc2@domain.com:EmailPass456:DiscordPass456:mfa.token456\nacc3@domain.com:Pass789:Pass789`}
                     className="w-full p-3.5 rounded-xl bg-white/[0.06] border border-white/10 text-white placeholder-white/30 text-xs sm:text-sm font-mono outline-none focus:border-indigo-500 transition-colors resize-y"
                   />
 
@@ -1499,31 +1624,61 @@ export default function AdminPage() {
                           )}
                         </div>
 
-                        {/* Password */}
-                        <div className="flex items-center justify-between p-2 rounded-lg bg-black/20 border border-white/5 font-mono text-xs">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-white/40 font-sans text-[11px]">Pass:</span>
-                            <span className="text-white/80 truncate">
-                              {revealedIds.has(cred.id) ? cred.password : "••••••••"}
-                            </span>
+                        {/* Email Password */}
+                        {(cred.emailPassword || cred.password) && (
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-black/20 border border-white/5 font-mono text-xs">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-white/40 font-sans text-[11px]">Email Pass:</span>
+                              <span className="text-white/80 truncate">
+                                {revealedEmailIds.has(cred.id) ? (cred.emailPassword || cred.password) : "••••••••"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => toggleRevealEmail(cred.id)}
+                                className="text-[11px] text-white/50 hover:text-white px-1.5 py-0.5 rounded cursor-pointer"
+                              >
+                                {revealedEmailIds.has(cred.id) ? "Hide" : "Show"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => copyVal(cred.emailPassword || cred.password, `m-cred-epwd-${cred.id}`)}
+                                className="text-white/50 hover:text-white p-1 rounded text-xs cursor-pointer"
+                              >
+                                {copiedKey === `m-cred-epwd-${cred.id}` ? "✓" : "📋"}
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => toggleReveal(cred.id)}
-                              className="text-[11px] text-white/50 hover:text-white px-1.5 py-0.5 rounded cursor-pointer"
-                            >
-                              {revealedIds.has(cred.id) ? "Hide" : "Show"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => copyVal(cred.password, `m-cred-pwd-${cred.id}`)}
-                              className="text-white/50 hover:text-white p-1 rounded text-xs cursor-pointer"
-                            >
-                              {copiedKey === `m-cred-pwd-${cred.id}` ? "✓" : "📋"}
-                            </button>
+                        )}
+
+                        {/* Discord Password */}
+                        {cred.discordPassword && (
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-black/20 border border-white/5 font-mono text-xs">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-white/40 font-sans text-[11px]">Discord Pass:</span>
+                              <span className="text-white/80 truncate">
+                                {revealedDiscordIds.has(cred.id) ? cred.discordPassword : "••••••••"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => toggleRevealDiscord(cred.id)}
+                                className="text-[11px] text-white/50 hover:text-white px-1.5 py-0.5 rounded cursor-pointer"
+                              >
+                                {revealedDiscordIds.has(cred.id) ? "Hide" : "Show"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => copyVal(cred.discordPassword, `m-cred-dpwd-${cred.id}`)}
+                                className="text-white/50 hover:text-white p-1 rounded text-xs cursor-pointer"
+                              >
+                                {copiedKey === `m-cred-dpwd-${cred.id}` ? "✓" : "📋"}
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                        )}
 
                         {/* Badges for Token, 2FA, Keyweb */}
                         {(cred.token || cred.twoFactorKey || cred.keyweb) && (
@@ -1601,7 +1756,8 @@ export default function AdminPage() {
                         <tr className="border-b border-white/10 bg-white/[0.02] text-white/45 font-bold uppercase tracking-wider text-[11px]">
                           <th className="py-3 px-4">Queue</th>
                           <th className="py-3 px-4">Email / Domain</th>
-                          <th className="py-3 px-4">Password</th>
+                          <th className="py-3 px-4">Email Pass</th>
+                          <th className="py-3 px-4">Discord Pass</th>
                           <th className="py-3 px-4">Token</th>
                           <th className="py-3 px-4">2FA Key</th>
                           <th className="py-3 px-4">Keyweb</th>
@@ -1641,29 +1797,68 @@ export default function AdminPage() {
                               )}
                             </td>
 
-                            {/* Password */}
+                            {/* Email Password */}
                             <td className="py-3.5 px-4 font-mono whitespace-nowrap">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-white/80">
-                                  {revealedIds.has(cred.id) ? cred.password : "••••••••"}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleReveal(cred.id)}
-                                  className="text-white/40 hover:text-white p-0.5 rounded cursor-pointer"
-                                  title="Toggle Reveal"
-                                >
-                                  {revealedIds.has(cred.id) ? "🙈" : "👁️"}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => copyVal(cred.password, `t-cred-pwd-${cred.id}`)}
-                                  className="text-white/40 hover:text-white p-0.5 rounded cursor-pointer"
-                                  title="Copy Password"
-                                >
-                                  {copiedKey === `t-cred-pwd-${cred.id}` ? "✓" : "📋"}
-                                </button>
-                              </div>
+                              {cred.emailPassword || cred.password ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-white/80">
+                                    {revealedEmailIds.has(cred.id)
+                                      ? (cred.emailPassword || cred.password)
+                                      : "••••••••"}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleRevealEmail(cred.id)}
+                                    className="text-white/40 hover:text-white p-0.5 rounded cursor-pointer"
+                                    title="Toggle Reveal Email Password"
+                                  >
+                                    {revealedEmailIds.has(cred.id) ? "🙈" : "👁️"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      copyVal(cred.emailPassword || cred.password, `t-cred-epwd-${cred.id}`)
+                                    }
+                                    className="text-white/40 hover:text-white p-0.5 rounded cursor-pointer"
+                                    title="Copy Email Password"
+                                  >
+                                    {copiedKey === `t-cred-epwd-${cred.id}` ? "✓" : "📋"}
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-white/20">—</span>
+                              )}
+                            </td>
+
+                            {/* Discord Password */}
+                            <td className="py-3.5 px-4 font-mono whitespace-nowrap">
+                              {cred.discordPassword ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-white/80">
+                                    {revealedDiscordIds.has(cred.id)
+                                      ? cred.discordPassword
+                                      : "••••••••"}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleRevealDiscord(cred.id)}
+                                    className="text-white/40 hover:text-white p-0.5 rounded cursor-pointer"
+                                    title="Toggle Reveal Discord Password"
+                                  >
+                                    {revealedDiscordIds.has(cred.id) ? "🙈" : "👁️"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => copyVal(cred.discordPassword, `t-cred-dpwd-${cred.id}`)}
+                                    className="text-white/40 hover:text-white p-0.5 rounded cursor-pointer"
+                                    title="Copy Discord Password"
+                                  >
+                                    {copiedKey === `t-cred-dpwd-${cred.id}` ? "✓" : "📋"}
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-white/20">—</span>
+                              )}
                             </td>
 
                             {/* Token */}

@@ -121,7 +121,15 @@ export async function POST(req: NextRequest) {
         status: "confirmed",
         already_sent: true,
         credential: credential
-          ? { email: credential.email, password: credential.password }
+          ? {
+              email: credential.email,
+              emailPassword: credential.emailPassword || credential.password,
+              discordPassword: credential.discordPassword,
+              token: credential.token,
+              domain: credential.domain,
+              twoFactorKey: credential.twoFactorKey,
+              keyweb: credential.keyweb,
+            }
           : undefined,
       });
     }
@@ -158,7 +166,8 @@ export async function POST(req: NextRequest) {
         credential: result.credential
           ? {
               email: result.credential.email,
-              password: result.credential.password,
+              emailPassword: result.credential.emailPassword || result.credential.password,
+              discordPassword: result.credential.discordPassword,
               token: result.credential.token,
               domain: result.credential.domain,
               twoFactorKey: result.credential.twoFactorKey,

@@ -5,7 +5,9 @@ import { Redis } from "@upstash/redis";
 type Credential = {
   id: string;
   email: string;
-  password: string;
+  emailPassword?: string;
+  discordPassword?: string;
+  password?: string;
   token?: string;
   domain?: string;
   twoFactorKey?: string;
@@ -153,10 +155,16 @@ export async function POST(req: NextRequest) {
                             <td style="color:#6b7280;font-size:13px;padding:4px 0;width:90px;"><strong>Email:</strong></td>
                             <td style="color:#1e40af;font-size:14px;font-weight:600;font-family:monospace;">${credential.email}</td>
                           </tr>
+                          ${(credential.emailPassword || credential.password) ? `
                           <tr>
-                            <td style="color:#6b7280;font-size:13px;padding:4px 0;width:90px;"><strong>Password:</strong></td>
-                            <td style="color:#1e40af;font-size:14px;font-weight:600;font-family:monospace;">${credential.password}</td>
-                          </tr>
+                            <td style="color:#6b7280;font-size:13px;padding:4px 0;width:130px;"><strong>Email Password:</strong></td>
+                            <td style="color:#1e40af;font-size:14px;font-weight:600;font-family:monospace;">${credential.emailPassword || credential.password}</td>
+                          </tr>` : ""}
+                          ${credential.discordPassword ? `
+                          <tr>
+                            <td style="color:#6b7280;font-size:13px;padding:4px 0;width:130px;"><strong>Discord Password:</strong></td>
+                            <td style="color:#1e40af;font-size:14px;font-weight:600;font-family:monospace;">${credential.discordPassword}</td>
+                          </tr>` : ""}
                           ${credential.domain ? `
                           <tr>
                             <td style="color:#6b7280;font-size:13px;padding:4px 0;width:90px;"><strong>Domain:</strong></td>

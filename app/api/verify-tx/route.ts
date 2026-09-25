@@ -40,7 +40,8 @@ export async function POST(req: NextRequest) {
         credential: cred
           ? {
               email: cred.email,
-              password: cred.password,
+              emailPassword: cred.emailPassword || cred.password,
+              discordPassword: cred.discordPassword,
               token: cred.token,
               domain: cred.domain,
               twoFactorKey: cred.twoFactorKey,
@@ -113,7 +114,8 @@ export async function POST(req: NextRequest) {
         credential: result.credential
           ? {
               email: result.credential.email,
-              password: result.credential.password,
+              emailPassword: result.credential.emailPassword || result.credential.password,
+              discordPassword: result.credential.discordPassword,
               token: result.credential.token,
               domain: result.credential.domain,
               twoFactorKey: result.credential.twoFactorKey,
