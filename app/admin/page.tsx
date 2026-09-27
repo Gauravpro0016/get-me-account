@@ -45,6 +45,22 @@ type StoredOrder = {
     twoFactorKey?: string;
     keyweb?: string;
   }>;
+  // ── Email delivery & tracking fields ──
+  emailStatus?: "pending" | "sent" | "opened" | "failed";
+  emailSentAt?: string;
+  emailRecipient?: string;
+  emailMessageId?: string;
+  emailDeliveryResponse?: string;
+  emailError?: string;
+  emailOpened?: boolean;
+  emailOpenedAt?: string;
+  emailLastOpenedAt?: string;
+  emailOpenCount?: number;
+  emailClientUserAgent?: string;
+  emailClientIp?: string;
+  emailConfirmedManually?: boolean;
+  emailResentCount?: number;
+  emailLastResentAt?: string;
 };
 
 type Status = "idle" | "loading" | "error" | "success";
@@ -62,6 +78,7 @@ export default function AdminPage() {
   // ── Search & Filter state ────────────────────────────────────────────────
   const [orderSearch, setOrderSearch] = useState("");
   const [orderStatusFilter, setOrderStatusFilter] = useState<"all" | "confirmed" | "pending" | "failed">("all");
+  const [orderEmailFilter, setOrderEmailFilter] = useState<"all" | "opened" | "sent" | "failed" | "pending">("all");
   const [stockSearch, setStockSearch] = useState("");
 
   // ── Credential pool state ────────────────────────────────────────────────
@@ -74,6 +91,14 @@ export default function AdminPage() {
   const [revealedOrderCreds, setRevealedOrderCreds] = useState<Set<string>>(new Set());
   const [revealedOrderEmailCreds, setRevealedOrderEmailCreds] = useState<Set<string>>(new Set());
   const [revealedOrderDiscordCreds, setRevealedOrderDiscordCreds] = useState<Set<string>>(new Set());
+
+  // ── Email Tracking & Audit Modal state ───────────────────────────────────
+  const [auditModalOrder, setAuditModalOrder] = useState<StoredOrder | null>(null);
+  const [resendingEmail, setResendingEmail] = useState(false);
+  const [resendCustomEmail, setResendCustomEmail] = useState("");
+  const [resendStatusMsg, setResendStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [togglingManualReceipt, setTogglingManualReceipt] = useState(false);
+  const [copiedAuditKey, setCopiedAuditKey] = useState<string>("");
 
   // ── Add form state ───────────────────────────────────────────────────────
   const [newEmail, setNewEmail] = useState("");
@@ -411,6 +436,91 @@ export default function AdminPage() {
     () => confirmedOrders.reduce((sum, o) => sum + (Number(o.amount) || 0), 0),
     [confirmedOrders]
   );
+  const openedOrdersCount = useMemo(
+    () => orders.filter((o) => o.emailOpened || o.emailStatus === "opened").length,
+    [orders]
+  );
+  const sentOrdersCount = useMemo(
+    () => orders.filter((o) => (o.emailStatus === "sent" || (o.status === "confirmed" && !o.emailStatus)) && !o.emailOpened).length,
+    [orders]
+  );
+  const failedOrdersCount = useMemo(
+    () => orders.filter((o) => o.emailStatus === "failed").length,
+    [orders]
+  );
+
+  // Email Action Handlers
+  const handleResendEmail = async (orderId: string, emailOverride?: string) => {
+    setResendingEmail(true);
+    setResendStatusMsg(null);
+    try {
+      const res = await fetch("/api/admin/orders/resend-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-password": password,
+        },
+        body: JSON.stringify({
+          orderId,
+          email: emailOverride?.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to resend email");
+      }
+      setResendStatusMsg({ type: "success", text: "✅ Credential email resent successfully!" });
+      await fetchOrders();
+      setAuditModalOrder((prev) =>
+        prev && prev.orderId === orderId
+          ? {
+              ...prev,
+              email: emailOverride?.trim() || prev.email,
+              emailStatus: "sent",
+              emailSentAt: new Date().toISOString(),
+              emailResentCount: (prev.emailResentCount || 0) + 1,
+            }
+          : prev
+      );
+      setTimeout(() => setResendStatusMsg(null), 4000);
+    } catch (err) {
+      setResendStatusMsg({
+        type: "error",
+        text: err instanceof Error ? err.message : "Failed to resend email",
+      });
+    } finally {
+      setResendingEmail(false);
+    }
+  };
+
+  const handleToggleManualReceipt = async (orderId: string, newReceivedState: boolean) => {
+    setTogglingManualReceipt(true);
+    try {
+      const res = await fetch("/api/admin/orders/mark-email-received", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-password": password,
+        },
+        body: JSON.stringify({
+          orderId,
+          received: newReceivedState,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to update receipt");
+      }
+      await fetchOrders();
+      setAuditModalOrder((prev) =>
+        prev && prev.orderId === orderId ? data.order : prev
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to toggle status");
+    } finally {
+      setTogglingManualReceipt(false);
+    }
+  };
 
   // Filtered Orders
   const filteredOrders = useMemo(() => {
@@ -421,14 +531,26 @@ export default function AdminPage() {
 
       if (!matchesStatus) return false;
 
+      // Filter by email receipt status
+      if (orderEmailFilter === "opened") {
+        if (!o.emailOpened && o.emailStatus !== "opened") return false;
+      } else if (orderEmailFilter === "sent") {
+        if (o.emailOpened || o.emailStatus === "opened" || o.emailStatus === "failed" || o.status !== "confirmed") return false;
+      } else if (orderEmailFilter === "failed") {
+        if (o.emailStatus !== "failed") return false;
+      } else if (orderEmailFilter === "pending") {
+        if (o.status !== "pending" && o.emailStatus !== "pending") return false;
+      }
+
       if (!orderSearch.trim()) return true;
       const q = orderSearch.toLowerCase().trim();
       const matchId = o.orderId.toLowerCase().includes(q);
       const matchEmail = o.email.toLowerCase().includes(q);
       const matchUtr = o.utr ? o.utr.toLowerCase().includes(q) : false;
-      return matchId || matchEmail || matchUtr;
+      const matchEmailStatus = o.emailStatus ? o.emailStatus.toLowerCase().includes(q) : false;
+      return matchId || matchEmail || matchUtr || matchEmailStatus;
     });
-  }, [orders, orderStatusFilter, orderSearch]);
+  }, [orders, orderStatusFilter, orderEmailFilter, orderSearch]);
 
   // Filtered Stock Credentials
   const filteredCredentials = useMemo(() => {
@@ -473,6 +595,92 @@ export default function AdminPage() {
           </span>
         );
     }
+  };
+
+  const getEmailStatusBadge = (ord: StoredOrder) => {
+    // 1. If customer opened & received the email
+    if (ord.emailOpened || ord.emailStatus === "opened") {
+      const openCount = ord.emailOpenCount || 1;
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setAuditModalOrder(ord);
+            setResendCustomEmail(ord.email);
+            setResendStatusMsg(null);
+          }}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-tight bg-emerald-500/15 text-emerald-300 border border-emerald-500/35 hover:bg-emerald-500/25 active:scale-95 transition-all cursor-pointer shadow-xs text-left"
+          title="Customer received & opened this email. Click for audit details."
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          <span>👁️ Received & Opened</span>
+          {openCount > 1 && (
+            <span className="px-1 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/30 text-emerald-200">
+              {openCount}x
+            </span>
+          )}
+        </button>
+      );
+    }
+
+    // 2. If delivery failed
+    if (ord.emailStatus === "failed") {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setAuditModalOrder(ord);
+            setResendCustomEmail(ord.email);
+            setResendStatusMsg(null);
+          }}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-tight bg-red-500/15 text-red-300 border border-red-500/35 hover:bg-red-500/25 active:scale-95 transition-all cursor-pointer shadow-xs text-left"
+          title={ord.emailError || "Email failed to send. Click to inspect & retry."}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
+          <span>⚠️ Delivery Failed</span>
+        </button>
+      );
+    }
+
+    // 3. If sent (order confirmed and email sent via SMTP, waiting for customer to open)
+    if (ord.emailStatus === "sent" || (ord.status === "confirmed" && !ord.emailStatus)) {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setAuditModalOrder(ord);
+            setResendCustomEmail(ord.email);
+            setResendStatusMsg(null);
+          }}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-tight bg-sky-500/15 text-sky-300 border border-sky-500/35 hover:bg-sky-500/25 active:scale-95 transition-all cursor-pointer shadow-xs text-left"
+          title="Email dispatched to customer mailbox. Awaiting customer open. Click for details."
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
+          <span>✉️ Sent (Unopened)</span>
+        </button>
+      );
+    }
+
+    // 4. If payment pending
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setAuditModalOrder(ord);
+          setResendCustomEmail(ord.email);
+          setResendStatusMsg(null);
+        }}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold text-white/40 bg-white/5 border border-white/10 hover:bg-white/10 active:scale-95 transition-all cursor-pointer text-left"
+        title="Payment pending. Email not sent yet."
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-white/30 shrink-0" />
+        <span>⏳ Unsent</span>
+      </button>
+    );
   };
 
   const renderOrderCredentials = (ord: StoredOrder) => {
@@ -890,8 +1098,8 @@ export default function AdminPage() {
 
       {/* ── Main Content Container ── */}
       <main className="max-w-6xl mx-auto px-3.5 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-6">
-        {/* Metric Summary Cards (2x2 on mobile, 4 columns on tablet/desktop) */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+        {/* Metric Summary Cards (2x2 on mobile, 5 columns on tablet/desktop) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-4">
           <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-lg relative overflow-hidden group hover:border-white/20 transition-all">
             <div className="flex items-center justify-between text-white/50 text-[11px] sm:text-xs font-bold uppercase tracking-wider">
               <span>Total Orders</span>
@@ -920,6 +1128,27 @@ export default function AdminPage() {
             </span>
           </div>
 
+          {/* Email Received & Verified Metric Card */}
+          <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-lg relative overflow-hidden group hover:border-white/20 transition-all">
+            <div className="flex items-center justify-between text-emerald-400/80 text-[11px] sm:text-xs font-bold uppercase tracking-wider">
+              <span>Email Received</span>
+              <span className="text-base sm:text-lg">📬</span>
+            </div>
+            <div className="flex items-baseline gap-2 mt-1.5">
+              <p className="text-xl sm:text-2xl md:text-3xl font-extrabold text-emerald-300">
+                {openedOrdersCount}
+              </p>
+              <span className="text-[11px] text-white/40 font-semibold truncate">
+                / {confirmedOrders.length}
+              </span>
+            </div>
+            <span className="text-[10px] text-emerald-400/70 block mt-0.5 truncate font-medium">
+              {confirmedOrders.length > 0
+                ? `${Math.round((openedOrdersCount / confirmedOrders.length) * 100)}% Delivered & Opened`
+                : "Live Open Tracking"}
+            </span>
+          </div>
+
           <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-lg relative overflow-hidden group hover:border-white/20 transition-all">
             <div className="flex items-center justify-between text-indigo-400/70 text-[11px] sm:text-xs font-bold uppercase tracking-wider">
               <span>Total Revenue</span>
@@ -933,7 +1162,7 @@ export default function AdminPage() {
             </span>
           </div>
 
-          <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-lg relative overflow-hidden group hover:border-white/20 transition-all">
+          <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-lg relative overflow-hidden group hover:border-white/20 transition-all col-span-2 sm:col-span-1">
             <div className="flex items-center justify-between text-sky-400/70 text-[11px] sm:text-xs font-bold uppercase tracking-wider">
               <span>Available Stock</span>
               <span className="text-base sm:text-lg">📦</span>
@@ -959,7 +1188,7 @@ export default function AdminPage() {
         {tab === "orders" && (
           <div className="space-y-4">
             {/* Search & Filter Toolbar */}
-            <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
               {/* Search Bar */}
               <div className="relative flex-1">
                 <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-white/40 text-xs">
@@ -983,22 +1212,53 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* Status Filters */}
-              <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-                {(["all", "confirmed", "pending", "failed"] as const).map((filterStatus) => (
-                  <button
-                    key={filterStatus}
-                    type="button"
-                    onClick={() => setOrderStatusFilter(filterStatus)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize whitespace-nowrap transition-all cursor-pointer ${
-                      orderStatusFilter === filterStatus
-                        ? "bg-indigo-600 text-white shadow-xs"
-                        : "bg-white/5 hover:bg-white/10 text-white/60"
-                    }`}
-                  >
-                    {filterStatus}
-                  </button>
-                ))}
+              {/* Status Filters & Email Filters */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none flex-wrap">
+                {/* Order Status Filters */}
+                <div className="flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/10">
+                  {(["all", "confirmed", "pending", "failed"] as const).map((filterStatus) => (
+                    <button
+                      key={filterStatus}
+                      type="button"
+                      onClick={() => setOrderStatusFilter(filterStatus)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold capitalize whitespace-nowrap transition-all cursor-pointer ${
+                        orderStatusFilter === filterStatus
+                          ? "bg-indigo-600 text-white shadow-xs"
+                          : "text-white/60 hover:text-white hover:bg-white/5"
+                      }`}
+                    >
+                      {filterStatus}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Email Delivery Status Filter */}
+                <div className="flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/10">
+                  <span className="text-[10px] font-bold text-white/40 px-1.5 hidden xl:inline uppercase tracking-wider">
+                    Email:
+                  </span>
+                  {(
+                    [
+                      { id: "all", label: "All" },
+                      { id: "opened", label: "👁️ Received" },
+                      { id: "sent", label: "✉️ Sent" },
+                      { id: "failed", label: "⚠️ Failed" },
+                    ] as const
+                  ).map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setOrderEmailFilter(f.id)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                        orderEmailFilter === f.id
+                          ? "bg-emerald-600 text-white shadow-xs"
+                          : "text-white/60 hover:text-white hover:bg-white/5"
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -1125,6 +1385,36 @@ export default function AdminPage() {
                           </div>
                         </div>
 
+                        {/* Email Delivery & Receipt Status */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-2.5 rounded-lg bg-black/20 border border-white/5 text-xs">
+                          <div className="min-w-0 flex-1">
+                            <span className="text-[10px] uppercase font-bold text-white/40 block mb-1">
+                              Email Delivery Status
+                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">{getEmailStatusBadge(ord)}</div>
+                            {ord.emailOpenedAt ? (
+                              <span className="text-[10px] text-emerald-400/80 font-mono block mt-1">
+                                Opened: {new Date(ord.emailOpenedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            ) : ord.emailSentAt ? (
+                              <span className="text-[10px] text-white/40 font-mono block mt-1">
+                                Sent: {new Date(ord.emailSentAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAuditModalOrder(ord);
+                              setResendCustomEmail(ord.email);
+                              setResendStatusMsg(null);
+                            }}
+                            className="w-full sm:w-auto px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold cursor-pointer transition-colors text-center shrink-0"
+                          >
+                            Audit &amp; Resend
+                          </button>
+                        </div>
+
                         {/* Delivered Credentials */}
                         <div className="pt-1">
                           <span className="text-[10px] uppercase tracking-wider font-bold text-white/40 block mb-1.5">
@@ -1138,13 +1428,14 @@ export default function AdminPage() {
 
                   {/* ── TABLET / DESKTOP VIEW: Data Table (hidden md:block) ── */}
                   <div className="hidden md:block overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs">
+                    <table className="w-full min-w-[850px] text-left border-collapse text-xs">
                       <thead>
                         <tr className="border-b border-white/10 bg-white/[0.02] text-white/45 font-bold uppercase tracking-wider text-[11px]">
                           <th className="py-3 px-4">Order ID</th>
                           <th className="py-3 px-4">Customer</th>
                           <th className="py-3 px-4">Amount</th>
                           <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4">Email Receipt</th>
                           <th className="py-3 px-4">Bank UTR</th>
                           <th className="py-3 px-4">Delivered Accounts</th>
                           <th className="py-3 px-4">Date</th>
@@ -1184,6 +1475,29 @@ export default function AdminPage() {
                             {/* Status */}
                             <td className="py-3.5 px-4 whitespace-nowrap">
                               {getStatusBadge(ord.status)}
+                            </td>
+
+                            {/* Email Receipt Status */}
+                            <td className="py-3.5 px-4 whitespace-nowrap">
+                              <div className="flex flex-col gap-1 items-start">
+                                {getEmailStatusBadge(ord)}
+                                {ord.emailOpenedAt ? (
+                                  <span className="text-[10px] text-emerald-400/80 font-mono flex items-center gap-1">
+                                    <span>🕒</span>
+                                    <span>
+                                      {new Date(ord.emailOpenedAt).toLocaleDateString([], { month: "short", day: "numeric" })}{" "}
+                                      {new Date(ord.emailOpenedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                    </span>
+                                  </span>
+                                ) : ord.emailSentAt ? (
+                                  <span className="text-[10px] text-white/40 font-mono flex items-center gap-1">
+                                    <span>Sent:</span>
+                                    <span>
+                                      {new Date(ord.emailSentAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                    </span>
+                                  </span>
+                                ) : null}
+                              </div>
                             </td>
 
                             {/* Bank UTR */}
@@ -1965,6 +2279,275 @@ export default function AdminPage() {
           </div>
         )}
       </main>
+
+      {/* ── EMAIL RECEIPT & AUDIT MODAL DIALOG ── */}
+      {auditModalOrder && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setAuditModalOrder(null)}
+        >
+          <div
+            className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-[#131033] border border-white/15 p-5 sm:p-7 shadow-2xl space-y-5 text-white text-xs scrollbar-thin"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">📬</span>
+                  <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                    Email Delivery &amp; Receipt Audit
+                  </h3>
+                </div>
+                <p className="text-xs text-white/50">
+                  Verify whether the customer received, opened, or confirmed their credentials email.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAuditModalOrder(null)}
+                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-sm cursor-pointer transition-colors shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Current Receipt Status Highlight Banner */}
+            <div
+              className={`p-4 rounded-xl border flex items-start gap-3.5 ${
+                auditModalOrder.emailOpened || auditModalOrder.emailStatus === "opened"
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-200"
+                  : auditModalOrder.emailStatus === "failed"
+                  ? "bg-red-500/10 border-red-500/30 text-red-200"
+                  : auditModalOrder.emailStatus === "sent" || (auditModalOrder.status === "confirmed" && !auditModalOrder.emailStatus)
+                  ? "bg-sky-500/10 border-sky-500/30 text-sky-200"
+                  : "bg-white/5 border-white/10 text-white/70"
+              }`}
+            >
+              <div className="text-2xl shrink-0 mt-0.5">
+                {auditModalOrder.emailOpened || auditModalOrder.emailStatus === "opened"
+                  ? "✅"
+                  : auditModalOrder.emailStatus === "failed"
+                  ? "❌"
+                  : auditModalOrder.emailStatus === "sent" || (auditModalOrder.status === "confirmed" && !auditModalOrder.emailStatus)
+                  ? "✉️"
+                  : "⏳"}
+              </div>
+              <div className="space-y-1 min-w-0 flex-1">
+                <div className="font-bold text-sm text-white">
+                  {auditModalOrder.emailOpened || auditModalOrder.emailStatus === "opened"
+                    ? "Email Delivered & Received by Customer"
+                    : auditModalOrder.emailStatus === "failed"
+                    ? "Email Delivery Failed"
+                    : auditModalOrder.emailStatus === "sent" || (auditModalOrder.status === "confirmed" && !auditModalOrder.emailStatus)
+                    ? "Email Dispatched — Awaiting Customer Open"
+                    : "Payment Pending — Email Not Sent"}
+                </div>
+                <p className="text-xs opacity-80 leading-relaxed">
+                  {auditModalOrder.emailOpened || auditModalOrder.emailStatus === "opened"
+                    ? `The customer opened this email${
+                        auditModalOrder.emailOpenCount && auditModalOrder.emailOpenCount > 1
+                          ? ` ${auditModalOrder.emailOpenCount} times`
+                          : ""
+                      }${
+                        auditModalOrder.emailConfirmedManually
+                          ? " and verified receipt via the web confirmation portal"
+                          : " (detected by email open tracking pixel)"
+                      }.`
+                    : auditModalOrder.emailStatus === "failed"
+                    ? `Error: ${auditModalOrder.emailError || "SMTP server failed to deliver"}`
+                    : auditModalOrder.emailStatus === "sent" || (auditModalOrder.status === "confirmed" && !auditModalOrder.emailStatus)
+                    ? "The credentials were submitted to Gmail SMTP and delivered to the customer mailbox. Tracking pixel is awaiting customer open."
+                    : "Email will be automatically sent when payment is confirmed."}
+                </p>
+              </div>
+            </div>
+
+            {/* Audit Diagnostics Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Order ID */}
+              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-white/40 block">Order ID</span>
+                <span className="font-mono text-white text-xs font-semibold">{auditModalOrder.orderId}</span>
+              </div>
+
+              {/* Customer Email */}
+              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-white/40 block">Recipient Email</span>
+                  <button
+                    type="button"
+                    onClick={() => copyVal(auditModalOrder.email, "audit-email")}
+                    className="text-[10px] text-white/50 hover:text-white cursor-pointer"
+                  >
+                    {copiedKey === "audit-email" ? "✓ Copied" : "📋 Copy"}
+                  </button>
+                </div>
+                <span className="font-medium text-white text-xs truncate block select-all">{auditModalOrder.email}</span>
+              </div>
+
+              {/* Email Sent At */}
+              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-white/40 block">Dispatched via SMTP</span>
+                <span className="text-white/80 text-xs">
+                  {auditModalOrder.emailSentAt
+                    ? new Date(auditModalOrder.emailSentAt).toLocaleString()
+                    : auditModalOrder.status === "confirmed"
+                    ? "Yes (Automated)"
+                    : "Not sent"}
+                </span>
+                {auditModalOrder.emailResentCount ? (
+                  <span className="text-[10px] text-indigo-400 block font-semibold">
+                    Resent {auditModalOrder.emailResentCount} time(s)
+                  </span>
+                ) : null}
+              </div>
+
+              {/* Email Opened At */}
+              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-white/40 block">First Opened / Received</span>
+                <span className="text-white/80 text-xs">
+                  {auditModalOrder.emailOpenedAt
+                    ? new Date(auditModalOrder.emailOpenedAt).toLocaleString()
+                    : "Awaiting open detection"}
+                </span>
+                {auditModalOrder.emailLastOpenedAt && auditModalOrder.emailLastOpenedAt !== auditModalOrder.emailOpenedAt ? (
+                  <span className="text-[10px] text-emerald-400/80 block font-mono">
+                    Last: {new Date(auditModalOrder.emailLastOpenedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                ) : null}
+              </div>
+
+              {/* Message ID */}
+              {auditModalOrder.emailMessageId && (
+                <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 col-span-1 sm:col-span-2">
+                  <span className="text-[10px] uppercase font-bold text-white/40 block">SMTP Message ID</span>
+                  <span className="font-mono text-[11px] text-white/70 break-all select-all">
+                    {auditModalOrder.emailMessageId}
+                  </span>
+                </div>
+              )}
+
+              {/* Client User Agent (Device) */}
+              {auditModalOrder.emailClientUserAgent && (
+                <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 col-span-1 sm:col-span-2">
+                  <span className="text-[10px] uppercase font-bold text-white/40 block">Email Client / Proxy Device</span>
+                  <span className="font-mono text-[10px] text-white/60 break-all">
+                    {auditModalOrder.emailClientUserAgent}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Resend Action Form */}
+            <div className="p-4 rounded-xl bg-white/[0.04] border border-white/10 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs text-white flex items-center gap-1.5">
+                  <span>✉️</span> Resend Credentials Email
+                </span>
+                <span className="text-[10px] text-white/40">
+                  Deliver immediately with live tracking pixel
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <input
+                  type="email"
+                  value={resendCustomEmail}
+                  onChange={(e) => setResendCustomEmail(e.target.value)}
+                  placeholder="Recipient email address…"
+                  className="flex-1 px-3.5 py-2 rounded-lg bg-black/40 border border-white/15 text-white text-xs placeholder-white/30 outline-none focus:border-indigo-500 transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleResendEmail(auditModalOrder.orderId, resendCustomEmail)}
+                  disabled={resendingEmail || !resendCustomEmail.trim()}
+                  className="px-4 py-2 rounded-lg font-bold text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-indigo-600/20 shrink-0"
+                >
+                  {resendingEmail ? (
+                    <>
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Sending…</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>📧 Resend Now</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {resendStatusMsg && (
+                <div
+                  className={`text-xs p-2.5 rounded-lg flex items-center gap-2 ${
+                    resendStatusMsg.type === "success"
+                      ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
+                      : "bg-red-500/20 border border-red-500/30 text-red-300"
+                  }`}
+                >
+                  <span>{resendStatusMsg.type === "success" ? "✅" : "⚠️"}</span>
+                  <span>{resendStatusMsg.text}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Secondary Actions: Manual Override & Direct Links */}
+            <div className="space-y-2 pt-1 border-t border-white/10">
+              <span className="text-[10px] uppercase font-bold text-white/40 block">
+                Verification Tools &amp; Manual Override
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Toggle Manual Confirmation */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleToggleManualReceipt(
+                      auditModalOrder.orderId,
+                      !(auditModalOrder.emailOpened || auditModalOrder.emailStatus === "opened")
+                    )
+                  }
+                  disabled={togglingManualReceipt}
+                  className={`px-3 py-2 rounded-lg font-semibold text-xs border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    auditModalOrder.emailOpened || auditModalOrder.emailStatus === "opened"
+                      ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-300"
+                      : "bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
+                  }`}
+                >
+                  {togglingManualReceipt ? (
+                    <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : auditModalOrder.emailOpened || auditModalOrder.emailStatus === "opened" ? (
+                    "↩️ Mark as Unopened"
+                  ) : (
+                    "✅ Mark Received Manually"
+                  )}
+                </button>
+
+                {/* Copy Receipt Link */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const confirmUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/api/track-email/confirm?orderId=${encodeURIComponent(auditModalOrder.orderId)}`;
+                    copyVal(confirmUrl, `audit-conf-${auditModalOrder.orderId}`);
+                  }}
+                  className="px-3 py-2 rounded-lg font-semibold text-xs bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  {copiedKey === `audit-conf-${auditModalOrder.orderId}` ? "✓ Link Copied" : "🔗 Copy Web Receipt Link"}
+                </button>
+
+                {/* Open Confirmation Page in New Tab (Test) */}
+                <a
+                  href={`/api/track-email/confirm?orderId=${encodeURIComponent(auditModalOrder.orderId)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-2 rounded-lg font-semibold text-xs bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  ↗️ Open Web Voucher
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

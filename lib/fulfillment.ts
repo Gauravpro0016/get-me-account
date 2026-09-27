@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer";
+import nodemailer, { type SentMessageInfo } from "nodemailer";
 import { Redis } from "@upstash/redis";
 import { APP_CONFIG } from "@/lib/config";
 
@@ -146,9 +146,19 @@ export async function sendCredentialEmail({
   utr?: string;
   senderName?: string;
   amount?: number | string;
-}): Promise<void> {
+}): Promise<SentMessageInfo> {
   const allCreds = credentials && credentials.length > 0 ? credentials : (credential ? [credential] : []);
   const qty = allCreds.length;
+
+  const baseUrl = (
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
+    "https://get-me-account.vercel.app"
+  ).replace(/\/+$/, "");
+
+  const trackingPixelUrl = `${baseUrl}/api/track-email?orderId=${encodeURIComponent(orderId)}`;
+  const confirmReceiptUrl = `${baseUrl}/api/track-email/confirm?orderId=${encodeURIComponent(orderId)}`;
 
   const credentialsHtml = allCreds
     .map(
@@ -200,7 +210,7 @@ export async function sendCredentialEmail({
     )
     .join("");
 
-  await transporter.sendMail({
+  return await transporter.sendMail({
     from: `"Get Your Account" <${process.env.GMAIL_USER}>`,
     to: email,
     subject: `✅ Your Nitro Booster Account(s) [${qty} Delivered] — Payment Confirmed`,
@@ -271,6 +281,19 @@ export async function sendCredentialEmail({
                       </table>
                     </div>
 
+                    <!-- Delivery Receipt Confirmation Box -->
+                    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:18px 20px;margin:20px 0;text-align:center;">
+                      <p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#1e40af;">
+                        📬 Confirm Delivery & Access Web Receipt
+                      </p>
+                      <p style="margin:0 0 12px;font-size:12px;color:#3b82f6;line-height:1.4;">
+                        Confirm that you have received your credentials and view your warranty status and receipt online anytime.
+                      </p>
+                      <a href="${confirmReceiptUrl}" target="_blank" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:10px 22px;border-radius:8px;font-weight:600;font-size:13px;box-shadow:0 2px 4px rgba(37,99,235,0.2);">
+                        ✅ Confirm Receipt Online
+                      </a>
+                    </div>
+
                     <!-- Discord 24/7 Support Box -->
                     <div style="background:linear-gradient(135deg,rgba(88,101,242,0.1),rgba(124,58,237,0.1));border:1px solid rgba(88,101,242,0.3);border-radius:12px;padding:20px;text-align:center;margin:24px 0;">
                       <p style="margin:0 0 6px;font-weight:700;color:#5865F2;font-size:15px;">Need Help? 24/7 Support on Discord</p>
@@ -295,6 +318,8 @@ export async function sendCredentialEmail({
             </td>
           </tr>
         </table>
+        <!-- Invisible 1x1 Delivery Tracking Pixel -->
+        <img src="${trackingPixelUrl}" width="1" height="1" alt="" style="display:none!important;width:1px!important;height:1px!important;border:0!important;outline:none!important;opacity:0!important;" />
       </body>
       </html>
     `,
@@ -377,7 +402,7 @@ export async function fulfillOrder({
 
   // Send email to customer
   try {
-    await sendCredentialEmail({
+    const sentInfo = await sendCredentialEmail({
       email,
       orderId,
       credential: claimedList[0],
@@ -387,12 +412,20 @@ export async function fulfillOrder({
       amount,
     });
     console.log(`${claimedList.length} credentials delivered to ${email} for orderId=${orderId}`);
+    await recordEmailSent(orderId, {
+      messageId: sentInfo?.messageId,
+      recipient: email,
+      response: sentInfo?.response,
+    });
   } catch (err) {
     console.error("Failed to send email:", err);
+    await recordEmailFailed(orderId, err instanceof Error ? err.message : String(err));
   }
 
   return { success: true, credential: claimedList[0], credentials: claimedList };
 }
+
+export type EmailDeliveryStatus = "pending" | "sent" | "opened" | "failed";
 
 export type StoredOrder = {
   orderId: string;
@@ -415,9 +448,26 @@ export type StoredOrder = {
     keyweb?: string;
   };
   deliveredCredentials?: Credential[];
+  // ── Email tracking & delivery confirmation fields ─────────────────────────
+  emailStatus?: EmailDeliveryStatus;
+  emailSentAt?: string;
+  emailRecipient?: string;
+  emailMessageId?: string;
+  emailDeliveryResponse?: string;
+  emailError?: string;
+  emailOpened?: boolean;
+  emailOpenedAt?: string;
+  emailLastOpenedAt?: string;
+  emailOpenCount?: number;
+  emailClientUserAgent?: string;
+  emailClientIp?: string;
+  emailConfirmedManually?: boolean;
+  emailResentCount?: number;
+  emailLastResentAt?: string;
 };
 
 export const ORDERS_HISTORY_KEY = "orders_history";
+export const EMAIL_TRACK_KEY = (orderId: string) => `email_track:${orderId}`;
 
 export async function recordNewOrder(data: {
   orderId: string;
@@ -433,6 +483,7 @@ export async function recordNewOrder(data: {
     quantity,
     status: "pending",
     createdAt: new Date().toISOString(),
+    emailStatus: "pending",
   };
 
   await storeOrder(data.orderId, {
@@ -494,8 +545,205 @@ export async function markOrderConfirmedInHistory({
   }
 }
 
+/**
+ * Record that an email has been successfully sent to customer.
+ */
+export async function recordEmailSent(
+  orderId: string,
+  info: { messageId?: string; recipient?: string; response?: string }
+): Promise<void> {
+  const now = new Date().toISOString();
+
+  // 1. Fast individual track key in Redis
+  try {
+    await redis.hset(EMAIL_TRACK_KEY(orderId), {
+      status: "sent",
+      sentAt: now,
+      messageId: info.messageId || "",
+      recipient: info.recipient || "",
+      response: info.response || "",
+    });
+  } catch (e) {
+    console.warn("Could not update quick email_track key:", e);
+  }
+
+  // 2. Global orders history update
+  try {
+    const history = (await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY)) ?? [];
+    const idx = history.findIndex((o) => o.orderId === orderId);
+    if (idx !== -1) {
+      if (history[idx].emailStatus !== "opened") {
+        history[idx].emailStatus = "sent";
+      }
+      history[idx].emailSentAt = now;
+      if (info.messageId) history[idx].emailMessageId = info.messageId;
+      if (info.recipient) history[idx].emailRecipient = info.recipient;
+      if (info.response) history[idx].emailDeliveryResponse = info.response;
+      history[idx].emailError = undefined;
+      await redis.set(ORDERS_HISTORY_KEY, history);
+    }
+  } catch (err) {
+    console.warn("Could not update email sent in orders_history:", err);
+  }
+}
+
+/**
+ * Record that sending an email to customer failed.
+ */
+export async function recordEmailFailed(orderId: string, error: string): Promise<void> {
+  try {
+    const history = (await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY)) ?? [];
+    const idx = history.findIndex((o) => o.orderId === orderId);
+    if (idx !== -1) {
+      history[idx].emailStatus = "failed";
+      history[idx].emailError = error;
+      await redis.set(ORDERS_HISTORY_KEY, history);
+    }
+  } catch (err) {
+    console.warn("Could not update email failure in orders_history:", err);
+  }
+}
+
+/**
+ * Triggered when customer opens the email (tracking pixel) or clicks web confirmation button.
+ */
+export async function markEmailOpened(
+  orderId: string,
+  meta?: { userAgent?: string; ip?: string; manual?: boolean }
+): Promise<StoredOrder | null> {
+  const now = new Date().toISOString();
+
+  // Fast tracking record
+  try {
+    await redis.hset(EMAIL_TRACK_KEY(orderId), {
+      status: "opened",
+      opened: "1",
+      lastOpenedAt: now,
+      userAgent: meta?.userAgent || "",
+      ip: meta?.ip || "",
+      manual: meta?.manual ? "1" : "0",
+    });
+    await redis.hincrby(EMAIL_TRACK_KEY(orderId), "openCount", 1);
+  } catch (e) {
+    console.warn("Could not update quick email_track key:", e);
+  }
+
+  // Update orders history
+  try {
+    const history = (await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY)) ?? [];
+    const idx = history.findIndex((o) => o.orderId === orderId);
+    if (idx !== -1) {
+      const order = history[idx];
+      order.emailStatus = "opened";
+      order.emailOpened = true;
+      if (!order.emailOpenedAt) {
+        order.emailOpenedAt = now;
+      }
+      order.emailLastOpenedAt = now;
+      order.emailOpenCount = (order.emailOpenCount || 0) + 1;
+      if (meta?.userAgent) order.emailClientUserAgent = meta.userAgent;
+      if (meta?.ip) order.emailClientIp = meta.ip;
+      if (meta?.manual) order.emailConfirmedManually = true;
+      await redis.set(ORDERS_HISTORY_KEY, history);
+      return order;
+    }
+  } catch (err) {
+    console.warn("Could not update email opened in orders_history:", err);
+  }
+  return null;
+}
+
+/**
+ * Manually toggle or set email receipt status by admin.
+ */
+export async function manuallySetEmailStatus(
+  orderId: string,
+  received: boolean
+): Promise<StoredOrder | null> {
+  try {
+    const history = (await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY)) ?? [];
+    const idx = history.findIndex((o) => o.orderId === orderId);
+    if (idx !== -1) {
+      const order = history[idx];
+      const now = new Date().toISOString();
+      if (received) {
+        order.emailStatus = "opened";
+        order.emailOpened = true;
+        if (!order.emailOpenedAt) order.emailOpenedAt = now;
+        order.emailLastOpenedAt = now;
+        order.emailConfirmedManually = true;
+      } else {
+        order.emailStatus = "sent";
+        order.emailOpened = false;
+        order.emailConfirmedManually = false;
+      }
+      await redis.set(ORDERS_HISTORY_KEY, history);
+      return order;
+    }
+  } catch (err) {
+    console.warn("Could not manually set email status:", err);
+  }
+  return null;
+}
+
+/**
+ * Admin action to resend the credential email to a customer.
+ */
+export async function resendOrderEmail(
+  orderId: string,
+  overrideEmail?: string
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  const credentials = await getFulfilledCredentials(orderId);
+  if (!credentials || credentials.length === 0) {
+    return { success: false, error: "No credentials found for this order ID in database." };
+  }
+
+  const history = await getAllOrders();
+  const order = history.find((o) => o.orderId === orderId);
+  const targetEmail = overrideEmail?.trim() || order?.email;
+
+  if (!targetEmail) {
+    return { success: false, error: "No customer email address found for this order." };
+  }
+
+  try {
+    const sentInfo = await sendCredentialEmail({
+      email: targetEmail,
+      orderId,
+      credentials,
+      credential: credentials[0],
+      utr: order?.utr,
+      senderName: order?.senderName,
+      amount: order?.amount || APP_CONFIG.price,
+    });
+
+    const now = new Date().toISOString();
+    const idx = history.findIndex((o) => o.orderId === orderId);
+    if (idx !== -1) {
+      history[idx].email = targetEmail;
+      history[idx].emailRecipient = targetEmail;
+      history[idx].emailSentAt = now;
+      history[idx].emailMessageId = sentInfo?.messageId;
+      history[idx].emailResentCount = (history[idx].emailResentCount || 0) + 1;
+      history[idx].emailLastResentAt = now;
+      history[idx].emailError = undefined;
+      await redis.set(ORDERS_HISTORY_KEY, history);
+    }
+
+    return { success: true, messageId: sentInfo?.messageId };
+  } catch (err) {
+    console.error("Resend email failed:", err);
+    await recordEmailFailed(orderId, err instanceof Error ? err.message : String(err));
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to resend email",
+    };
+  }
+}
+
 export async function getAllOrders(): Promise<StoredOrder[]> {
   const history = await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY);
   return history ?? [];
 }
+
 
