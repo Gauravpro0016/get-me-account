@@ -18,7 +18,14 @@ import {
   AlertTriangle,
   AlertCircle,
 } from "lucide-react";
-import { getProductById, getAllProducts, Product } from "@/lib/products";
+import {
+  getProductById,
+  getAllProducts,
+  getClientInitialProducts,
+  Product,
+  ACTIVE_PRODUCTS_CACHE_KEY,
+  REMOVED_IDS_CACHE_KEY,
+} from "@/lib/products";
 import { ProductIcon } from "@/components/ProductIcons";
 import { ProductReviews } from "@/components/ProductReviews";
 import { ProductListScrollBar } from "@/components/ProductListScrollBar";
@@ -30,8 +37,8 @@ export default function ProductDetailPage() {
   const router = useRouter();
   const id = typeof params.id === "string" ? params.id : "";
 
-  const [product, setProduct] = useState<Product | undefined>(getProductById(id));
-  const [allProducts, setAllProducts] = useState<Product[]>(getAllProducts());
+  const [product, setProduct] = useState<Product | undefined>(() => getProductById(id));
+  const [allProducts, setAllProducts] = useState<Product[]>(getClientInitialProducts);
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
   const { addToCart, openCheckoutWithProduct, setIsCartOpen } = useCart();
@@ -45,6 +52,12 @@ export default function ProductDetailPage() {
           setAllProducts(data.products);
           const found = data.products.find((p: Product) => p.id === id);
           if (found) setProduct(found);
+          try {
+            localStorage.setItem(ACTIVE_PRODUCTS_CACHE_KEY, JSON.stringify(data.products));
+            if (data.removedIds && Array.isArray(data.removedIds)) {
+              localStorage.setItem(REMOVED_IDS_CACHE_KEY, JSON.stringify(data.removedIds));
+            }
+          } catch {}
         }
       } catch (e) {
         console.warn("Failed to load dynamic product:", e);

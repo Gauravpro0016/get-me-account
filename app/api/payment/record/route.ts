@@ -110,7 +110,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. Verify with FamGateway API whether payment actually settled in merchant bank
+    // 3. Strict Gateway Verification with FamGateway API
+    // Ensure payment actually settled in merchant bank account
     const apiKey = process.env.FAMGATEWAY_API_KEY;
     let gatewayVerified = false;
     let fgUtr: string | undefined = undefined;
@@ -163,11 +164,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // If gateway did not verify receipt of payment, reject fake/unverified UTR
+    // Require genuine gateway bank verification
     if (!gatewayVerified) {
       return NextResponse.json(
         {
-          error: `Payment verification failed: No matching bank credit found for UTR "${cleanUtr}" on FamGateway. Please ensure you completed payment in your UPI app and try again in 30 seconds.`,
+          error: `Payment verification failed: No matching bank settlement found on FamGateway for Order "${orderId}". Please ensure you completed payment in your UPI app and try again in 30 seconds.`,
         },
         { status: 400 }
       );

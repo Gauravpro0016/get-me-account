@@ -363,11 +363,53 @@ export const CATEGORIES = [
 
 export type CategoryType = (typeof CATEGORIES)[number];
 
+export const ACTIVE_PRODUCTS_CACHE_KEY = "trinitymart_active_products_cache";
+export const REMOVED_IDS_CACHE_KEY = "trinitymart_removed_product_ids_cache";
+
+/**
+ * Returns the client-side initial product catalog.
+ * Uses cached live products or filtered defaults from localStorage if available,
+ * preventing removed products from momentarily showing on page reload.
+ */
+export function getClientInitialProducts(): Product[] {
+  if (typeof window !== "undefined") {
+    try {
+      const cached = localStorage.getItem(ACTIVE_PRODUCTS_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+      const removed = localStorage.getItem(REMOVED_IDS_CACHE_KEY);
+      if (removed) {
+        const removedIds = JSON.parse(removed);
+        if (Array.isArray(removedIds) && removedIds.length > 0) {
+          return PRODUCTS.filter((p) => !removedIds.includes(p.id));
+        }
+      }
+    } catch {}
+  }
+  return PRODUCTS;
+}
+
 export function getAllProducts(): Product[] {
   return PRODUCTS;
 }
 
 export function getProductById(id: string): Product | undefined {
+  if (typeof window !== "undefined") {
+    try {
+      const cached = localStorage.getItem(ACTIVE_PRODUCTS_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const found = parsed.find((p: Product) => p.id === id);
+          if (found) return found;
+        }
+      }
+    } catch {}
+  }
   return PRODUCTS.find((p) => p.id === id);
 }
 

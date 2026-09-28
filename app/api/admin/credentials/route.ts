@@ -164,6 +164,8 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ success: true, credential: newCredential }, { status: 201 });
 }
 
+import { markCredentialDeleted } from "@/lib/fulfillment";
+
 // DELETE — remove a credential by id
 export async function DELETE(req: NextRequest) {
   if (!checkAdmin(req)) {
@@ -176,12 +178,55 @@ export async function DELETE(req: NextRequest) {
   }
 
   const pool = await readPool();
+  const target = pool.find((c) => c.id === id);
   const next = pool.filter((c) => c.id !== id);
 
-  if (next.length === pool.length) {
+  if (next.length === pool.length && !target) {
     return NextResponse.json({ error: "Credential not found" }, { status: 404 });
   }
 
   await writePool(next);
-  return NextResponse.json({ success: true });
+
+  // 1. Add to permanent deleted blacklist so it can NEVER be sent or auto-migrated again
+  const identifiersToDelete = [id];
+  if (target?.email) identifiersToDelete.push(target.email);
+  if (target?.token) identifiersToDelete.push(target.token);
+  await markCredentialDeleted(identifiersToDelete);
+
+  // 2. Also remove from trinitymart_inventory_discord-nitro-booster
+  try {
+    const nitroKey = "trinitymart_inventory_discord-nitro-booster";
+    const nitroInv = (await redis.get<any[]>(nitroKey)) || [];
+    if (Array.isArray(nitroInv) && nitroInv.length > 0) {
+      const updatedNitro = nitroInv.filter(
+        (item) =>
+          item.id !== id &&
+          (!target?.email || (item.fields?.email !== target.email && item.fields?.id !== target.email)) &&
+          (!target?.token || item.fields?.token !== target.token)
+      );
+      if (updatedNitro.length !== nitroInv.length) {
+        await redis.set(nitroKey, updatedNitro);
+
+        // Update overrides stock count
+        let overrides: Record<string, any> = {};
+        try {
+          overrides = (await redis.get<Record<string, any>>("trinitymart_product_overrides")) || {};
+        } catch {
+          overrides = {};
+        }
+        overrides["discord-nitro-booster"] = {
+          ...(overrides["discord-nitro-booster"] || {}),
+          id: "discord-nitro-booster",
+          stockCount: updatedNitro.length,
+          inStock: updatedNitro.length > 0,
+          updatedAt: new Date().toISOString(),
+        };
+        await redis.set("trinitymart_product_overrides", overrides);
+      }
+    }
+  } catch (e) {
+    console.warn("Could not sync nitro inventory on credential delete:", e);
+  }
+
+  return NextResponse.json({ success: true, deletedId: id });
 }

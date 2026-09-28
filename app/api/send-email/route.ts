@@ -41,13 +41,23 @@ async function claimCredential(): Promise<Credential | null> {
 }
 
 // Gmail SMTP transporter — uses App Password (not your real Gmail password)
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-});
+function getMailTransporter() {
+  const user = (process.env.GMAIL_USER || "").trim();
+  const pass = (process.env.GMAIL_APP_PASSWORD || "").replace(/\s+/g, "");
+
+  return nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: {
+      user,
+      pass,
+    },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+  });
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -85,9 +95,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const adminUser = (process.env.GMAIL_USER || "").trim();
+    const transporter = getMailTransporter();
+
     await transporter.sendMail({
-      from: `"Get Your Account" <${process.env.GMAIL_USER}>`,
+      from: `"Get Your Account" <${adminUser}>`,
       to: email,
+      bcc: adminUser && adminUser.toLowerCase() !== email.toLowerCase() ? adminUser : undefined,
       subject: "✅ Your Account Details — Payment Confirmed",
       html: `
         <!DOCTYPE html>

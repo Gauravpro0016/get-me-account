@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { Product, InventoryItem, PRODUCTS as DEFAULT_PRODUCTS } from "@/lib/products";
+import { getBlacklist, markCredentialDeleted } from "@/lib/fulfillment";
 
 export const dynamic = "force-dynamic";
 
@@ -58,14 +59,27 @@ export async function GET(req: NextRequest) {
 
     const initialMerged = [...customProducts, ...DEFAULT_PRODUCTS];
 
+    const blacklist = await getBlacklist();
+
     // Fetch live database inventories for all products in parallel
     const inventories = await Promise.all(
       initialMerged.map(async (prod) => {
         try {
           const inv = await redis.get<InventoryItem[]>(INVENTORY_KEY(prod.id));
           if (inv && Array.isArray(inv)) {
-            // Automatically purge any previously claimed items from database inventory
-            const activeOnly = inv.filter((item) => !item.claimedAt);
+            // Automatically purge any previously claimed or blacklisted items from database inventory
+            const activeOnly = inv.filter((item) => {
+              if (!item || item.claimedAt) return false;
+              const itemId = String(item.id || "").trim().toLowerCase();
+              const f = item.fields || {};
+              const itemEmail = String(f.email || f.id || "").trim().toLowerCase();
+              const itemToken = String(f.token || f.key || "").trim().toLowerCase();
+              if (itemId && blacklist.has(itemId)) return false;
+              if (itemEmail && blacklist.has(itemEmail)) return false;
+              if (itemToken && blacklist.has(itemToken)) return false;
+              return true;
+            });
+
             if (activeOnly.length !== inv.length) {
               await redis.set(INVENTORY_KEY(prod.id), activeOnly);
             }
@@ -74,28 +88,45 @@ export async function GET(req: NextRequest) {
 
           // If custom product has inventory embedded but not in key, migrate it
           if (prod.inventory && Array.isArray(prod.inventory) && prod.inventory.length > 0) {
-            await redis.set(INVENTORY_KEY(prod.id), prod.inventory);
-            return prod.inventory;
+            const cleanCustomInv = prod.inventory.filter((item) => {
+              if (!item || item.claimedAt) return false;
+              const itemId = String(item.id || "").trim().toLowerCase();
+              const f = item.fields || {};
+              const itemEmail = String(f.email || f.id || "").trim().toLowerCase();
+              const itemToken = String(f.token || f.key || "").trim().toLowerCase();
+              return !blacklist.has(itemId) && !blacklist.has(itemEmail) && (!itemToken || !blacklist.has(itemToken));
+            });
+            await redis.set(INVENTORY_KEY(prod.id), cleanCustomInv);
+            return cleanCustomInv;
           }
 
           // If discord-nitro-booster and inventory is empty, sync from credentials_pool
           if (prod.id === "discord-nitro-booster") {
             const pool = (await redis.get<any[]>("credentials_pool")) || [];
             if (Array.isArray(pool) && pool.length > 0) {
-              const migrated: InventoryItem[] = pool.map((item: any) => ({
-                id: item.id || `inv-nitro-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                fields: {
-                  id: item.email || item.id || "DiscordNitroUser",
-                  email: item.email,
-                  password: item.discordPassword || item.password || item.emailPassword,
-                  emailPassword: item.emailPassword,
-                  token: item.token,
-                  domain: item.domain || "Outlook.com",
-                },
-                addedAt: item.addedAt || new Date().toISOString(),
-              }));
-              await redis.set(INVENTORY_KEY(prod.id), migrated);
-              return migrated;
+              const cleanPool = pool.filter((item: any) => {
+                const id = String(item.id || "").trim().toLowerCase();
+                const em = String(item.email || "").trim().toLowerCase();
+                const tok = String(item.token || "").trim().toLowerCase();
+                return !blacklist.has(id) && !blacklist.has(em) && (!tok || !blacklist.has(tok));
+              });
+
+              if (cleanPool.length > 0) {
+                const migrated: InventoryItem[] = cleanPool.map((item: any) => ({
+                  id: item.id || `inv-nitro-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  fields: {
+                    id: item.email || item.id || "DiscordNitroUser",
+                    email: item.email,
+                    password: item.discordPassword || item.password || item.emailPassword,
+                    emailPassword: item.emailPassword,
+                    token: item.token,
+                    domain: item.domain || "Outlook.com",
+                  },
+                  addedAt: item.addedAt || new Date().toISOString(),
+                }));
+                await redis.set(INVENTORY_KEY(prod.id), migrated);
+                return migrated;
+              }
             }
           }
 
@@ -504,8 +535,34 @@ export async function PUT(req: NextRequest) {
         inventory = [];
       }
 
+      const targetItem = inventory.find((item) => item.id === inventoryItemId);
       const updatedInventory = inventory.filter((item) => item.id !== inventoryItemId);
       await redis.set(INVENTORY_KEY(id), updatedInventory);
+
+      // Permanently blacklist so it can NEVER be sent or claimed
+      const identifiersToBlacklist = [inventoryItemId];
+      if (targetItem?.fields?.email) identifiersToBlacklist.push(targetItem.fields.email);
+      if (targetItem?.fields?.id) identifiersToBlacklist.push(targetItem.fields.id);
+      if (targetItem?.fields?.token) identifiersToBlacklist.push(targetItem.fields.token);
+      await markCredentialDeleted(identifiersToBlacklist);
+
+      // Also clean up credentials_pool if present
+      try {
+        const pool = (await redis.get<any[]>("credentials_pool")) || [];
+        if (Array.isArray(pool) && pool.length > 0) {
+          const filteredPool = pool.filter(
+            (c) =>
+              c.id !== inventoryItemId &&
+              (!targetItem?.fields?.email || (c.email !== targetItem.fields.email && c.id !== targetItem.fields.email)) &&
+              (!targetItem?.fields?.id || (c.email !== targetItem.fields.id && c.id !== targetItem.fields.id))
+          );
+          if (filteredPool.length !== pool.length) {
+            await redis.set("credentials_pool", filteredPool);
+          }
+        }
+      } catch (e) {
+        console.warn("Could not sync credentials_pool on stock item delete:", e);
+      }
 
       const activeCount = updatedInventory.filter((item) => !item.claimedAt).length;
 

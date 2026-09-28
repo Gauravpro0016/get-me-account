@@ -18,9 +18,12 @@ import {
   ExternalLink,
 } from "lucide-react";
 import {
+  getClientInitialProducts,
   getAllProducts,
   Product,
   CATEGORIES,
+  ACTIVE_PRODUCTS_CACHE_KEY,
+  REMOVED_IDS_CACHE_KEY,
 } from "@/lib/products";
 import { ProductCard } from "@/components/ProductCard";
 import { ProductListScrollBar } from "@/components/ProductListScrollBar";
@@ -33,7 +36,7 @@ export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState<string>("" );
   const [sortBy, setSortBy] = useState<string>("featured");
-  const [allProducts, setAllProducts] = useState<Product[]>(getAllProducts());
+  const [allProducts, setAllProducts] = useState<Product[]>(getClientInitialProducts);
 
   const heroRef = useRef<HTMLDivElement>(null);
   const headlineRef = useRef<HTMLHeadingElement>(null);
@@ -49,6 +52,12 @@ export default function HomePage() {
         const data = await res.json();
         if (data.products && Array.isArray(data.products)) {
           setAllProducts(data.products);
+          try {
+            localStorage.setItem(ACTIVE_PRODUCTS_CACHE_KEY, JSON.stringify(data.products));
+            if (data.removedIds && Array.isArray(data.removedIds)) {
+              localStorage.setItem(REMOVED_IDS_CACHE_KEY, JSON.stringify(data.removedIds));
+            }
+          } catch {}
         }
       } catch (e) {
         console.warn("Could not fetch latest products, using default catalog:", e);

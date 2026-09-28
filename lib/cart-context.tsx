@@ -49,7 +49,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       const saved = localStorage.getItem("trinitymart_cart");
       if (saved) {
-        setItems(JSON.parse(saved));
+        const loaded: CartItem[] = JSON.parse(saved);
+        const removedRaw = localStorage.getItem("trinitymart_removed_product_ids_cache");
+        const removedIds: string[] = removedRaw ? JSON.parse(removedRaw) : [];
+        const clean = Array.isArray(loaded)
+          ? loaded.filter((item) => item?.product?.id && !removedIds.includes(item.product.id))
+          : [];
+        setItems(clean);
       }
     } catch (e) {
       console.warn("Failed to load cart:", e);

@@ -28,7 +28,7 @@ import {
   Upload,
   Maximize2,
 } from "lucide-react";
-import { Product } from "@/lib/products";
+import { Product, ACTIVE_PRODUCTS_CACHE_KEY, REMOVED_IDS_CACHE_KEY } from "@/lib/products";
 import { ProductIcon } from "./ProductIcons";
 import { APP_CONFIG } from "@/lib/config";
 
@@ -219,6 +219,12 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
       const data = await res.json();
       if (data.allProducts) {
         setActiveProducts(data.allProducts);
+        try {
+          localStorage.setItem(ACTIVE_PRODUCTS_CACHE_KEY, JSON.stringify(data.allProducts));
+          if (data.removedIds && Array.isArray(data.removedIds)) {
+            localStorage.setItem(REMOVED_IDS_CACHE_KEY, JSON.stringify(data.removedIds));
+          }
+        } catch {}
       }
       if (data.removedProducts) {
         setRemovedProducts(data.removedProducts);
@@ -369,6 +375,21 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
       const data = await res.json();
       if (data.success) {
         setStatusMsg({ type: "success", text: `Removed "${prodName}" from active store.` });
+        try {
+          const removedRaw = localStorage.getItem(REMOVED_IDS_CACHE_KEY);
+          const currentRemoved = removedRaw ? JSON.parse(removedRaw) : [];
+          if (!currentRemoved.includes(id)) currentRemoved.push(id);
+          localStorage.setItem(REMOVED_IDS_CACHE_KEY, JSON.stringify(currentRemoved));
+
+          const activeRaw = localStorage.getItem(ACTIVE_PRODUCTS_CACHE_KEY);
+          if (activeRaw) {
+            const currentActive: Product[] = JSON.parse(activeRaw);
+            localStorage.setItem(
+              ACTIVE_PRODUCTS_CACHE_KEY,
+              JSON.stringify(currentActive.filter((p) => p.id !== id))
+            );
+          }
+        } catch {}
         loadProducts();
       } else {
         alert(data.error || "Failed to remove product");
@@ -392,6 +413,14 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
       const data = await res.json();
       if (data.success) {
         setStatusMsg({ type: "success", text: `Restored "${prodName}" back to active store!` });
+        try {
+          const removedRaw = localStorage.getItem(REMOVED_IDS_CACHE_KEY);
+          if (removedRaw) {
+            const currentRemoved = JSON.parse(removedRaw).filter((rid: string) => rid !== id);
+            localStorage.setItem(REMOVED_IDS_CACHE_KEY, JSON.stringify(currentRemoved));
+          }
+          localStorage.removeItem(ACTIVE_PRODUCTS_CACHE_KEY);
+        } catch {}
         loadProducts();
       } else {
         alert(data.error || "Failed to restore product");

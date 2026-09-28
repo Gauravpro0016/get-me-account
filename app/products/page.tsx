@@ -10,7 +10,14 @@ import {
   ArrowUpDown,
   CheckCircle2,
 } from "lucide-react";
-import { getAllProducts, CATEGORIES, Product } from "@/lib/products";
+import {
+  getClientInitialProducts,
+  getAllProducts,
+  CATEGORIES,
+  Product,
+  ACTIVE_PRODUCTS_CACHE_KEY,
+  REMOVED_IDS_CACHE_KEY,
+} from "@/lib/products";
 import { ProductCard } from "@/components/ProductCard";
 import { SearchBar } from "@/components/SearchBar";
 import { ProductListScrollBar } from "@/components/ProductListScrollBar";
@@ -24,7 +31,7 @@ function ProductsContent() {
   const [searchQuery, setSearchQuery] = useState<string>(initialQuery);
   const [sortBy, setSortBy] = useState<string>("featured");
   const [inStockOnly, setInStockOnly] = useState<boolean>(false);
-  const [allProducts, setAllProducts] = useState<Product[]>(getAllProducts());
+  const [allProducts, setAllProducts] = useState<Product[]>(getClientInitialProducts);
 
   // Fetch live products including any added by admin
   useEffect(() => {
@@ -34,6 +41,12 @@ function ProductsContent() {
         const data = await res.json();
         if (data.products && Array.isArray(data.products)) {
           setAllProducts(data.products);
+          try {
+            localStorage.setItem(ACTIVE_PRODUCTS_CACHE_KEY, JSON.stringify(data.products));
+            if (data.removedIds && Array.isArray(data.removedIds)) {
+              localStorage.setItem(REMOVED_IDS_CACHE_KEY, JSON.stringify(data.removedIds));
+            }
+          } catch {}
         }
       } catch (e) {
         console.warn("Could not fetch latest products catalog:", e);

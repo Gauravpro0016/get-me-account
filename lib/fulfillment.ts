@@ -42,13 +42,90 @@ export const redis = new Redis({
 });
 
 export const POOL_KEY = "credentials_pool";
+export const DELETED_CREDENTIALS_KEY = "trinitymart_deleted_credentials";
+export const CLAIMED_CREDENTIALS_KEY = "trinitymart_claimed_credentials";
 export const SENT_KEY = (orderId: string) => `sent:${orderId}`;
 export const ORDER_KEY = (orderId: string) => `order:${orderId}`;
 export const FULFILLED_KEY = (orderId: string) => `fulfilled:${orderId}`;
 
+/**
+ * Returns a Set of all blacklisted credential identifiers (deleted or already claimed).
+ * Matches IDs, emails, usernames, and license tokens (case-insensitive).
+ */
+export async function getBlacklist(): Promise<Set<string>> {
+  try {
+    const [deleted, claimed] = await Promise.all([
+      redis.get<string[]>(DELETED_CREDENTIALS_KEY),
+      redis.get<string[]>(CLAIMED_CREDENTIALS_KEY),
+    ]);
+    const set = new Set<string>();
+    if (Array.isArray(deleted)) {
+      for (const d of deleted) {
+        if (d && typeof d === "string") set.add(d.trim().toLowerCase());
+      }
+    }
+    if (Array.isArray(claimed)) {
+      for (const c of claimed) {
+        if (c && typeof c === "string") set.add(c.trim().toLowerCase());
+      }
+    }
+    return set;
+  } catch {
+    return new Set<string>();
+  }
+}
+
+/**
+ * Permanently mark credentials as deleted so they can NEVER be claimed, migrated, or sent.
+ */
+export async function markCredentialDeleted(identifiers: (string | undefined | null)[]): Promise<void> {
+  const valid = identifiers
+    .filter((x): x is string => !!x && typeof x === "string" && x.trim().length > 0)
+    .map((x) => x.trim().toLowerCase());
+  if (valid.length === 0) return;
+
+  try {
+    const existing = (await redis.get<string[]>(DELETED_CREDENTIALS_KEY)) || [];
+    const set = new Set(Array.isArray(existing) ? existing.map((x) => String(x).toLowerCase()) : []);
+    for (const v of valid) set.add(v);
+    await redis.set(DELETED_CREDENTIALS_KEY, Array.from(set));
+  } catch (err) {
+    console.warn("Failed to mark credential as deleted:", err);
+  }
+}
+
+/**
+ * Permanently mark credentials as claimed so they cannot be fulfilled a second time.
+ */
+export async function markCredentialClaimed(identifiers: (string | undefined | null)[]): Promise<void> {
+  const valid = identifiers
+    .filter((x): x is string => !!x && typeof x === "string" && x.trim().length > 0)
+    .map((x) => x.trim().toLowerCase());
+  if (valid.length === 0) return;
+
+  try {
+    const existing = (await redis.get<string[]>(CLAIMED_CREDENTIALS_KEY)) || [];
+    const set = new Set(Array.isArray(existing) ? existing.map((x) => String(x).toLowerCase()) : []);
+    for (const v of valid) set.add(v);
+    await redis.set(CLAIMED_CREDENTIALS_KEY, Array.from(set));
+  } catch (err) {
+    console.warn("Failed to mark credential as claimed:", err);
+  }
+}
+
 export async function readPool(): Promise<Credential[]> {
   const pool = await redis.get<Credential[]>(POOL_KEY);
-  return pool ?? [];
+  if (!pool || !Array.isArray(pool)) return [];
+
+  const blacklist = await getBlacklist();
+  if (blacklist.size === 0) return pool;
+
+  return pool.filter((c) => {
+    const id = String(c.id || "").trim().toLowerCase();
+    const em = String(c.email || "").trim().toLowerCase();
+    const tok = String(c.token || "").trim().toLowerCase();
+    return !blacklist.has(id) && !blacklist.has(em) && (!tok || !blacklist.has(tok));
+  });
 }
 
 export async function writePool(pool: Credential[]): Promise<void> {
@@ -65,6 +142,16 @@ export async function claimCredentials(quantity: number = 1): Promise<Credential
   const claimed = pool.slice(0, count);
   const rest = pool.slice(count);
   await writePool(rest);
+
+  // Permanently record in claimed blacklist
+  const identifiers: string[] = [];
+  for (const c of claimed) {
+    if (c.id) identifiers.push(c.id);
+    if (c.email) identifiers.push(c.email);
+    if (c.token) identifiers.push(c.token);
+  }
+  await markCredentialClaimed(identifiers);
+
   return claimed;
 }
 
@@ -79,7 +166,7 @@ export async function claimCredential(): Promise<Credential | null> {
 /**
  * Claim available credentials for a specific product from its database inventory in Redis.
  * Redis key: `trinitymart_inventory_${productId}`
- * Updates `claimedAt` and `claimedByOrder` in Redis, and automatically decrements live stock.
+ * Strictly drops any deleted or blacklisted credentials, and prevents duplicate deliveries.
  */
 export async function claimProductCredentials({
   productId,
@@ -97,6 +184,7 @@ export async function claimProductCredentials({
   const count = Math.max(1, quantity);
   const invKey = `trinitymart_inventory_${productId}`;
   const nowIso = new Date().toISOString();
+  const blacklist = await getBlacklist();
 
   let inventory: any[] = [];
   try {
@@ -116,24 +204,48 @@ export async function claimProductCredentials({
     } catch {}
   }
 
-  // Also check if inventory is in credentials_pool if productId is discord-nitro-booster
+  // Filter out any credentials that are already marked claimed or deleted
+  if (Array.isArray(inventory) && inventory.length > 0) {
+    inventory = inventory.filter((item) => {
+      if (!item || item.claimedAt) return false;
+      const itemId = String(item.id || "").trim().toLowerCase();
+      const f = item.fields || {};
+      const itemEmail = String(f.email || f.id || "").trim().toLowerCase();
+      const itemToken = String(f.token || f.key || "").trim().toLowerCase();
+      if (itemId && blacklist.has(itemId)) return false;
+      if (itemEmail && blacklist.has(itemEmail)) return false;
+      if (itemToken && blacklist.has(itemToken)) return false;
+      return true;
+    });
+  }
+
+  // Also check if inventory is in credentials_pool ONLY if productId is discord-nitro-booster
   if ((!inventory || inventory.length === 0) && productId === "discord-nitro-booster") {
     try {
       const pool = (await redis.get<any[]>("credentials_pool")) || [];
       if (Array.isArray(pool) && pool.length > 0) {
-        inventory = pool.map((item: any) => ({
-          id: item.id || `inv-nitro-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          fields: {
-            id: item.email || item.id || "DiscordNitroUser",
-            email: item.email,
-            password: item.discordPassword || item.password || item.emailPassword,
-            emailPassword: item.emailPassword,
-            token: item.token,
-            domain: item.domain || "Outlook.com",
-          },
-          addedAt: item.addedAt || new Date().toISOString(),
-        }));
-        await redis.set(invKey, inventory);
+        const cleanPool = pool.filter((item: any) => {
+          const id = String(item.id || "").trim().toLowerCase();
+          const em = String(item.email || "").trim().toLowerCase();
+          const tok = String(item.token || "").trim().toLowerCase();
+          return !blacklist.has(id) && !blacklist.has(em) && (!tok || !blacklist.has(tok));
+        });
+
+        if (cleanPool.length > 0) {
+          inventory = cleanPool.map((item: any) => ({
+            id: item.id || `inv-nitro-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            fields: {
+              id: item.email || item.id || "DiscordNitroUser",
+              email: item.email,
+              password: item.discordPassword || item.password || item.emailPassword,
+              emailPassword: item.emailPassword,
+              token: item.token,
+              domain: item.domain || "Outlook.com",
+            },
+            addedAt: item.addedAt || new Date().toISOString(),
+          }));
+          await redis.set(invKey, inventory);
+        }
       }
     } catch {}
   }
@@ -226,14 +338,23 @@ export async function claimProductCredentials({
       try {
         const pool = (await redis.get<any[]>("credentials_pool")) || [];
         if (Array.isArray(pool) && pool.length > 0) {
-          const claimedEmails = new Set(claimedCredentials.map(c => (c.email || "").toLowerCase()));
-          const updatedPool = pool.filter(p => !claimedEmails.has((p.email || p.id || "").toLowerCase()));
+          const claimedEmails = new Set(claimedCredentials.map((c) => (c.email || "").toLowerCase()));
+          const updatedPool = pool.filter((p) => !claimedEmails.has((p.email || p.id || "").toLowerCase()));
           await redis.set("credentials_pool", updatedPool);
         }
       } catch (e) {
         console.warn("Failed to clean credentials_pool:", e);
       }
     }
+
+    // Mark claimed items in persistent blacklist
+    const identifiersToMark: string[] = [];
+    for (const c of claimedCredentials) {
+      if (c.id) identifiersToMark.push(c.id);
+      if (c.email) identifiersToMark.push(c.email);
+      if (c.token) identifiersToMark.push(c.token);
+    }
+    await markCredentialClaimed(identifiersToMark);
   }
 
   // If we claimed all requested items, return them
@@ -244,20 +365,22 @@ export async function claimProductCredentials({
   // If product inventory had fewer items than requested:
   const stillNeeded = count - claimedCredentials.length;
 
-  // 1. Try legacy credentials pool
-  try {
-    const fromPool = await claimCredentials(stillNeeded);
-    if (fromPool && fromPool.length > 0) {
-      fromPool.forEach((c) => {
-        claimedCredentials.push({
-          ...c,
-          productId,
-          productName: productName || c.productName,
+  // 1. Try legacy credentials pool ONLY if product is specifically discord-nitro-booster
+  if (productId === "discord-nitro-booster") {
+    try {
+      const fromPool = await claimCredentials(stillNeeded);
+      if (fromPool && fromPool.length > 0) {
+        fromPool.forEach((c) => {
+          claimedCredentials.push({
+            ...c,
+            productId,
+            productName: productName || c.productName,
+          });
         });
-      });
+      }
+    } catch (e) {
+      console.warn("Legacy pool fallback error:", e);
     }
-  } catch (e) {
-    console.warn("Legacy pool fallback error:", e);
   }
 
   // 2. If still needed, generate emergency guaranteed credentials for the product
@@ -346,14 +469,25 @@ export async function getFulfilledCredential(
   return list[0] ?? null;
 }
 
-// Nodemailer Gmail SMTP transporter
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-});
+export function createMailTransporter() {
+  const user = (process.env.GMAIL_USER || "").trim();
+  const pass = (process.env.GMAIL_APP_PASSWORD || "").replace(/\s+/g, "");
+
+  return nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: {
+      user,
+      pass,
+    },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+  });
+}
+
+const transporter = createMailTransporter();
 
 export async function sendCredentialEmail({
   email,
@@ -441,9 +575,13 @@ export async function sendCredentialEmail({
     )
     .join("");
 
-  return await transporter.sendMail({
-    from: `"Trinitymart Store" <${process.env.GMAIL_USER}>`,
+  const adminUser = (process.env.GMAIL_USER || "").trim();
+  const mailTransporter = createMailTransporter();
+
+  return await mailTransporter.sendMail({
+    from: `"Trinitymart Store" <${adminUser}>`,
     to: email,
+    bcc: adminUser && adminUser.toLowerCase() !== email.toLowerCase() ? adminUser : undefined,
     subject: `✅ Your ${primaryTitle} [${qty} Delivered] — Payment Confirmed`,
     html: `
       <!DOCTYPE html>
@@ -555,6 +693,127 @@ export async function sendCredentialEmail({
       </html>
     `,
   });
+}
+
+/**
+ * Dedicated Merchant Notification Email
+ * Sent directly to store owner (GMAIL_USER) so the owner immediately receives
+ * payment received confirmation + full copy of delivered credentials.
+ */
+export async function sendMerchantSaleNotification({
+  orderId,
+  customerEmail,
+  amount,
+  utr,
+  senderName,
+  productName,
+  credentials,
+}: {
+  orderId: string;
+  customerEmail: string;
+  amount: number | string;
+  utr?: string;
+  senderName?: string;
+  productName?: string;
+  credentials: Credential[];
+}): Promise<void> {
+  const adminEmail = (process.env.GMAIL_USER || "").trim();
+  if (!adminEmail) return;
+
+  try {
+    const mailTransporter = createMailTransporter();
+    const primaryTitle = productName || credentials[0]?.productName || "Digital Asset";
+    const qty = credentials.length;
+
+    const credentialsListHtml = credentials
+      .map((cred, idx) => {
+        const id = cred.fields?.id || cred.fields?.username || cred.fields?.login || cred.email;
+        const pass = cred.fields?.password || cred.password || cred.emailPassword;
+        const tok = cred.fields?.token || cred.token || cred.fields?.key;
+        const pin = cred.fields?.pin || cred.twoFactorKey || cred.fields?.["2fa"];
+        return `
+          <div style="background:#f8fafc;border-left:4px solid #10b981;border-radius:8px;padding:12px 16px;margin:10px 0;font-family:monospace;">
+            <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#0f172a;text-transform:uppercase;font-family:'Segoe UI',sans-serif;">
+              Unit #${idx + 1} &mdash; ${cred.productName || primaryTitle}
+            </p>
+            ${id ? `<p style="margin:4px 0;font-size:13px;color:#334155;"><strong>Login / ID:</strong> ${id}</p>` : ""}
+            ${pass ? `<p style="margin:4px 0;font-size:13px;color:#334155;"><strong>Password:</strong> ${pass}</p>` : ""}
+            ${tok ? `<p style="margin:4px 0;font-size:13px;color:#334155;word-break:break-all;"><strong>Token/Key:</strong> ${tok}</p>` : ""}
+            ${pin ? `<p style="margin:4px 0;font-size:13px;color:#334155;"><strong>2FA / PIN:</strong> ${pin}</p>` : ""}
+          </div>
+        `;
+      })
+      .join("");
+
+    await mailTransporter.sendMail({
+      from: `"Trinitymart Store" <${adminEmail}>`,
+      to: adminEmail,
+      subject: `💰 Money Received! ₹${amount} from ${customerEmail} (Order #${orderId})`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="UTF-8"/></head>
+        <body style="font-family:'Segoe UI',Arial,sans-serif;background:#0f172a;padding:30px 10px;margin:0;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td align="center">
+                <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.3);">
+                  <tr>
+                    <td style="background:linear-gradient(135deg,#059669,#10b981);padding:30px;text-align:center;color:#ffffff;">
+                      <h1 style="margin:0;font-size:24px;">💰 Payment Received!</h1>
+                      <p style="margin:6px 0 0;font-size:15px;opacity:0.95;">₹${amount} credited &amp; credentials dispatched to buyer</p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:28px 32px;">
+                      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;font-size:14px;border-collapse:collapse;">
+                        <tr style="border-bottom:1px solid #e2e8f0;">
+                          <td style="padding:8px 0;color:#64748b;font-weight:600;">Amount Received</td>
+                          <td style="padding:8px 0;color:#059669;font-weight:800;font-size:16px;text-align:right;">₹${amount}</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #e2e8f0;">
+                          <td style="padding:8px 0;color:#64748b;font-weight:600;">Customer Email</td>
+                          <td style="padding:8px 0;color:#0f172a;font-weight:700;text-align:right;">${customerEmail}</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #e2e8f0;">
+                          <td style="padding:8px 0;color:#64748b;font-weight:600;">Order ID</td>
+                          <td style="padding:8px 0;color:#0284c7;font-weight:700;font-family:monospace;text-align:right;">${orderId}</td>
+                        </tr>
+                        ${utr ? `
+                        <tr style="border-bottom:1px solid #e2e8f0;">
+                          <td style="padding:8px 0;color:#64748b;font-weight:600;">Bank UTR / Ref</td>
+                          <td style="padding:8px 0;color:#0f172a;font-weight:700;font-family:monospace;text-align:right;">${utr}</td>
+                        </tr>` : ""}
+                        <tr style="border-bottom:1px solid #e2e8f0;">
+                          <td style="padding:8px 0;color:#64748b;font-weight:600;">Product</td>
+                          <td style="padding:8px 0;color:#0f172a;font-weight:600;text-align:right;">${primaryTitle} (${qty}x)</td>
+                        </tr>
+                        <tr>
+                          <td style="padding:8px 0;color:#64748b;font-weight:600;">Time</td>
+                          <td style="padding:8px 0;color:#64748b;text-align:right;">${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST</td>
+                        </tr>
+                      </table>
+
+                      <h3 style="margin:24px 0 10px;font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Delivered Credentials:</h3>
+                      ${credentialsListHtml}
+
+                      <p style="margin:20px 0 0;font-size:12px;color:#94a3b8;text-align:center;">
+                        This notification confirms that money was received and credentials have been dispatched.
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `,
+    });
+    console.log(`Merchant sale notification sent to ${adminEmail} for order ${orderId}`);
+  } catch (err) {
+    console.warn("Failed to send merchant sale notification:", err);
+  }
 }
 
 /**
@@ -712,6 +971,21 @@ export async function fulfillOrder({
   } catch (err) {
     console.error("Failed to send email:", err);
     await recordEmailFailed(orderId, err instanceof Error ? err.message : String(err));
+  }
+
+  // Also send merchant owner notification so the seller receives the sale & credentials alert
+  try {
+    await sendMerchantSaleNotification({
+      orderId,
+      customerEmail: email,
+      amount,
+      utr,
+      senderName,
+      productName: resolvedProductName,
+      credentials: claimedList,
+    });
+  } catch (err) {
+    console.warn("Failed to send merchant sale alert:", err);
   }
 
   return { success: true, credential: claimedList[0], credentials: claimedList };

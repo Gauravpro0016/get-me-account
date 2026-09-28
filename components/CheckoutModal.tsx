@@ -60,6 +60,8 @@ export function CheckoutModal() {
     clearCart,
   } = useCart();
 
+  const ACTIVE_ORDER_STORAGE_KEY = "trinitymart_active_checkout_v2";
+
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -74,6 +76,7 @@ export function CheckoutModal() {
   const [deliveredList, setDeliveredList] = useState<CredentialResult[]>([]);
   const [failReason, setFailReason] = useState("");
   const [copiedField, setCopiedField] = useState("");
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   // Bank UTR submission & verification state
   const [utrInput, setUtrInput] = useState("");
@@ -81,6 +84,7 @@ export function CheckoutModal() {
   const [verificationError, setVerificationError] = useState("");
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isPollingRef = useRef(false);
 
   // Determine active purchase items & total amount
   const isSingleProduct = checkoutProduct !== null;
@@ -100,17 +104,163 @@ export function CheckoutModal() {
             item.product.stockCount <= 0)
       );
 
+  // Poll for payment confirmation
+  const startPolling = (orderId: string, emailToPoll?: string) => {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    const targetEmail = (emailToPoll || email).trim().toLowerCase();
+
+    pollIntervalRef.current = setInterval(async () => {
+      // Guard against overlapping poll requests choking browser socket pool
+      if (isPollingRef.current) return;
+      isPollingRef.current = true;
+
+      try {
+        const queryParams = new URLSearchParams({ order_id: orderId, orderId });
+        if (targetEmail) queryParams.set("email", targetEmail);
+
+        const res = await fetch(`/api/confirm-payment?${queryParams.toString()}`, {
+          cache: "no-store",
+        });
+        const data = await res.json();
+
+        if (
+          data.status === "COMPLETED" ||
+          data.status === "SUCCESS" ||
+          data.status === "confirmed"
+        ) {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setPaymentStatus("success");
+          if (data.credentials && Array.isArray(data.credentials) && data.credentials.length > 0) {
+            setDeliveredCreds(data.credentials[0]);
+            setDeliveredList(data.credentials);
+          } else if (data.credential) {
+            setDeliveredCreds(data.credential);
+          }
+
+          // Confetti explosion
+          confetti({
+            particleCount: 100,
+            spread: 70,
+            origin: { y: 0.6 },
+          });
+        } else if (data.status === "FAILED" || data.status === "failed") {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setPaymentStatus("failed");
+          setFailReason(data.message || data.reason || "Payment transaction was rejected.");
+        }
+      } catch (err) {
+        console.warn("Polling payment error:", err);
+      } finally {
+        isPollingRef.current = false;
+      }
+    }, 2500);
+  };
+
+  // Restore active payment session across page refreshes or accidental reloads
+  useEffect(() => {
+    try {
+      const savedRaw = localStorage.getItem(ACTIVE_ORDER_STORAGE_KEY);
+      if (savedRaw) {
+        const saved = JSON.parse(savedRaw);
+        const age = Date.now() - (saved.timestamp || 0);
+        // Valid for up to 15 minutes
+        if (age < 15 * 60 * 1000 && saved.order) {
+          setEmail(saved.email || "");
+          setOrder(saved.order);
+          setPaymentStatus(saved.paymentStatus || "pending");
+          if (saved.timeLeft) {
+            const remaining = Math.max(10, saved.timeLeft - Math.floor(age / 1000));
+            setTimeLeft(remaining);
+          }
+          if (saved.deliveredCreds) setDeliveredCreds(saved.deliveredCreds);
+          if (saved.deliveredList) setDeliveredList(saved.deliveredList);
+          setIsCheckoutOpen(true);
+
+          if (saved.paymentStatus === "pending") {
+            startPolling(saved.order.order_id, saved.email);
+          }
+        } else {
+          localStorage.removeItem(ACTIVE_ORDER_STORAGE_KEY);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not restore active checkout:", e);
+    }
+  }, []);
+
+  // Save active order state to localStorage whenever pending or success
+  useEffect(() => {
+    if (paymentStatus === "pending" && order) {
+      try {
+        localStorage.setItem(
+          ACTIVE_ORDER_STORAGE_KEY,
+          JSON.stringify({
+            order,
+            email,
+            paymentStatus,
+            timeLeft,
+            timestamp: Date.now(),
+            deliveredCreds,
+            deliveredList,
+          })
+        );
+      } catch {}
+    } else if (paymentStatus === "success" && order) {
+      try {
+        localStorage.setItem(
+          ACTIVE_ORDER_STORAGE_KEY,
+          JSON.stringify({
+            order,
+            email,
+            paymentStatus,
+            timestamp: Date.now(),
+            deliveredCreds,
+            deliveredList,
+          })
+        );
+      } catch {}
+    } else if (paymentStatus === "idle" || paymentStatus === "failed") {
+      try {
+        localStorage.removeItem(ACTIVE_ORDER_STORAGE_KEY);
+      } catch {}
+    }
+  }, [paymentStatus, order, email, timeLeft, deliveredCreds, deliveredList]);
+
+  // Window beforeunload protection: warns user if they refresh while payment is pending
+  useEffect(() => {
+    if (paymentStatus !== "pending") return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "UPI payment in progress! Leaving or refreshing will interrupt your active session.";
+      return e.returnValue;
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [paymentStatus]);
+
   // Reset modal state on close
   const handleClose = () => {
     setIsCheckoutOpen(false);
     if (paymentStatus === "success") {
       clearCart();
+      try {
+        localStorage.removeItem(ACTIVE_ORDER_STORAGE_KEY);
+      } catch {}
     }
     setOrder(null);
     setPaymentStatus("idle");
     setUtrInput("");
     setVerificationError("");
+    setShowCancelConfirm(false);
+    isPollingRef.current = false;
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+  };
+
+  const handleForceClose = () => {
+    try {
+      localStorage.removeItem(ACTIVE_ORDER_STORAGE_KEY);
+    } catch {}
+    handleClose();
   };
 
   // Timer countdown
@@ -129,48 +279,6 @@ export function CheckoutModal() {
     }, 1000);
     return () => clearInterval(interval);
   }, [paymentStatus]);
-
-  // Poll for payment confirmation
-  const startPolling = (orderId: string) => {
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-
-    pollIntervalRef.current = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/confirm-payment?order_id=${orderId}`, {
-          cache: "no-store",
-        });
-        const data = await res.json();
-
-        if (
-          data.status === "COMPLETED" ||
-          data.status === "SUCCESS" ||
-          data.status === "confirmed"
-        ) {
-          clearInterval(pollIntervalRef.current!);
-          setPaymentStatus("success");
-          if (data.credentials && Array.isArray(data.credentials) && data.credentials.length > 0) {
-            setDeliveredCreds(data.credentials[0]);
-            setDeliveredList(data.credentials);
-          } else if (data.credential) {
-            setDeliveredCreds(data.credential);
-          }
-
-          // Confetti explosion
-          confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 },
-          });
-        } else if (data.status === "FAILED" || data.status === "failed") {
-          clearInterval(pollIntervalRef.current!);
-          setPaymentStatus("failed");
-          setFailReason(data.message || data.reason || "Payment transaction was rejected.");
-        }
-      } catch (err) {
-        console.warn("Polling payment error:", err);
-      }
-    }, 3000);
-  };
 
   // Clean up poll on unmount
   useEffect(() => {
@@ -227,95 +335,23 @@ export function CheckoutModal() {
       });
 
       const json = await res.json();
-      if (!res.ok || json.error) {
-        // Fallback simulation order with database persistence
-        await createSimulationOrder(
-          cleanEmail,
-          quantity,
-          isSingleProduct ? checkoutProduct.id : "cart",
-          currentTitle,
-          cartItemsPayload
+      if (!res.ok || json.error || !json.data) {
+        setEmailError(
+          json.error ||
+            "Unable to generate live UPI payment session. Please try again."
         );
       } else {
         setOrder(json.data);
         setPaymentStatus("pending");
         setTimeLeft(300);
-        startPolling(json.data.order_id);
+        startPolling(json.data.order_id, cleanEmail);
       }
     } catch {
-      const quantity = isSingleProduct
-        ? 1
-        : items.reduce((acc, curr) => acc + curr.quantity, 0);
-      const cartItemsPayload = isSingleProduct
-        ? [{ productId: checkoutProduct.id, productName: checkoutProduct.name, quantity: 1, price: checkoutProduct.price }]
-        : items.map((item) => ({
-            productId: item.product.id,
-            productName: item.product.name,
-            quantity: item.quantity,
-            price: item.product.price,
-          }));
-      await createSimulationOrder(
-        cleanEmail,
-        quantity,
-        isSingleProduct ? checkoutProduct.id : "cart",
-        currentTitle,
-        cartItemsPayload
+      setEmailError(
+        "Failed to connect to payment gateway. Please check your internet connection."
       );
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Simulation order with automatic Upstash Redis database recording
-  const createSimulationOrder = async (
-    userEmail: string,
-    qty: number = 1,
-    prodId?: string,
-    prodName?: string,
-    cartItemsList?: any[]
-  ) => {
-    const orderId = `TM-${Date.now().toString().slice(-6)}`;
-    const upiUri = `upi://pay?pa=trinitymart@upi&pn=Trinitymart&am=${currentTotal}&cu=INR&tn=Order%20${orderId}`;
-    const simOrder: FamGatewayOrder = {
-      order_id: orderId,
-      amount: currentTotal,
-      payable_amount: currentTotal,
-      upi_id: "trinitymart@upi",
-      qr_url: `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUri)}`,
-      checkout_url: "#",
-      upi_intent: upiUri,
-    };
-    setOrder(simOrder);
-    setPaymentStatus("pending");
-    setTimeLeft(300);
-
-    const defaultCart = isSingleProduct
-      ? [{ productId: checkoutProduct.id, productName: checkoutProduct.name, quantity: 1, price: checkoutProduct.price }]
-      : items.map((item) => ({
-          productId: item.product.id,
-          productName: item.product.name,
-          quantity: item.quantity,
-          price: item.product.price,
-        }));
-
-    // Save pending order directly to Redis database
-    try {
-      await fetch("/api/payment/record", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "create",
-          orderId,
-          email: userEmail,
-          amount: currentTotal,
-          quantity: qty,
-          productId: prodId || (isSingleProduct ? checkoutProduct.id : "cart"),
-          productName: prodName || currentTitle,
-          cartItems: cartItemsList || defaultCart,
-        }),
-      });
-    } catch (e) {
-      console.warn("Could not record pending order in Redis:", e);
     }
   };
 
@@ -404,18 +440,71 @@ export function CheckoutModal() {
     setTimeout(() => setCopiedField(""), 2000);
   };
 
+  const handleBackdropClick = () => {
+    if (paymentStatus === "pending") {
+      setShowCancelConfirm(true);
+      return;
+    }
+    if (paymentStatus === "success") {
+      // Prevent accidental close until user finishes copying their credentials
+      return;
+    }
+    handleClose();
+  };
+
+  const handleCloseButtonClick = () => {
+    if (paymentStatus === "pending") {
+      setShowCancelConfirm(true);
+      return;
+    }
+    handleClose();
+  };
+
   if (!isCheckoutOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
-      {/* Backdrop */}
+      {/* Backdrop — Safe against accidental click closing */}
       <div
-        onClick={handleClose}
+        onClick={handleBackdropClick}
         className="fixed inset-0 bg-slate-950/80 backdrop-blur-md transition-opacity"
       />
 
       {/* Modal Box */}
       <div className="relative w-full max-w-lg bg-[#080e1c] dark:bg-[#080e1c] light:bg-white rounded-3xl shadow-2xl border border-cyan-500/30 text-white z-10 overflow-hidden animate-in fade-in zoom-in-95">
+        {/* Cancel Confirmation Prompt for Active Payment */}
+        {showCancelConfirm && (
+          <div className="absolute inset-0 z-30 bg-[#080e1c]/95 backdrop-blur-md p-6 flex flex-col items-center justify-center text-center space-y-4 animate-in fade-in">
+            <div className="w-14 h-14 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center border border-amber-500/30 animate-pulse">
+              <AlertCircle className="w-7 h-7" />
+            </div>
+            <div>
+              <h4 className="text-base font-black text-white">
+                Payment In Progress!
+              </h4>
+              <p className="text-xs text-slate-300 mt-1.5 max-w-sm leading-relaxed">
+                If you already sent money or scanned the QR code via UPI, <strong>do not cancel!</strong> Please enter your 12-digit UPI Bank Reference / UTR number below to receive your account credentials immediately.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2.5 w-full max-w-xs pt-1">
+              <button
+                type="button"
+                onClick={() => setShowCancelConfirm(false)}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-500/25 transition-all cursor-pointer"
+              >
+                Keep Open &amp; Enter UTR
+              </button>
+              <button
+                type="button"
+                onClick={handleForceClose}
+                className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold border border-rose-500/30 transition-all cursor-pointer"
+              >
+                Cancel Session
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-cyan-500/20 bg-[#050811]/90">
           <div className="flex items-center gap-2">
@@ -427,8 +516,9 @@ export function CheckoutModal() {
             </h3>
           </div>
           <button
-            onClick={handleClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white"
+            onClick={handleCloseButtonClick}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white transition-colors"
+            title="Close"
           >
             <X className="w-5 h-5" />
           </button>
@@ -541,6 +631,14 @@ export function CheckoutModal() {
                 <span className="font-mono">
                   {Math.floor(timeLeft / 60)}:
                   {String(timeLeft % 60).padStart(2, "0")}
+                </span>
+              </div>
+
+              {/* Protection notice */}
+              <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center gap-2 text-left">
+                <ShieldCheck className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span className="text-[11px] text-cyan-200 leading-snug">
+                  <strong>Protected Session:</strong> Accidental clicks or page refreshes will not lose your order or money.
                 </span>
               </div>
 

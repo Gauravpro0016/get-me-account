@@ -10,8 +10,9 @@ import {
 export const maxDuration = 45;
 
 /**
- * Verify order status with FamGateway.
- * Checks both authoritative backend endpoint and public checkout-status fallback.
+ * Fast FamGateway status check.
+ * Prioritizes the snappy checkout-status.php endpoint (<400ms) with a 2.8s timeout,
+ * and falls back to verify-order.php with a 2.8s timeout so requests never block.
  */
 async function checkFamGatewayOrderStatus(orderId: string): Promise<{
   status: "success" | "pending" | "expired" | "not_found";
@@ -21,7 +22,38 @@ async function checkFamGatewayOrderStatus(orderId: string): Promise<{
 }> {
   const apiKey = process.env.FAMGATEWAY_API_KEY;
 
-  // 1. Try authoritative verify-order endpoint if API key is present
+  // 1. Fast checkout-status check (<400ms typical)
+  try {
+    const res = await fetch(
+      `https://famgateway.in/api/checkout-status.php?order_id=${encodeURIComponent(orderId)}`,
+      {
+        cache: "no-store",
+        signal: AbortSignal.timeout(2800),
+      }
+    );
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.status === "success" || data.status === "COMPLETED") {
+        return {
+          status: "success",
+          utr: data.utr,
+          senderName: data.sender_name,
+          amount: Number(data.amount) || 25,
+        };
+      }
+      if (data.status === "expired" || data.status === "FAILED") {
+        return { status: "expired" };
+      }
+      if (data.status === "pending") {
+        return { status: "pending" };
+      }
+    }
+  } catch (err: any) {
+    // Timeout or network glitch — continue to fallback
+  }
+
+  // 2. Authoritative verify-order endpoint with safe 2.8s timeout
   if (apiKey) {
     try {
       const res = await fetch(
@@ -34,12 +66,12 @@ async function checkFamGatewayOrderStatus(orderId: string): Promise<{
             "X-Api-Key": apiKey,
           },
           cache: "no-store",
+          signal: AbortSignal.timeout(2800),
         }
       );
 
       if (res.ok) {
         const data = await res.json();
-        console.log(`FamGateway verify-order for ${orderId}:`, data);
         if (data.status === "success") {
           return {
             status: "success",
@@ -53,65 +85,23 @@ async function checkFamGatewayOrderStatus(orderId: string): Promise<{
         }
       }
     } catch (err) {
-      console.warn("verify-order endpoint error, falling back to checkout-status:", err);
+      // Safely ignore timeout or network issue
     }
-  }
-
-  // 2. Fallback to public checkout-status endpoint
-  try {
-    const res = await fetch(
-      `https://famgateway.in/api/checkout-status.php?order_id=${encodeURIComponent(
-        orderId
-      )}`,
-      { cache: "no-store" }
-    );
-
-    if (res.ok) {
-      const data = await res.json();
-      console.log(`FamGateway checkout-status for ${orderId}:`, data);
-      if (data.status === "success") {
-        return {
-          status: "success",
-          utr: data.utr,
-          senderName: data.sender_name,
-          amount: Number(data.amount) || 25,
-        };
-      }
-      if (data.status === "expired") {
-        return { status: "expired" };
-      }
-      if (data.status === "pending") {
-        return { status: "pending" };
-      }
-    }
-  } catch (err) {
-    console.error("checkout-status endpoint error:", err);
   }
 
   return { status: "pending" };
 }
 
-export async function POST(req: NextRequest) {
+/**
+ * Shared order confirmation pipeline for both GET and POST requests.
+ */
+async function handleOrderConfirmation(orderId: string, emailParam?: string) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const orderId = ((body.orderId || body.order_id) as string)?.trim();
-    let email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    let email = emailParam ? emailParam.trim().toLowerCase() : "";
 
-    console.log("POST /api/confirm-payment received:", { orderId, email });
-
-    if (!orderId) {
-      return NextResponse.json(
-        { error: "orderId is required" },
-        { status: 400 }
-      );
-    }
-
-    // Retrieve saved email from Redis if not provided
-    if (!email) {
-      const orderData = await getOrder(orderId);
-      if (orderData?.email) {
-        email = orderData.email;
-      }
+    const orderData = await getOrder(orderId);
+    if (!email && orderData?.email) {
+      email = orderData.email.trim().toLowerCase();
     }
 
     // 1. Check if already fulfilled (e.g. processed via Webhook earlier)
@@ -127,7 +117,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 2. Check status with FamGateway
+    // 2. Fast check with FamGateway
     const fgStatus = await checkFamGatewayOrderStatus(orderId);
 
     if (fgStatus.status === "success") {
@@ -138,13 +128,13 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Fulfill order, claim credential, send email
+      // Fulfill order, claim credentials, send email
       const result = await fulfillOrder({
         orderId,
         email,
         utr: fgStatus.utr,
         senderName: fgStatus.senderName,
-        amount: fgStatus.amount || 25,
+        amount: fgStatus.amount || orderData?.amount || 1,
       });
 
       if (!result.success && result.error) {
@@ -172,26 +162,41 @@ export async function POST(req: NextRequest) {
     // Still pending
     return NextResponse.json({ status: "pending" });
   } catch (err) {
-    console.error("confirm-payment error:", err);
+    console.error("handleOrderConfirmation error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json().catch(() => ({}));
+    const orderId = ((body.orderId || body.order_id) as string)?.trim();
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : undefined;
+
+    if (!orderId) {
+      return NextResponse.json({ error: "orderId is required" }, { status: 400 });
+    }
+
+    return handleOrderConfirmation(orderId, email);
+  } catch (err) {
+    console.error("POST /api/confirm-payment error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
 export async function GET(req: NextRequest) {
-  const url = new URL(req.url);
-  const orderId = url.searchParams.get("orderId") || url.searchParams.get("order_id");
-  const email = url.searchParams.get("email");
+  try {
+    const url = new URL(req.url);
+    const orderId = (url.searchParams.get("orderId") || url.searchParams.get("order_id"))?.trim();
+    const email = url.searchParams.get("email")?.trim().toLowerCase();
 
-  if (!orderId) {
-    return NextResponse.json({ error: "orderId is required" }, { status: 400 });
+    if (!orderId) {
+      return NextResponse.json({ error: "orderId is required" }, { status: 400 });
+    }
+
+    return handleOrderConfirmation(orderId, email);
+  } catch (err) {
+    console.error("GET /api/confirm-payment error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-
-  // Delegate to POST logic
-  const pseudoReq = new NextRequest(req.url, {
-    method: "POST",
-    headers: req.headers,
-    body: JSON.stringify({ orderId, email }),
-  });
-
-  return POST(pseudoReq);
 }
