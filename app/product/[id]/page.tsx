@@ -356,7 +356,7 @@ export default function ProductDetailPage() {
                 <span>Need help with activation? Staff is active on Discord</span>
               </div>
               <a
-                href={APP_CONFIG.discordLink}
+                href={APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY"}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-black text-cyan-300 hover:underline flex items-center gap-1"

@@ -115,7 +115,7 @@ export function Footer() {
               Have questions or need warranty replacement? Reach us on Discord anytime.
             </p>
             <a
-              href={APP_CONFIG.discordLink}
+              href={APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY"}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#5865F2] hover:bg-[#4752c4] text-white text-xs font-bold transition-all shadow-md shadow-[#5865F2]/20"

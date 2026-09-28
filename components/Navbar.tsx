@@ -62,9 +62,11 @@ export function Navbar() {
     { name: "Reviews", href: "/#reviews" },
   ];
 
-  const handleSupportClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    window.open(APP_CONFIG.discordLink, "_blank", "noopener,noreferrer");
+  const discordUrl = APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY";
+
+  const handleSupportClick = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    window.open(discordUrl, "_blank", "noopener,noreferrer");
   };
 
   // Hide Navbar completely on admin routes
@@ -129,8 +131,10 @@ export function Navbar() {
             })}
 
             {/* Support link that redirects to Discord server */}
-            <button
-              onClick={handleSupportClick}
+            <a
+              href={discordUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs sm:text-sm font-bold rounded-full text-cyan-400 hover:text-white hover:bg-cyan-500/20 transition-all cursor-pointer group"
               title="Join 24/7 Discord Support Server"
             >
@@ -140,7 +144,7 @@ export function Navbar() {
               </span>
               <span>Support</span>
               <ExternalLink className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-            </button>
+            </a>
           </nav>
 
           {/* Right Action Icons (Cart, Theme, Discord, Hamburger) */}
@@ -182,13 +186,15 @@ export function Navbar() {
             </button>
 
             {/* Discord CTA on large screens */}
-            <button
-              onClick={handleSupportClick}
+            <a
+              href={discordUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               className="hidden lg:flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-[#5865F2]/20 hover:bg-[#5865F2] text-white border border-[#5865F2]/40 hover:border-transparent transition-all cursor-pointer"
             >
               <Headset className="w-3.5 h-3.5 text-cyan-300" />
               <span>Discord</span>
-            </button>
+            </a>
 
             {/* Mobile Hamburger Button */}
             <button
@@ -240,11 +246,11 @@ export function Navbar() {
             </button>
 
             {/* Mobile Support Link redirecting to Discord */}
-            <button
-              onClick={(e) => {
-                setMobileMenuOpen(false);
-                handleSupportClick(e);
-              }}
+            <a
+              href={discordUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setMobileMenuOpen(false)}
               className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#5865F2]/20 border border-[#5865F2]/40 text-cyan-300 text-sm font-bold"
             >
               <div className="flex items-center gap-2.5">
@@ -252,7 +258,7 @@ export function Navbar() {
                 <span>24/7 Discord Support</span>
               </div>
               <ExternalLink className="w-4 h-4 text-white" />
-            </button>
+            </a>
           </div>
         </div>
       )}

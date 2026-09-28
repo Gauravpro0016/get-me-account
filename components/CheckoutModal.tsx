@@ -792,20 +792,16 @@ export function CheckoutModal() {
 
               {/* Action buttons */}
               <div className="space-y-2">
-                <button
-                  onClick={() =>
-                    window.open(
-                      APP_CONFIG.discordLink,
-                      "_blank",
-                      "noopener,noreferrer"
-                    )
-                  }
+                <a
+                  href={APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY"}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#5865F2] hover:bg-[#4752c4] text-white text-xs font-bold transition-all"
                 >
                   <Headset className="w-4 h-4" />
                   <span>Join Discord for 24/7 Warranty Support</span>
                   <ExternalLink className="w-3.5 h-3.5" />
-                </button>
+                </a>
 
                 <button
                   onClick={handleClose}
@@ -837,18 +833,15 @@ export function CheckoutModal() {
                 >
                   Try Again
                 </button>
-                <button
-                  onClick={() =>
-                    window.open(
-                      APP_CONFIG.discordLink,
-                      "_blank",
-                      "noopener,noreferrer"
-                    )
-                  }
-                  className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300 text-xs font-bold"
+                <a
+                  href={APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center justify-center gap-1.5"
                 >
-                  Get Help on Discord
-                </button>
+                  <Headset className="w-3.5 h-3.5" />
+                  <span>Get Help on Discord</span>
+                </a>
               </div>
             </div>
           )}

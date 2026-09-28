@@ -40,8 +40,10 @@ const FAQS = [
 export function SupportSection() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
+  const discordUrl = APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY";
+
   const handleDiscordRedirect = () => {
-    window.open(APP_CONFIG.discordLink, "_blank", "noopener,noreferrer");
+    window.open(discordUrl, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -90,14 +92,16 @@ export function SupportSection() {
 
               {/* Main Discord Action Button */}
               <div className="pt-4 flex flex-wrap gap-4 items-center">
-                <button
-                  onClick={handleDiscordRedirect}
+                <a
+                  href={discordUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="flex items-center gap-2.5 px-8 py-4 rounded-2xl bg-white text-[#5865F2] hover:bg-slate-100 font-extrabold text-sm sm:text-base shadow-xl shadow-black/20 hover:scale-105 active:scale-95 transition-all cursor-pointer group"
                 >
                   <Headset className="w-5 h-5 text-[#5865F2] group-hover:rotate-12 transition-transform" />
                   <span>Join Trinitymart Discord Server</span>
                   <ExternalLink className="w-4 h-4 opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                </button>
+                </a>
               </div>
             </div>
 

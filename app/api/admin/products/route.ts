@@ -63,7 +63,14 @@ export async function GET(req: NextRequest) {
       initialMerged.map(async (prod) => {
         try {
           const inv = await redis.get<InventoryItem[]>(INVENTORY_KEY(prod.id));
-          if (inv && Array.isArray(inv) && inv.length > 0) return inv;
+          if (inv && Array.isArray(inv)) {
+            // Automatically purge any previously claimed items from database inventory
+            const activeOnly = inv.filter((item) => !item.claimedAt);
+            if (activeOnly.length !== inv.length) {
+              await redis.set(INVENTORY_KEY(prod.id), activeOnly);
+            }
+            return activeOnly;
+          }
 
           // If custom product has inventory embedded but not in key, migrate it
           if (prod.inventory && Array.isArray(prod.inventory) && prod.inventory.length > 0) {
@@ -108,10 +115,10 @@ export async function GET(req: NextRequest) {
 
       const inv = inventories[idx] || [];
       const activeInventory = inv.filter((item) => !item.claimedAt);
-      p.inventory = inv;
+      p.inventory = activeInventory;
 
       // Available stock count strictly matches active account credentials in database!
-      if (inv.length > 0) {
+      if (activeInventory.length > 0) {
         p.stockCount = activeInventory.length;
         p.inStock = activeInventory.length > 0;
       } else {

@@ -7,7 +7,8 @@ import { Headset, ExternalLink, ShieldCheck, Clock, Users } from "lucide-react";
 
 export default function SupportPage() {
   const handleDiscordClick = () => {
-    window.open(APP_CONFIG.discordLink, "_blank", "noopener,noreferrer");
+    const link = APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY";
+    window.open(link, "_blank", "noopener,noreferrer");
   };
 
   return (

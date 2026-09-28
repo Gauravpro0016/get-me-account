@@ -60,7 +60,8 @@ export function CartDrawer() {
   };
 
   const handleSupportRedirect = () => {
-    window.open(APP_CONFIG.discordLink, "_blank", "noopener,noreferrer");
+    const link = APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY";
+    window.open(link, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -299,13 +300,15 @@ export function CartDrawer() {
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                     <span>256-Bit SSL Encrypted</span>
                   </div>
-                  <button
-                    onClick={handleSupportRedirect}
+                  <a
+                    href={APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY"}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="flex items-center gap-1 text-cyan-400 hover:underline"
                   >
                     <Headset className="w-3.5 h-3.5" />
                     <span>24/7 Discord Support</span>
-                  </button>
+                  </a>
                 </div>
               </div>
             </div>

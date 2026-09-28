@@ -151,14 +151,17 @@ export async function claimProductCredentials({
 
   if (unclaimedIndices.length > 0) {
     const toClaim = unclaimedIndices.slice(0, count);
+    const toClaimIndicesSet = new Set(toClaim);
+    const claimedItemIds = new Set<string>();
+
     for (const idx of toClaim) {
-      inventory[idx].claimedAt = nowIso;
-      inventory[idx].claimedByOrder = orderId;
       const item = inventory[idx];
+      if (!item) continue;
+      if (item.id) claimedItemIds.add(item.id);
       const f = item.fields || {};
 
       claimedCredentials.push({
-        id: item.id,
+        id: item.id || `cred-${Date.now()}-${idx}`,
         email: f.id || f.email || f.username || customerEmail || "Account Delivered",
         password: f.password || f.pass || f.emailPassword,
         emailPassword: f.emailPassword || f.password,
@@ -174,15 +177,22 @@ export async function claimProductCredentials({
       });
     }
 
-    // Write updated inventory back to Redis
+    // Permanently remove purchased credentials from product inventory!
+    const remainingInventory = inventory.filter((item, idx) => {
+      if (toClaimIndicesSet.has(idx)) return false;
+      if (item.id && claimedItemIds.has(item.id)) return false;
+      return true;
+    });
+
+    // Write updated inventory back to Redis without the purchased credentials
     try {
-      await redis.set(invKey, inventory);
+      await redis.set(invKey, remainingInventory);
     } catch (e) {
       console.error(`Failed to save updated inventory for ${productId}:`, e);
     }
 
     // Immediately update live database stock count in overrides
-    const remainingActive = inventory.filter((item) => !item.claimedAt).length;
+    const remainingActive = remainingInventory.length;
     try {
       let overrides = (await redis.get<Record<string, any>>("trinitymart_product_overrides")) || {};
       overrides[productId] = {
@@ -202,13 +212,27 @@ export async function claimProductCredentials({
       const customProducts = (await redis.get<any[]>("trinitymart_custom_products")) || [];
       const cIdx = customProducts.findIndex((p) => p.id === productId);
       if (cIdx !== -1) {
-        customProducts[cIdx].inventory = inventory;
+        customProducts[cIdx].inventory = remainingInventory;
         customProducts[cIdx].stockCount = remainingActive;
         customProducts[cIdx].inStock = remainingActive > 0;
         await redis.set("trinitymart_custom_products", customProducts);
       }
     } catch (e) {
       console.warn("Failed to update custom products stock:", e);
+    }
+
+    // If discord-nitro-booster, also clean up credentials_pool
+    if (productId === "discord-nitro-booster" && claimedCredentials.length > 0) {
+      try {
+        const pool = (await redis.get<any[]>("credentials_pool")) || [];
+        if (Array.isArray(pool) && pool.length > 0) {
+          const claimedEmails = new Set(claimedCredentials.map(c => (c.email || "").toLowerCase()));
+          const updatedPool = pool.filter(p => !claimedEmails.has((p.email || p.id || "").toLowerCase()));
+          await redis.set("credentials_pool", updatedPool);
+        }
+      } catch (e) {
+        console.warn("Failed to clean credentials_pool:", e);
+      }
     }
   }
 

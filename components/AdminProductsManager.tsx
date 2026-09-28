@@ -869,11 +869,27 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
           {filteredProducts.map((prod) => (
             <div
               key={prod.id}
-              className="p-5 rounded-3xl bg-[#0a1120] border border-cyan-500/20 hover:border-cyan-400/50 transition-all space-y-4 shadow-xl"
+              className="p-5 rounded-3xl bg-[#0a1120] border border-cyan-500/20 hover:border-cyan-400/50 transition-all space-y-4 shadow-xl relative overflow-hidden"
+              style={
+                prod.customBgUrl
+                  ? {
+                      backgroundImage: `linear-gradient(to bottom, rgba(10, 17, 32, 0.85), rgba(10, 17, 32, 0.98)), url(${prod.customBgUrl})`,
+                      backgroundSize: prod.bgSize || "cover",
+                      backgroundPosition: "center",
+                      backgroundRepeat: "no-repeat",
+                    }
+                  : undefined
+              }
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <ProductIcon type={prod.iconType} className="w-12 h-12 shrink-0" size={20} />
+                  <ProductIcon
+                    type={prod.iconType}
+                    customLogoUrl={prod.customLogoUrl}
+                    logoSize={prod.logoSize}
+                    className="w-12 h-12 shrink-0"
+                    size={22}
+                  />
                   <div className="min-w-0">
                     <h3 className="text-sm font-black text-white truncate" title={prod.name}>
                       {prod.name}
@@ -1003,9 +1019,13 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
           <div className="relative w-full max-w-2xl bg-[#090f1d] rounded-3xl p-6 sm:p-8 shadow-2xl border border-cyan-500/30 z-10 max-h-[90vh] overflow-y-auto space-y-6 text-white">
             <div className="flex items-center justify-between pb-4 border-b border-cyan-500/20">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
-                  <Package className="w-5 h-5" />
-                </div>
+                <ProductIcon
+                  type={iconType}
+                  customLogoUrl={customLogoUrl}
+                  logoSize={logoSize}
+                  className="w-10 h-10 shrink-0"
+                  size={20}
+                />
                 <div>
                   <h3 className="text-lg font-black text-white">Create New Store Product</h3>
                   <p className="text-xs text-slate-400">Configure product details and custom ID/Password fields.</p>
@@ -1572,9 +1592,13 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
             {/* Modal Header */}
             <div className="flex items-start justify-between pb-4 border-b border-cyan-500/20 gap-3">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="p-2.5 rounded-2xl bg-cyan-500/20 text-cyan-400 shrink-0">
-                  <Layers className="w-5 h-5" />
-                </div>
+                <ProductIcon
+                  type={targetProduct.iconType}
+                  customLogoUrl={targetProduct.customLogoUrl}
+                  logoSize={targetProduct.logoSize}
+                  className="w-11 h-11 shrink-0"
+                  size={22}
+                />
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-base sm:text-lg font-black text-white truncate">
@@ -1702,6 +1726,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                   <div className="space-y-2.5 max-h-[52vh] overflow-y-auto pr-1">
                     {targetProduct.inventory
                       .filter((item: any) => {
+                        if (item.claimedAt) return false;
                         if (!stockSearchQuery.trim()) return true;
                         const q = stockSearchQuery.toLowerCase().trim();
                         const fieldsStr = Object.values(item.fields || {}).join(" ").toLowerCase();
@@ -2075,9 +2100,13 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
           <div className="relative w-full max-w-2xl bg-[#090f1d] rounded-3xl p-6 sm:p-8 shadow-2xl border border-indigo-500/30 z-10 max-h-[90vh] overflow-y-auto space-y-6 text-white">
             <div className="flex items-center justify-between pb-4 border-b border-indigo-500/20">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400">
-                  <Pencil className="w-5 h-5" />
-                </div>
+                <ProductIcon
+                  type={editIconType}
+                  customLogoUrl={editCustomLogoUrl}
+                  logoSize={editLogoSize}
+                  className="w-10 h-10 shrink-0"
+                  size={20}
+                />
                 <div>
                   <h3 className="text-lg font-black text-white">Edit Product Details</h3>
                   <p className="text-xs text-slate-400">Update title, pricing, database stock units, and description.</p>

@@ -29,6 +29,12 @@ export function ProductIcon({
   customLogoUrl,
   logoSize = "medium",
 }: ProductIconProps) {
+  const [imageError, setImageError] = React.useState(false);
+
+  React.useEffect(() => {
+    setImageError(false);
+  }, [customLogoUrl]);
+
   const scaleClass =
     logoSize === "small"
       ? "scale-[0.78]"
@@ -38,8 +44,8 @@ export function ProductIcon({
       ? "scale-[1.5]"
       : "scale-100";
 
-  // If custom logo image URL is provided, display image with selected scale
-  if (customLogoUrl && customLogoUrl.trim()) {
+  // If custom logo image URL is provided and valid, display image with selected scale
+  if (customLogoUrl && customLogoUrl.trim() && !imageError) {
     return (
       <div
         className={`relative flex items-center justify-center rounded-2xl bg-black/40 backdrop-blur-md border border-cyan-500/30 shadow-xl overflow-hidden p-2 transition-transform duration-300 ${className}`}
@@ -48,9 +54,7 @@ export function ProductIcon({
           src={customLogoUrl}
           alt="Product Logo"
           className={`w-full h-full object-contain drop-shadow-lg transition-transform duration-300 ${scaleClass}`}
-          onError={(e) => {
-            (e.target as HTMLElement).style.display = "none";
-          }}
+          onError={() => setImageError(true)}
         />
       </div>
     );
