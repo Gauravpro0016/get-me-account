@@ -19,23 +19,6 @@ export async function POST(req: NextRequest) {
     const rawQty = Number(body.quantity);
     const quantity = Math.max(1, Math.min(100, Number.isInteger(rawQty) && rawQty > 0 ? rawQty : 1));
 
-    // Check stock availability
-    const pool = await readPool();
-    if (!pool || pool.length === 0) {
-      return NextResponse.json(
-        { error: "Sorry, we are currently out of stock. Please check back later." },
-        { status: 503 }
-      );
-    }
-    if (pool.length < quantity) {
-      return NextResponse.json(
-        {
-          error: `Only ${pool.length} account(s) currently available in stock. Please reduce your quantity.`,
-        },
-        { status: 400 }
-      );
-    }
-
     const apiKey = process.env.FAMGATEWAY_API_KEY;
     if (!apiKey) {
       console.error("FAMGATEWAY_API_KEY is not configured in environment variables.");
@@ -59,8 +42,9 @@ export async function POST(req: NextRequest) {
     const redirectUrl = `${baseUrl}/?payment_success=1`;
 
     const cleanUsername = email.split("@")[0].slice(0, 30);
+    const passedAmount = Number(body.amount);
     const unitPrice = APP_CONFIG.price;
-    const amount = unitPrice * quantity;
+    const amount = Number.isFinite(passedAmount) && passedAmount > 0 ? passedAmount : unitPrice * quantity;
 
     console.log("Creating FamGateway order:", {
       quantity,
@@ -105,12 +89,19 @@ export async function POST(req: NextRequest) {
     const orderDetails = data.data;
     const orderId = orderDetails.order_id;
 
+    const productId = typeof body.productId === "string" ? body.productId.trim() : undefined;
+    const productName = typeof body.productName === "string" ? body.productName.trim() : undefined;
+    const cartItems = Array.isArray(body.cartItems) ? body.cartItems : undefined;
+
     // Persist order in Redis and global orders history
     await recordNewOrder({
       orderId,
       email,
       amount,
       quantity,
+      productId,
+      productName,
+      cartItems,
     });
 
     return NextResponse.json({

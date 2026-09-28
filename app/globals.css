@@ -1,1 +1,81 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --bg-main: #f0f4f9;
+    --card-main: #ffffff;
+    --text-main: #090e1a;
+    --border-main: rgba(203, 213, 225, 0.8);
+    color-scheme: light;
+  }
+
+  .dark, [data-theme="dark"] {
+    --bg-main: #050811;
+    --card-main: #0a1120;
+    --text-main: #ffffff;
+    --border-main: rgba(56, 189, 248, 0.18);
+    color-scheme: dark;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+}
+
+/* Custom Scrollbar - Bluish Black Glow */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #050811;
+}
+
+.light ::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #0284c7, #38bdf8, #6366f1);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #38bdf8, #00f2fe);
+}
+
+/* Horizontal Product List Scrollbar */
+.scrollbar-custom::-webkit-scrollbar {
+  height: 7px;
+}
+
+.scrollbar-custom::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 9999px;
+}
+
+.scrollbar-custom::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #00f2fe, #38bdf8, #6366f1);
+  border-radius: 9999px;
+  box-shadow: 0 0 10px rgba(0, 242, 254, 0.4);
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

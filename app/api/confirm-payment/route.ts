@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   fulfillOrder,
   getFulfilledCredential,
+  getFulfilledCredentials,
   getOrder,
   isAlreadySent,
 } from "@/lib/fulfillment";
@@ -116,21 +117,13 @@ export async function POST(req: NextRequest) {
     // 1. Check if already fulfilled (e.g. processed via Webhook earlier)
     const alreadySent = await isAlreadySent(orderId);
     if (alreadySent) {
-      const credential = await getFulfilledCredential(orderId);
+      const credentialsList = await getFulfilledCredentials(orderId);
+      const credential = credentialsList[0] || null;
       return NextResponse.json({
         status: "confirmed",
         already_sent: true,
-        credential: credential
-          ? {
-              email: credential.email,
-              emailPassword: credential.emailPassword || credential.password,
-              discordPassword: credential.discordPassword,
-              token: credential.token,
-              domain: credential.domain,
-              twoFactorKey: credential.twoFactorKey,
-              keyweb: credential.keyweb,
-            }
-          : undefined,
+        credential: credential || undefined,
+        credentials: credentialsList,
       });
     }
 
@@ -163,17 +156,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         status: "confirmed",
-        credential: result.credential
-          ? {
-              email: result.credential.email,
-              emailPassword: result.credential.emailPassword || result.credential.password,
-              discordPassword: result.credential.discordPassword,
-              token: result.credential.token,
-              domain: result.credential.domain,
-              twoFactorKey: result.credential.twoFactorKey,
-              keyweb: result.credential.keyweb,
-            }
-          : undefined,
+        credential: result.credential || undefined,
         credentials: result.credentials || (result.credential ? [result.credential] : []),
         utr: fgStatus.utr,
       });

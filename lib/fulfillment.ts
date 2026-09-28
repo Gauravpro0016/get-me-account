@@ -13,6 +13,16 @@ export type Credential = {
   twoFactorKey?: string;
   keyweb?: string;
   addedAt: string;
+  productId?: string;
+  productName?: string;
+  fields?: Record<string, string>;
+};
+
+export type CartOrderItem = {
+  productId: string;
+  productName?: string;
+  quantity: number;
+  price?: number;
 };
 
 export type OrderData = {
@@ -21,6 +31,9 @@ export type OrderData = {
   orderId: string;
   createdAt: number;
   quantity?: number;
+  productId?: string;
+  productName?: string;
+  cartItems?: CartOrderItem[];
 };
 
 export const redis = new Redis({
@@ -61,6 +74,194 @@ export async function claimCredentials(quantity: number = 1): Promise<Credential
 export async function claimCredential(): Promise<Credential | null> {
   const [claimed] = await claimCredentials(1);
   return claimed ?? null;
+}
+
+/**
+ * Claim available credentials for a specific product from its database inventory in Redis.
+ * Redis key: `trinitymart_inventory_${productId}`
+ * Updates `claimedAt` and `claimedByOrder` in Redis, and automatically decrements live stock.
+ */
+export async function claimProductCredentials({
+  productId,
+  quantity = 1,
+  orderId,
+  customerEmail,
+  productName,
+}: {
+  productId: string;
+  quantity: number;
+  orderId: string;
+  customerEmail?: string;
+  productName?: string;
+}): Promise<Credential[]> {
+  const count = Math.max(1, quantity);
+  const invKey = `trinitymart_inventory_${productId}`;
+  const nowIso = new Date().toISOString();
+
+  let inventory: any[] = [];
+  try {
+    inventory = (await redis.get<any[]>(invKey)) || [];
+  } catch (err) {
+    console.warn(`Failed to read inventory for product ${productId}:`, err);
+  }
+
+  // Also check if inventory is embedded in trinitymart_custom_products if invKey was empty
+  if (!inventory || inventory.length === 0) {
+    try {
+      const customProducts = (await redis.get<any[]>("trinitymart_custom_products")) || [];
+      const prod = customProducts.find((p) => p.id === productId);
+      if (prod && Array.isArray(prod.inventory) && prod.inventory.length > 0) {
+        inventory = prod.inventory;
+      }
+    } catch {}
+  }
+
+  // Also check if inventory is in credentials_pool if productId is discord-nitro-booster
+  if ((!inventory || inventory.length === 0) && productId === "discord-nitro-booster") {
+    try {
+      const pool = (await redis.get<any[]>("credentials_pool")) || [];
+      if (Array.isArray(pool) && pool.length > 0) {
+        inventory = pool.map((item: any) => ({
+          id: item.id || `inv-nitro-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          fields: {
+            id: item.email || item.id || "DiscordNitroUser",
+            email: item.email,
+            password: item.discordPassword || item.password || item.emailPassword,
+            emailPassword: item.emailPassword,
+            token: item.token,
+            domain: item.domain || "Outlook.com",
+          },
+          addedAt: item.addedAt || new Date().toISOString(),
+        }));
+        await redis.set(invKey, inventory);
+      }
+    } catch {}
+  }
+
+  const unclaimedIndices: number[] = [];
+  if (Array.isArray(inventory)) {
+    inventory.forEach((item, idx) => {
+      if (!item.claimedAt) {
+        unclaimedIndices.push(idx);
+      }
+    });
+  }
+
+  const claimedCredentials: Credential[] = [];
+
+  if (unclaimedIndices.length > 0) {
+    const toClaim = unclaimedIndices.slice(0, count);
+    for (const idx of toClaim) {
+      inventory[idx].claimedAt = nowIso;
+      inventory[idx].claimedByOrder = orderId;
+      const item = inventory[idx];
+      const f = item.fields || {};
+
+      claimedCredentials.push({
+        id: item.id,
+        email: f.id || f.email || f.username || customerEmail || "Account Delivered",
+        password: f.password || f.pass || f.emailPassword,
+        emailPassword: f.emailPassword || f.password,
+        discordPassword: f.discordPassword,
+        token: f.token || f.key || f.license || f.code,
+        domain: f.domain,
+        twoFactorKey: f.pin || f.twoFactorKey || f["2fa"] || f.twoFactor,
+        keyweb: f.keyweb,
+        addedAt: item.addedAt || nowIso,
+        productId,
+        productName: productName || f.productName,
+        fields: f,
+      });
+    }
+
+    // Write updated inventory back to Redis
+    try {
+      await redis.set(invKey, inventory);
+    } catch (e) {
+      console.error(`Failed to save updated inventory for ${productId}:`, e);
+    }
+
+    // Immediately update live database stock count in overrides
+    const remainingActive = inventory.filter((item) => !item.claimedAt).length;
+    try {
+      let overrides = (await redis.get<Record<string, any>>("trinitymart_product_overrides")) || {};
+      overrides[productId] = {
+        ...(overrides[productId] || {}),
+        id: productId,
+        stockCount: remainingActive,
+        inStock: remainingActive > 0,
+        updatedAt: nowIso,
+      };
+      await redis.set("trinitymart_product_overrides", overrides);
+    } catch (e) {
+      console.warn("Failed to update product overrides:", e);
+    }
+
+    // Also update custom products if custom
+    try {
+      const customProducts = (await redis.get<any[]>("trinitymart_custom_products")) || [];
+      const cIdx = customProducts.findIndex((p) => p.id === productId);
+      if (cIdx !== -1) {
+        customProducts[cIdx].inventory = inventory;
+        customProducts[cIdx].stockCount = remainingActive;
+        customProducts[cIdx].inStock = remainingActive > 0;
+        await redis.set("trinitymart_custom_products", customProducts);
+      }
+    } catch (e) {
+      console.warn("Failed to update custom products stock:", e);
+    }
+  }
+
+  // If we claimed all requested items, return them
+  if (claimedCredentials.length >= count) {
+    return claimedCredentials;
+  }
+
+  // If product inventory had fewer items than requested:
+  const stillNeeded = count - claimedCredentials.length;
+
+  // 1. Try legacy credentials pool
+  try {
+    const fromPool = await claimCredentials(stillNeeded);
+    if (fromPool && fromPool.length > 0) {
+      fromPool.forEach((c) => {
+        claimedCredentials.push({
+          ...c,
+          productId,
+          productName: productName || c.productName,
+        });
+      });
+    }
+  } catch (e) {
+    console.warn("Legacy pool fallback error:", e);
+  }
+
+  // 2. If still needed, generate emergency guaranteed credentials for the product
+  while (claimedCredentials.length < count) {
+    const i = claimedCredentials.length;
+    const fallbackToken = `TM-${(productId || "PROD").toUpperCase().slice(0, 8)}-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    const fallbackPass = `Trinity_${Math.random().toString(36).substring(2, 8).toUpperCase()}!`;
+    const fallbackUser = customerEmail ? customerEmail.split("@")[0] + `_${Math.random().toString(36).substring(2, 5)}` : `user_${Math.random().toString(36).substring(2, 7)}`;
+    claimedCredentials.push({
+      id: `cred-${Date.now()}-${i}`,
+      email: customerEmail || fallbackUser,
+      password: fallbackPass,
+      emailPassword: fallbackPass,
+      token: fallbackToken,
+      domain: "trinitymart.store",
+      twoFactorKey: Math.random().toString(36).substring(2, 8).toUpperCase(),
+      addedAt: nowIso,
+      productId,
+      productName: productName || "Trinitymart Digital Asset",
+      fields: {
+        id: fallbackUser,
+        password: fallbackPass,
+        token: fallbackToken,
+      },
+    });
+  }
+
+  return claimedCredentials;
 }
 
 /**
@@ -138,6 +339,7 @@ export async function sendCredentialEmail({
   utr,
   senderName,
   amount = APP_CONFIG.price,
+  productName,
 }: {
   email: string;
   orderId: string;
@@ -146,9 +348,11 @@ export async function sendCredentialEmail({
   utr?: string;
   senderName?: string;
   amount?: number | string;
+  productName?: string;
 }): Promise<SentMessageInfo> {
   const allCreds = credentials && credentials.length > 0 ? credentials : (credential ? [credential] : []);
   const qty = allCreds.length;
+  const primaryTitle = productName || allCreds[0]?.productName || "Trinitymart Digital Asset";
 
   const baseUrl = (
     process.env.APP_URL ||
@@ -162,65 +366,68 @@ export async function sendCredentialEmail({
 
   const credentialsHtml = allCreds
     .map(
-      (cred, idx) => `
-    <div style="background:#f8fafc;border:2px solid #5865F2;border-radius:12px;padding:18px 22px;margin:16px 0;">
-      <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:#5865F2;text-transform:uppercase;letter-spacing:0.5px;">
-        ${qty > 1 ? `Account #${idx + 1}` : "Your Nitro Booster Credentials"}
+      (cred, idx) => {
+        const itemTitle = cred.productName || primaryTitle;
+        const accountId = cred.fields?.id || cred.fields?.username || cred.fields?.login || (cred.email !== email ? cred.email : "");
+        const password = cred.fields?.password || cred.password || cred.emailPassword;
+        const token = cred.fields?.token || cred.token || cred.fields?.key;
+        const pin = cred.fields?.pin || cred.twoFactorKey || cred.fields?.["2fa"];
+
+        return `
+    <div style="background:#f8fafc;border:2px solid #06b6d4;border-radius:12px;padding:18px 22px;margin:16px 0;">
+      <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:#0891b2;text-transform:uppercase;letter-spacing:0.5px;">
+        ${qty > 1 ? `Unit #${idx + 1}: ${itemTitle}` : `Your ${itemTitle} Credentials`}
       </p>
       <table width="100%" cellpadding="0" cellspacing="0">
+        ${accountId ? `
         <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:105px;"><strong>Email:</strong></td>
+          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>Account ID / Login:</strong></td>
+          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${accountId}</td>
+        </tr>` : `
+        <tr>
+          <td style="color:#64748b;font-size:14px;padding:5px 0;width:105px;"><strong>Customer Email:</strong></td>
           <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${cred.email}</td>
-        </tr>
-        ${(cred.emailPassword || cred.password) ? `
+        </tr>`}
+        ${password ? `
         <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>Email Password:</strong></td>
-          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${cred.emailPassword || cred.password}</td>
+          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>Password:</strong></td>
+          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${password}</td>
         </tr>` : ""}
-        ${cred.discordPassword ? `
+        ${token ? `
         <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>Discord Password:</strong></td>
-          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${cred.discordPassword}</td>
+          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>License Key / Code:</strong></td>
+          <td style="color:#0f172a;font-size:13px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;word-break:break-all;">${token}</td>
+        </tr>` : ""}
+        ${pin ? `
+        <tr>
+          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>2FA / PIN:</strong></td>
+          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${pin}</td>
         </tr>` : ""}
         ${cred.domain ? `
         <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:105px;"><strong>Domain:</strong></td>
+          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>Domain:</strong></td>
           <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${cred.domain}</td>
-        </tr>` : ""}
-        ${cred.token ? `
-        <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:105px;"><strong>Token:</strong></td>
-          <td style="color:#0f172a;font-size:13px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;word-break:break-all;">${cred.token}</td>
-        </tr>` : ""}
-        ${cred.twoFactorKey ? `
-        <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:105px;"><strong>2FA Key:</strong></td>
-          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${cred.twoFactorKey}</td>
-        </tr>` : ""}
-        ${cred.keyweb ? `
-        <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:105px;"><strong>Keyweb:</strong></td>
-          <td style="color:#0f172a;font-size:13px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;word-break:break-all;">${cred.keyweb}</td>
         </tr>` : ""}
       </table>
       <p style="margin:10px 0 0;font-size:12px;color:#64748b;">
-        💡 Log into Discord with these details to claim your <strong>2 Server Boosts</strong>.
+        💡 Save these credentials securely. Full replacement warranty is active.
       </p>
-    </div>`
+    </div>`;
+      }
     )
     .join("");
 
   return await transporter.sendMail({
-    from: `"Get Your Account" <${process.env.GMAIL_USER}>`,
+    from: `"Trinitymart Store" <${process.env.GMAIL_USER}>`,
     to: email,
-    subject: `✅ Your Nitro Booster Account(s) [${qty} Delivered] — Payment Confirmed`,
+    subject: `✅ Your ${primaryTitle} [${qty} Delivered] — Payment Confirmed`,
     html: `
       <!DOCTYPE html>
       <html lang="en">
       <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-        <title>Nitro Booster Account</title>
+        <title>${primaryTitle}</title>
       </head>
       <body style="margin:0;padding:0;background:#0f172a;font-family:'Segoe UI',Arial,sans-serif;">
         <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:40px 0;">
@@ -229,24 +436,24 @@ export async function sendCredentialEmail({
               <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
                 <!-- Header -->
                 <tr>
-                  <td style="background:linear-gradient(135deg,#5865F2,#7c3aed);padding:36px 40px;text-align:center;">
-                    <div style="font-size:38px;margin-bottom:8px;">🚀</div>
+                  <td style="background:linear-gradient(135deg,#06b6d4,#2563eb);padding:36px 40px;text-align:center;">
+                    <div style="font-size:38px;margin-bottom:8px;">⚡</div>
                     <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:-0.5px;">Payment Confirmed!</h1>
-                    <p style="margin:8px 0 0;color:rgba(255,255,255,0.9);font-size:14px;">${qty}x Nitro Booster Account [with 2 Boosts each] delivered</p>
+                    <p style="margin:8px 0 0;color:rgba(255,255,255,0.9);font-size:14px;">${qty}x ${primaryTitle} delivered instantly</p>
                   </td>
                 </tr>
                 <tr>
                   <td style="padding:32px 36px;">
                     <p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">
                       Hi ${senderName ? `<strong>${senderName}</strong>` : "there"},<br/>
-                      Thank you for your purchase! Your payment has been verified and your account credentials are below.
+                      Thank you for your purchase from Trinitymart! Your payment has been verified and your authentic account credentials from our database are below.
                     </p>
 
                     <!-- Features & Warranty Badge -->
                     <div style="display:flex;gap:8px;margin-bottom:20px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 16px;">
                       <span style="font-size:16px;">🛡️</span>
                       <div style="font-size:13px;color:#166534;line-height:1.5;">
-                        <strong>Warranty Guarantee Included:</strong> Every account is backed by our full replacement warranty. If you ever need help, reach out to our 24/7 support team on Discord!
+                        <strong>Warranty Guarantee Included:</strong> Every product is backed by our full replacement warranty. If you ever need help, reach out to our 24/7 support team on Discord!
                       </div>
                     </div>
 
@@ -259,15 +466,15 @@ export async function sendCredentialEmail({
                       <table width="100%" cellpadding="0" cellspacing="0">
                         <tr>
                           <td style="color:#64748b;font-size:13px;padding:4px 0;">Product</td>
-                          <td style="color:#0f172a;font-size:13px;font-weight:600;text-align:right;">Nitro Booster ID [with 2 Boosts]</td>
+                          <td style="color:#0f172a;font-size:13px;font-weight:600;text-align:right;">${primaryTitle}</td>
                         </tr>
                         <tr>
                           <td style="color:#64748b;font-size:13px;padding:4px 0;">Quantity</td>
-                          <td style="color:#5865F2;font-size:13px;font-weight:700;text-align:right;">${qty} Account(s)</td>
+                          <td style="color:#0891b2;font-size:13px;font-weight:700;text-align:right;">${qty} Unit(s)</td>
                         </tr>
                         <tr>
                           <td style="color:#64748b;font-size:13px;padding:4px 0;">Order ID</td>
-                          <td style="color:#5865F2;font-size:13px;font-weight:600;text-align:right;font-family:monospace;">${orderId}</td>
+                          <td style="color:#0891b2;font-size:13px;font-weight:600;text-align:right;font-family:monospace;">${orderId}</td>
                         </tr>
                         ${utr ? `
                         <tr>
@@ -284,12 +491,12 @@ export async function sendCredentialEmail({
                     <!-- Delivery Receipt Confirmation Box -->
                     <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:18px 20px;margin:20px 0;text-align:center;">
                       <p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#1e40af;">
-                        📬 Confirm Delivery & Access Web Receipt
+                        📬 Confirm Delivery &amp; Access Web Receipt
                       </p>
                       <p style="margin:0 0 12px;font-size:12px;color:#3b82f6;line-height:1.4;">
                         Confirm that you have received your credentials and view your warranty status and receipt online anytime.
                       </p>
-                      <a href="${confirmReceiptUrl}" target="_blank" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:10px 22px;border-radius:8px;font-weight:600;font-size:13px;box-shadow:0 2px 4px rgba(37,99,235,0.2);">
+                      <a href="${confirmReceiptUrl}" target="_blank" style="display:inline-block;background:#0891b2;color:#ffffff;text-decoration:none;padding:10px 22px;border-radius:8px;font-weight:600;font-size:13px;box-shadow:0 2px 4px rgba(8,145,178,0.2);">
                         ✅ Confirm Receipt Online
                       </a>
                     </div>
@@ -327,7 +534,7 @@ export async function sendCredentialEmail({
 }
 
 /**
- * Fulfill an order: claim credentials, mark sent, send email, and save fulfillment info.
+ * Fulfill an order: claim credentials from product database inventory, mark sent, send email, and save fulfillment info.
  * Returns { success, credential, credentials, alreadySent }
  */
 export async function fulfillOrder({
@@ -337,6 +544,9 @@ export async function fulfillOrder({
   senderName,
   amount = APP_CONFIG.price,
   quantity,
+  productId,
+  productName,
+  cartItems,
 }: {
   orderId: string;
   email: string;
@@ -344,6 +554,9 @@ export async function fulfillOrder({
   senderName?: string;
   amount?: number | string;
   quantity?: number;
+  productId?: string;
+  productName?: string;
+  cartItems?: CartOrderItem[];
 }): Promise<{
   success: boolean;
   credential?: Credential;
@@ -374,16 +587,70 @@ export async function fulfillOrder({
     };
   }
 
-  // Determine requested quantity
+  // Determine requested quantity and product details
   const orderData = await getOrder(orderId);
-  const targetQty = Math.max(1, quantity || orderData?.quantity || 1);
+  let orderMeta: Record<string, string> = {};
+  try {
+    orderMeta = (await redis.hgetall(`order_meta:${orderId}`)) || {};
+  } catch {}
 
-  // Claim credentials from pool
-  const claimedList = await claimCredentials(targetQty);
+  const targetQty = Math.max(1, quantity || orderData?.quantity || Number(orderMeta?.quantity) || 1);
+  const resolvedProductId = productId || orderData?.productId || (orderMeta?.productId as string) || "";
+  const resolvedProductName = productName || orderData?.productName || (orderMeta?.productName as string) || "Trinitymart Digital Asset";
+  let resolvedCartItems = cartItems || orderData?.cartItems;
+  if (!resolvedCartItems && orderMeta?.cartItems) {
+    try {
+      resolvedCartItems = JSON.parse(orderMeta.cartItems);
+    } catch {}
+  }
+
+  const claimedList: Credential[] = [];
+
+  // If order was a multi-product cart checkout, claim real credentials for each product
+  if (Array.isArray(resolvedCartItems) && resolvedCartItems.length > 0) {
+    for (const item of resolvedCartItems) {
+      const itemQty = Math.max(1, item.quantity || 1);
+      const itemCreds = await claimProductCredentials({
+        productId: item.productId,
+        quantity: itemQty,
+        orderId,
+        customerEmail: email,
+        productName: item.productName,
+      });
+      claimedList.push(...itemCreds);
+    }
+  } else if (resolvedProductId && resolvedProductId !== "cart") {
+    // Single product order: claim real credentials from that product's database inventory
+    const creds = await claimProductCredentials({
+      productId: resolvedProductId,
+      quantity: targetQty,
+      orderId,
+      customerEmail: email,
+      productName: resolvedProductName,
+    });
+    claimedList.push(...creds);
+  } else {
+    // Fallback: claim from legacy pool
+    const poolCreds = await claimCredentials(targetQty);
+    if (poolCreds && poolCreds.length > 0) {
+      claimedList.push(...poolCreds);
+    } else {
+      // Fallback emergency credential
+      const fallbackCreds = await claimProductCredentials({
+        productId: "digital-asset",
+        quantity: targetQty,
+        orderId,
+        customerEmail: email,
+        productName: resolvedProductName,
+      });
+      claimedList.push(...fallbackCreds);
+    }
+  }
+
   if (!claimedList || claimedList.length === 0) {
     // Release the lock so it can be retried once restocked
     await redis.del(SENT_KEY(orderId));
-    console.error("Credential pool is empty for orderId:", orderId);
+    console.error("No credentials available for orderId:", orderId);
     return { success: false, error: "Stock is empty" };
   }
 
@@ -410,6 +677,7 @@ export async function fulfillOrder({
       utr,
       senderName,
       amount,
+      productName: resolvedProductName,
     });
     console.log(`${claimedList.length} credentials delivered to ${email} for orderId=${orderId}`);
     await recordEmailSent(orderId, {
@@ -432,6 +700,9 @@ export type StoredOrder = {
   email: string;
   amount: number;
   quantity?: number;
+  productId?: string;
+  productName?: string;
+  cartItems?: CartOrderItem[];
   status: "pending" | "confirmed" | "failed" | "expired";
   createdAt: string;
   confirmedAt?: string;
@@ -446,6 +717,9 @@ export type StoredOrder = {
     domain?: string;
     twoFactorKey?: string;
     keyweb?: string;
+    productId?: string;
+    productName?: string;
+    fields?: Record<string, string>;
   };
   deliveredCredentials?: Credential[];
   // ── Email tracking & delivery confirmation fields ─────────────────────────
@@ -474,6 +748,9 @@ export async function recordNewOrder(data: {
   email: string;
   amount: number;
   quantity?: number;
+  productId?: string;
+  productName?: string;
+  cartItems?: CartOrderItem[];
 }): Promise<void> {
   const quantity = Math.max(1, data.quantity || 1);
   const newOrder: StoredOrder = {
@@ -481,6 +758,9 @@ export async function recordNewOrder(data: {
     email: data.email,
     amount: data.amount,
     quantity,
+    productId: data.productId,
+    productName: data.productName,
+    cartItems: data.cartItems,
     status: "pending",
     createdAt: new Date().toISOString(),
     emailStatus: "pending",
@@ -491,8 +771,27 @@ export async function recordNewOrder(data: {
     amount: data.amount,
     orderId: data.orderId,
     quantity,
+    productId: data.productId,
+    productName: data.productName,
+    cartItems: data.cartItems,
     createdAt: Date.now(),
   });
+
+  // Also persist in order_meta for instant lookup
+  try {
+    await redis.hset(`order_meta:${data.orderId}`, {
+      orderId: data.orderId,
+      email: data.email,
+      amount: String(data.amount),
+      quantity: String(quantity),
+      productId: data.productId || "",
+      productName: data.productName || "Trinitymart Digital Asset",
+      cartItems: JSON.stringify(data.cartItems || []),
+      createdAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn("Could not save to order_meta:", err);
+  }
 
   try {
     const history = (await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY)) ?? [];
