@@ -14,8 +14,7 @@ export const APP_CONFIG = {
   // Discord 24/7 Support Server Link
   discordLink:
     process.env.DISCORD_LINK ||
-    process.env.NEXT_PUBLIC_DISCORD_LINK ||
-    "https://discord.gg/trinitymart",
+    process.env.NEXT_PUBLIC_DISCORD_LINK,
 
   // App production URL
   appUrl:
