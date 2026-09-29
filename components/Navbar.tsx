@@ -62,7 +62,7 @@ export function Navbar() {
     { name: "Reviews", href: "/#reviews" },
   ];
 
-  const discordUrl = APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY";
+  const discordUrl = APP_CONFIG.discordLink || "/discord";
 
   const handleSupportClick = (e?: React.MouseEvent) => {
     if (e) e.preventDefault();

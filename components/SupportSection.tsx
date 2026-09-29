@@ -40,7 +40,7 @@ const FAQS = [
 export function SupportSection() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
-  const discordUrl = APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY";
+  const discordUrl = APP_CONFIG.discordLink || "/discord";
 
   const handleDiscordRedirect = () => {
     window.open(discordUrl, "_blank", "noopener,noreferrer");

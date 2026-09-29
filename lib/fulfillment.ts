@@ -521,6 +521,12 @@ export async function sendCredentialEmail({
 
   const trackingPixelUrl = `${baseUrl}/api/track-email?orderId=${encodeURIComponent(orderId)}`;
   const confirmReceiptUrl = `${baseUrl}/api/track-email/confirm?orderId=${encodeURIComponent(orderId)}`;
+  const emailDiscordUrl =
+    process.env.DISCORD_LINK ||
+    process.env.NEXT_PUBLIC_DISCORD_LINK ||
+    (APP_CONFIG.discordLink && APP_CONFIG.discordLink.startsWith("http")
+      ? APP_CONFIG.discordLink
+      : `${baseUrl}/discord`);
 
   const credentialsHtml = allCreds
     .map(
@@ -530,6 +536,40 @@ export async function sendCredentialEmail({
         const password = cred.fields?.password || cred.password || cred.emailPassword;
         const token = cred.fields?.token || cred.token || cred.fields?.key;
         const pin = cred.fields?.pin || cred.twoFactorKey || cred.fields?.["2fa"];
+
+        const standardKeys = new Set([
+          "id",
+          "email",
+          "username",
+          "login",
+          "password",
+          "emailPassword",
+          "discordPassword",
+          "token",
+          "key",
+          "license",
+          "code",
+          "pin",
+          "twoFactorKey",
+          "2fa",
+          "twoFactor",
+          "domain",
+          "keyweb",
+          "productName",
+        ]);
+
+        const customFieldsHtml = cred.fields
+          ? Object.entries(cred.fields)
+              .filter(([k, v]) => !standardKeys.has(k) && Boolean(v))
+              .map(
+                ([k, v]) => `
+        <tr>
+          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>${k}:</strong></td>
+          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;word-break:break-all;">${String(v)}</td>
+        </tr>`
+              )
+              .join("")
+          : "";
 
         return `
     <div style="background:#f8fafc;border:2px solid #06b6d4;border-radius:12px;padding:18px 22px;margin:16px 0;">
@@ -561,6 +601,7 @@ export async function sendCredentialEmail({
           <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>2FA / PIN:</strong></td>
           <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${pin}</td>
         </tr>` : ""}
+        ${customFieldsHtml}
         ${cred.domain ? `
         <tr>
           <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>Domain:</strong></td>
@@ -667,7 +708,7 @@ export async function sendCredentialEmail({
                     <div style="background:linear-gradient(135deg,rgba(88,101,242,0.1),rgba(124,58,237,0.1));border:1px solid rgba(88,101,242,0.3);border-radius:12px;padding:20px;text-align:center;margin:24px 0;">
                       <p style="margin:0 0 6px;font-weight:700;color:#5865F2;font-size:15px;">Need Help? 24/7 Support on Discord</p>
                       <p style="margin:0 0 14px;color:#64748b;font-size:13px;">Join our official server for warranty replacements, boost guides, and instant ticket assistance.</p>
-                      <a href="${APP_CONFIG.discordLink}" target="_blank" style="display:inline-block;background:#5865F2;color:#ffffff;text-decoration:none;padding:10px 22px;border-radius:8px;font-weight:600;font-size:13px;">
+                      <a href="${emailDiscordUrl}" target="_blank" style="display:inline-block;background:#5865F2;color:#ffffff;text-decoration:none;padding:10px 22px;border-radius:8px;font-weight:600;font-size:13px;">
                         💬 Join Discord Support Server
                       </a>
                     </div>

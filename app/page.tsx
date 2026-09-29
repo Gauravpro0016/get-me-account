@@ -127,7 +127,7 @@ export default function HomePage() {
   });
 
   const handleSupportClick = () => {
-    const link = APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY";
+    const link = APP_CONFIG.discordLink || "/discord";
     window.open(link, "_blank", "noopener,noreferrer");
   };
 
@@ -202,7 +202,7 @@ export default function HomePage() {
             </Link>
 
             <a
-              href={APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY"}
+              href={APP_CONFIG.discordLink || "/discord"}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 px-7 py-4 rounded-2xl bg-[#0b1222] border border-cyan-500/30 hover:border-cyan-400 text-white font-extrabold text-sm shadow-lg shadow-black/40 hover:scale-105 active:scale-95 transition-all cursor-pointer"

@@ -14,8 +14,8 @@ export const APP_CONFIG = {
   // Discord 24/7 Support Server Link
   discordLink:
     process.env.NEXT_PUBLIC_DISCORD_LINK ||
-    process.env.DISCORD_LINK ||
-    "https://discord.com/invite/shwWe3uqY",
+    (typeof window === "undefined" ? process.env.DISCORD_LINK : "") ||
+    "/discord",
 
   // App production URL
   appUrl:

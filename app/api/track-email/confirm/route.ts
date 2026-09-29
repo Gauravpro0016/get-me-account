@@ -211,7 +211,7 @@ export async function GET(req: NextRequest) {
       </div>
     </div>
 
-    <a href="${APP_CONFIG.discordLink}" target="_blank" class="btn">
+    <a href="${process.env.DISCORD_LINK || process.env.NEXT_PUBLIC_DISCORD_LINK || (APP_CONFIG.discordLink?.startsWith('http') ? APP_CONFIG.discordLink : '/discord')}" target="_blank" class="btn">
       💬 Join 24/7 Discord Support
     </a>
     <a href="/" class="btn-secondary">

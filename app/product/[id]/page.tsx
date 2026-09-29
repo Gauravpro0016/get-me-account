@@ -360,6 +360,24 @@ export default function ProductDetailPage() {
                   </li>
                 ))}
               </ul>
+
+              {product.customFields && product.customFields.length > 0 && (
+                <div className="pt-3 border-t border-cyan-500/10 space-y-1.5">
+                  <span className="text-[11px] font-bold text-cyan-400 block uppercase tracking-wider">
+                    Credentials &amp; Access Details Provided:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {product.customFields.map((f, i) => (
+                      <span
+                        key={i}
+                        className="text-xs px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-medium"
+                      >
+                        ✓ {f.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 24/7 Discord Support Callout for this product */}
@@ -369,7 +387,7 @@ export default function ProductDetailPage() {
                 <span>Need help with activation? Staff is active on Discord</span>
               </div>
               <a
-                href={APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY"}
+                href={APP_CONFIG.discordLink || "/discord"}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-black text-cyan-300 hover:underline flex items-center gap-1"

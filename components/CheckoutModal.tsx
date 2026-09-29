@@ -882,6 +882,64 @@ export function CheckoutModal() {
                             </button>
                           </div>
                         )}
+
+                        {/* Additional Custom Options & Credential Fields */}
+                        {cred.fields &&
+                          Object.entries(cred.fields).map(([k, v]) => {
+                            if (
+                              [
+                                "id",
+                                "email",
+                                "username",
+                                "login",
+                                "password",
+                                "emailPassword",
+                                "discordPassword",
+                                "token",
+                                "key",
+                                "license",
+                                "code",
+                                "pin",
+                                "twoFactorKey",
+                                "2fa",
+                                "twoFactor",
+                                "domain",
+                                "keyweb",
+                                "productName",
+                              ].includes(k) ||
+                              !v
+                            ) {
+                              return null;
+                            }
+                            const valStr = String(v);
+                            const copyKey = `custom-${idx}-${k}`;
+                            return (
+                              <div
+                                key={k}
+                                className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10"
+                              >
+                                <div className="text-xs min-w-0 pr-2">
+                                  <span className="text-slate-400 block text-[10px] font-bold uppercase truncate">
+                                    {k}
+                                  </span>
+                                  <span className="font-mono font-bold text-slate-900 dark:text-white break-all">
+                                    {valStr}
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={() => copyToClipboard(valStr, copyKey)}
+                                  className="p-1.5 text-slate-400 hover:text-cyan-500 cursor-pointer shrink-0"
+                                  title={`Copy ${k}`}
+                                >
+                                  {copiedField === copyKey ? (
+                                    <Check className="w-4 h-4 text-emerald-500" />
+                                  ) : (
+                                    <Copy className="w-4 h-4" />
+                                  )}
+                                </button>
+                              </div>
+                            );
+                          })}
                       </div>
                     );
                   })}
@@ -891,7 +949,7 @@ export function CheckoutModal() {
               {/* Action buttons */}
               <div className="space-y-2">
                 <a
-                  href={APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY"}
+                  href={APP_CONFIG.discordLink || "/discord"}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#5865F2] hover:bg-[#4752c4] text-white text-xs font-bold transition-all"
@@ -932,7 +990,7 @@ export function CheckoutModal() {
                   Try Again
                 </button>
                 <a
-                  href={APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY"}
+                  href={APP_CONFIG.discordLink || "/discord"}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center justify-center gap-1.5"

@@ -293,10 +293,13 @@ export async function POST(req: NextRequest) {
           verified: true,
         },
       ],
-      customFields: customFields || [
-        { id: "id", name: "Account ID / Login", type: "text" },
-        { id: "password", name: "Password", type: "password" },
-      ],
+      customFields:
+        Array.isArray(customFields) && customFields.length > 0
+          ? customFields
+          : [
+              { id: "id", name: "Account ID / Login", type: "text" },
+              { id: "password", name: "Password", type: "password" },
+            ],
       inventory: stockItems.map((item: any, idx: number) => ({
         id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${idx}`,
         fields: typeof item === "object" ? item : { token: String(item) },
@@ -436,6 +439,7 @@ export async function PUT(req: NextRequest) {
         shortDescription: editShortDesc,
         description: editDesc,
         features: editFeatures,
+        customFields: editCustomFields,
         bannerGradient,
         iconType,
         customLogoUrl,
@@ -467,6 +471,7 @@ export async function PUT(req: NextRequest) {
         if (editShortDesc !== undefined) prod.shortDescription = String(editShortDesc).trim();
         if (editDesc !== undefined) prod.description = String(editDesc).trim();
         if (Array.isArray(editFeatures)) prod.features = editFeatures;
+        if (Array.isArray(editCustomFields)) prod.customFields = editCustomFields;
         if (bannerGradient) prod.bannerGradient = String(bannerGradient);
         if (iconType) prod.iconType = String(iconType);
         if (customLogoUrl !== undefined) prod.customLogoUrl = customLogoUrl;
@@ -502,6 +507,7 @@ export async function PUT(req: NextRequest) {
         ...(editShortDesc !== undefined ? { shortDescription: String(editShortDesc).trim() } : {}),
         ...(editDesc !== undefined ? { description: String(editDesc).trim() } : {}),
         ...(Array.isArray(editFeatures) ? { features: editFeatures } : {}),
+        ...(Array.isArray(editCustomFields) ? { customFields: editCustomFields } : {}),
         ...(bannerGradient ? { bannerGradient: String(bannerGradient) } : {}),
         ...(iconType ? { iconType: String(iconType) } : {}),
         ...(customLogoUrl !== undefined ? { customLogoUrl } : {}),

@@ -60,7 +60,7 @@ export function CartDrawer() {
   };
 
   const handleSupportRedirect = () => {
-    const link = APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY";
+    const link = APP_CONFIG.discordLink || "/discord";
     window.open(link, "_blank", "noopener,noreferrer");
   };
 
@@ -301,7 +301,7 @@ export function CartDrawer() {
                     <span>256-Bit SSL Encrypted</span>
                   </div>
                   <a
-                    href={APP_CONFIG.discordLink || "https://discord.com/invite/shwWe3uqY"}
+                    href={APP_CONFIG.discordLink || "/discord"}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 text-cyan-400 hover:underline"

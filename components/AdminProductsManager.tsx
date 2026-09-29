@@ -28,7 +28,7 @@ import {
   Upload,
   Maximize2,
 } from "lucide-react";
-import { Product, ACTIVE_PRODUCTS_CACHE_KEY, REMOVED_IDS_CACHE_KEY } from "@/lib/products";
+import { Product, CustomFieldDefinition, ACTIVE_PRODUCTS_CACHE_KEY, REMOVED_IDS_CACHE_KEY } from "@/lib/products";
 import { ProductIcon } from "./ProductIcons";
 import { APP_CONFIG } from "@/lib/config";
 
@@ -163,6 +163,18 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
   const [editLogoSize, setEditLogoSize] = useState<string>("medium");
   const [editCustomBgUrl, setEditCustomBgUrl] = useState("");
   const [editBgSize, setEditBgSize] = useState<string>("cover");
+  // Edit Modal Custom Options State
+  const [editIncludeId, setEditIncludeId] = useState(true);
+  const [editIncludePassword, setEditIncludePassword] = useState(true);
+  const [editIncludeKey, setEditIncludeKey] = useState(false);
+  const [editIncludePin, setEditIncludePin] = useState(false);
+  const [editCustomOptionsList, setEditCustomOptionsList] = useState<string[]>([]);
+  const [editNewCustomOptionInput, setEditNewCustomOptionInput] = useState("");
+
+  // Stock Inventory Manager Custom Options State
+  const [stockModalCustomFields, setStockModalCustomFields] = useState<string[]>([]);
+  const [singleStockCustomValues, setSingleStockCustomValues] = useState<Record<string, string>>({});
+  const [newStockModalCustomOption, setNewStockModalCustomOption] = useState("");
 
   // Add Product Form State
   const [name, setName] = useState("");
@@ -185,14 +197,16 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
   const [customBgUrl, setCustomBgUrl] = useState("");
   const [bgSize, setBgSize] = useState<string>("cover");
 
-  // Custom Options / Fields toggles
+  // Custom Options / Fields toggles for Add Product
   const [fieldOptions, setFieldOptions] = useState({
     includeId: true,
     includePassword: true,
     includeKey: false,
     includePin: false,
-    customName: "",
   });
+  const [customOptionNames, setCustomOptionNames] = useState<string[]>([]);
+  const [newCustomOptionInput, setNewCustomOptionInput] = useState("");
+  const [customStockInputs, setCustomStockInputs] = useState<Record<string, string>>({});
 
   // Stock inventory items to add
   const [inventoryList, setInventoryList] = useState<Record<string, string>[]>([]);
@@ -200,13 +214,49 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
   const [stockInputPass, setStockInputPass] = useState("");
   const [stockInputKey, setStockInputKey] = useState("");
   const [stockInputPin, setStockInputPin] = useState("");
-  const [stockInputCustom, setStockInputCustom] = useState("");
   const [bulkStockText, setBulkStockText] = useState("");
   const [bulkMode, setBulkMode] = useState(false);
 
   // Status message
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Add / Remove custom option in Add Product form
+  const handleAddCustomOption = () => {
+    const trimmed = newCustomOptionInput.trim();
+    if (!trimmed) return;
+    if (customOptionNames.some((n) => n.toLowerCase() === trimmed.toLowerCase())) {
+      alert("This custom option already exists!");
+      return;
+    }
+    setCustomOptionNames((prev) => [...prev, trimmed]);
+    setNewCustomOptionInput("");
+  };
+
+  const handleRemoveCustomOption = (nameToRemove: string) => {
+    setCustomOptionNames((prev) => prev.filter((n) => n !== nameToRemove));
+    setCustomStockInputs((prev) => {
+      const next = { ...prev };
+      delete next[nameToRemove];
+      return next;
+    });
+  };
+
+  // Add / Remove custom option in Edit Product modal
+  const handleAddEditCustomOption = () => {
+    const trimmed = editNewCustomOptionInput.trim();
+    if (!trimmed) return;
+    if (editCustomOptionsList.some((n) => n.toLowerCase() === trimmed.toLowerCase())) {
+      alert("This custom option already exists!");
+      return;
+    }
+    setEditCustomOptionsList((prev) => [...prev, trimmed]);
+    setEditNewCustomOptionInput("");
+  };
+
+  const handleRemoveEditCustomOption = (nameToRemove: string) => {
+    setEditCustomOptionsList((prev) => prev.filter((n) => n !== nameToRemove));
+  };
 
   // Fetch products from server
   const loadProducts = useCallback(async () => {
@@ -248,10 +298,17 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
     if (fieldOptions.includePassword && stockInputPass.trim()) item.password = stockInputPass.trim();
     if (fieldOptions.includeKey && stockInputKey.trim()) item.token = stockInputKey.trim();
     if (fieldOptions.includePin && stockInputPin.trim()) item.pin = stockInputPin.trim();
-    if (fieldOptions.customName && stockInputCustom.trim()) item[fieldOptions.customName] = stockInputCustom.trim();
+
+    // Include all custom option values
+    for (const optName of customOptionNames) {
+      const val = (customStockInputs[optName] || "").trim();
+      if (val) {
+        item[optName] = val;
+      }
+    }
 
     if (Object.keys(item).length === 0) {
-      alert("Please provide at least one credential field!");
+      alert("Please provide at least one credential or custom option field!");
       return;
     }
 
@@ -260,7 +317,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
     setStockInputPass("");
     setStockInputKey("");
     setStockInputPin("");
-    setStockInputCustom("");
+    setCustomStockInputs({});
   };
 
   // Parse bulk text (e.g. user:pass:key or user:pass)
@@ -299,12 +356,15 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
     setStatusMsg(null);
 
     // Build custom fields schema
-    const customFields = [];
+    const customFields: CustomFieldDefinition[] = [];
     if (fieldOptions.includeId) customFields.push({ id: "id", name: "Account ID / Login", type: "text" });
     if (fieldOptions.includePassword) customFields.push({ id: "password", name: "Password", type: "password" });
     if (fieldOptions.includeKey) customFields.push({ id: "token", name: "License Key / Code", type: "key" });
     if (fieldOptions.includePin) customFields.push({ id: "pin", name: "2FA / PIN Code", type: "text" });
-    if (fieldOptions.customName) customFields.push({ id: fieldOptions.customName, name: fieldOptions.customName, type: "text" });
+    for (const optName of customOptionNames) {
+      const slugId = optName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      customFields.push({ id: slugId || optName, name: optName, type: "text" });
+    }
 
     try {
       const res = await fetch("/api/admin/products", {
@@ -348,6 +408,15 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
       setOriginalPrice("");
       setShortDescription("");
       setDescription("");
+      setFieldOptions({
+        includeId: true,
+        includePassword: true,
+        includeKey: false,
+        includePin: false,
+      });
+      setCustomOptionNames([]);
+      setNewCustomOptionInput("");
+      setCustomStockInputs({});
       setInventoryList([]);
       setBannerGradient("from-blue-600/25 via-cyan-950/40 to-zinc-900");
       setIconType("key");
@@ -452,6 +521,21 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
     setEditLogoSize(prod.logoSize || "medium");
     setEditCustomBgUrl(prod.customBgUrl || "");
     setEditBgSize(prod.bgSize || "cover");
+
+    const cFields = prod.customFields || [
+      { id: "id", name: "Account ID / Login", type: "text" },
+      { id: "password", name: "Password", type: "password" },
+    ];
+    setEditIncludeId(cFields.some((f) => f.id === "id"));
+    setEditIncludePassword(cFields.some((f) => f.id === "password"));
+    setEditIncludeKey(cFields.some((f) => f.id === "token" || f.id === "key"));
+    setEditIncludePin(cFields.some((f) => f.id === "pin" || f.id === "2fa"));
+    setEditCustomOptionsList(
+      cFields
+        .filter((f) => !["id", "password", "token", "key", "pin", "2fa"].includes(f.id))
+        .map((f) => f.name || f.id)
+    );
+    setEditNewCustomOptionInput("");
     setIsEditModalOpen(true);
   };
 
@@ -462,6 +546,16 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
     if (!editName.trim() || !editPrice) {
       alert("Product title and sale price are required");
       return;
+    }
+
+    const updatedCustomFields: CustomFieldDefinition[] = [];
+    if (editIncludeId) updatedCustomFields.push({ id: "id", name: "Account ID / Login", type: "text" });
+    if (editIncludePassword) updatedCustomFields.push({ id: "password", name: "Password", type: "password" });
+    if (editIncludeKey) updatedCustomFields.push({ id: "token", name: "License Key / Code", type: "key" });
+    if (editIncludePin) updatedCustomFields.push({ id: "pin", name: "2FA / PIN Code", type: "text" });
+    for (const opt of editCustomOptionsList) {
+      const slugId = opt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      updatedCustomFields.push({ id: slugId || opt, name: opt, type: "text" });
     }
 
     setSubmitting(true);
@@ -487,6 +581,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
           shortDescription: editShortDescription.trim(),
           description: editDescription.trim(),
           features: editFeatures,
+          customFields: updatedCustomFields,
           bannerGradient: editBannerGradient,
           iconType: editIconType,
           customLogoUrl: editCustomLogoUrl.trim() || undefined,
@@ -530,6 +625,14 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
     setShowSinglePass(false);
     setStockBulkText("");
     setStockBulkMode(false);
+
+    // Extract custom options defined on target product
+    const existingCustom = (prod.customFields || [])
+      .filter((f) => !["id", "password", "token", "pin"].includes(f.id))
+      .map((f) => f.name || f.id);
+    setStockModalCustomFields(existingCustom);
+    setSingleStockCustomValues({});
+    setNewStockModalCustomOption("");
     setIsStockModalOpen(true);
   };
 
@@ -655,8 +758,15 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
       if (singleStockKey.trim()) item.token = singleStockKey.trim();
       if (singleStockPin.trim()) item.pin = singleStockPin.trim();
 
+      // Collect all custom option field values
+      for (const [key, val] of Object.entries(singleStockCustomValues)) {
+        if (val && val.trim()) {
+          item[key] = val.trim();
+        }
+      }
+
       if (Object.keys(item).length === 0) {
-        alert("Please provide at least one credential field (e.g. Account ID or Password)");
+        alert("Please provide at least one credential or custom option field!");
         return;
       }
       itemsToAdd.push(item);
@@ -716,6 +826,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
       setSingleStockPass("");
       setSingleStockKey("");
       setSingleStockPin("");
+      setSingleStockCustomValues({});
       setStockBulkText("");
       setStockBulkMode(false);
 
@@ -1426,11 +1537,17 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
               {/* Custom Options / Credentials Selection */}
               <div className="p-4 rounded-2xl bg-black/40 border border-cyan-500/25 space-y-3">
-                <label className="block text-xs font-black text-cyan-300 uppercase tracking-wider">
-                  Select Custom Options / Credential Fields to Deliver
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-black text-cyan-300 uppercase tracking-wider">
+                    Select Custom Options / Credential Fields to Deliver
+                  </label>
+                  <span className="text-[11px] text-slate-400">
+                    Define what buyer receives
+                  </span>
+                </div>
+
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer">
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
                     <input
                       type="checkbox"
                       checked={fieldOptions.includeId}
@@ -1440,7 +1557,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                     <span>Account ID / Login</span>
                   </label>
 
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer">
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
                     <input
                       type="checkbox"
                       checked={fieldOptions.includePassword}
@@ -1450,7 +1567,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                     <span>Password</span>
                   </label>
 
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer">
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
                     <input
                       type="checkbox"
                       checked={fieldOptions.includeKey}
@@ -1460,7 +1577,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                     <span>License Key</span>
                   </label>
 
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer">
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
                     <input
                       type="checkbox"
                       checked={fieldOptions.includePin}
@@ -1471,15 +1588,55 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                   </label>
                 </div>
 
-                {/* Custom extra field name */}
-                <div>
-                  <input
-                    type="text"
-                    placeholder="Optional Custom Field Name (e.g. Profile PIN, Web Login, Server)"
-                    value={fieldOptions.customName}
-                    onChange={(e) => setFieldOptions({ ...fieldOptions, customName: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white placeholder:text-slate-500"
-                  />
+                {/* Additional Custom Options (e.g. Profile PIN, Server, Region, Access URL) */}
+                <div className="space-y-2 pt-2 border-t border-white/10">
+                  <label className="block text-[11px] font-bold text-slate-300">
+                    Add Extra Custom Options (e.g. Profile PIN, Server, Backup Code, Region)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Type custom option name (e.g. Profile PIN)..."
+                      value={newCustomOptionInput}
+                      onChange={(e) => setNewCustomOptionInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddCustomOption();
+                        }
+                      }}
+                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomOption}
+                      className="px-4 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-black border border-cyan-500/40 text-xs font-bold transition-all cursor-pointer shrink-0"
+                    >
+                      + Add Option
+                    </button>
+                  </div>
+
+                  {/* Badges for active custom options */}
+                  {customOptionNames.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {customOptionNames.map((optName) => (
+                        <span
+                          key={optName}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-semibold"
+                        >
+                          <span>{optName}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCustomOption(optName)}
+                            className="hover:text-rose-400 text-slate-400 font-bold ml-1 cursor-pointer"
+                            title="Remove custom option"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1492,7 +1649,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                   <button
                     type="button"
                     onClick={() => setBulkMode(!bulkMode)}
-                    className="text-xs text-cyan-400 underline font-bold"
+                    className="text-xs text-cyan-400 underline font-bold cursor-pointer"
                   >
                     {bulkMode ? "Switch to Form Mode" : "Bulk Paste Mode (ID:PASS)"}
                   </button>
@@ -1510,55 +1667,87 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                     <button
                       type="button"
                       onClick={handleParseBulk}
-                      className="px-4 py-2 rounded-xl bg-cyan-500 text-black text-xs font-bold"
+                      className="px-4 py-2 rounded-xl bg-cyan-500 text-black text-xs font-bold cursor-pointer"
                     >
                       Parse and Add Lines
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {fieldOptions.includeId && (
-                        <input
-                          type="text"
-                          placeholder="Account ID / Username"
-                          value={stockInputId}
-                          onChange={(e) => setStockInputId(e.target.value)}
-                          className="px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white"
-                        />
+                        <div>
+                          <label className="block text-[10px] text-slate-400 uppercase font-bold mb-0.5">Account ID / Username</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. user_account_01"
+                            value={stockInputId}
+                            onChange={(e) => setStockInputId(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono"
+                          />
+                        </div>
                       )}
                       {fieldOptions.includePassword && (
-                        <input
-                          type="text"
-                          placeholder="Password"
-                          value={stockInputPass}
-                          onChange={(e) => setStockInputPass(e.target.value)}
-                          className="px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white"
-                        />
+                        <div>
+                          <label className="block text-[10px] text-slate-400 uppercase font-bold mb-0.5">Password</label>
+                          <input
+                            type="text"
+                            placeholder="Account Password"
+                            value={stockInputPass}
+                            onChange={(e) => setStockInputPass(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono"
+                          />
+                        </div>
                       )}
                       {fieldOptions.includeKey && (
-                        <input
-                          type="text"
-                          placeholder="License Key / Token"
-                          value={stockInputKey}
-                          onChange={(e) => setStockInputKey(e.target.value)}
-                          className="px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white"
-                        />
+                        <div>
+                          <label className="block text-[10px] text-slate-400 uppercase font-bold mb-0.5">License Key / Token</label>
+                          <input
+                            type="text"
+                            placeholder="XXXX-YYYY-ZZZZ"
+                            value={stockInputKey}
+                            onChange={(e) => setStockInputKey(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono"
+                          />
+                        </div>
                       )}
                       {fieldOptions.includePin && (
-                        <input
-                          type="text"
-                          placeholder="PIN / 2FA"
-                          value={stockInputPin}
-                          onChange={(e) => setStockInputPin(e.target.value)}
-                          className="px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white"
-                        />
+                        <div>
+                          <label className="block text-[10px] text-slate-400 uppercase font-bold mb-0.5">PIN / 2FA Secret</label>
+                          <input
+                            type="text"
+                            placeholder="PIN or 2FA code"
+                            value={stockInputPin}
+                            onChange={(e) => setStockInputPin(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono"
+                          />
+                        </div>
                       )}
+                      {/* Render inputs for EVERY custom option! */}
+                      {customOptionNames.map((optName) => (
+                        <div key={optName}>
+                          <label className="block text-[10px] text-cyan-300 uppercase font-bold mb-0.5">
+                            {optName}
+                          </label>
+                          <input
+                            type="text"
+                            placeholder={`Enter ${optName}`}
+                            value={customStockInputs[optName] || ""}
+                            onChange={(e) =>
+                              setCustomStockInputs({
+                                ...customStockInputs,
+                                [optName]: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-black/60 border border-cyan-500/30 text-white focus:outline-none focus:border-cyan-400 font-mono"
+                          />
+                        </div>
+                      ))}
                     </div>
                     <button
                       type="button"
                       onClick={handleAddStockItem}
-                      className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15"
+                      className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15 cursor-pointer"
                     >
                       + Add Item to Stock Batch
                     </button>
@@ -1571,12 +1760,12 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                     {inventoryList.map((item, idx) => (
                       <div key={idx} className="flex justify-between items-center text-slate-300">
                         <span className="truncate">
-                          {item.id || item.token} {item.password ? `| ${item.password}` : ""}
+                          #{idx + 1}: {Object.entries(item).map(([k, v]) => `${k}: ${v}`).join(" | ")}
                         </span>
                         <button
                           type="button"
                           onClick={() => setInventoryList(inventoryList.filter((_, i) => i !== idx))}
-                          className="text-rose-400 hover:text-rose-300 ml-2"
+                          className="text-rose-400 hover:text-rose-300 ml-2 font-bold cursor-pointer"
                         >
                           ✕
                         </button>
@@ -2095,6 +2284,75 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                         />
                       </div>
                     </div>
+
+                    {/* Render inputs for any Custom Options defined on this product */}
+                    {stockModalCustomFields.length > 0 && (
+                      <div className="space-y-2 pt-2 border-t border-cyan-500/20">
+                        <label className="block text-xs font-bold text-cyan-300">
+                          Custom Product Options ({stockModalCustomFields.length})
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {stockModalCustomFields.map((optName) => (
+                            <div key={optName}>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                                {optName}
+                              </label>
+                              <input
+                                type="text"
+                                placeholder={`Enter ${optName}`}
+                                value={singleStockCustomValues[optName] || ""}
+                                onChange={(e) =>
+                                  setSingleStockCustomValues({
+                                    ...singleStockCustomValues,
+                                    [optName]: e.target.value,
+                                  })
+                                }
+                                className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-cyan-500/30 text-xs text-white placeholder:text-slate-500 font-mono focus:outline-none focus:border-cyan-400"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Inline Add Custom Option Field for this product */}
+                    <div className="pt-2 border-t border-white/10 space-y-1.5">
+                      <label className="block text-[11px] font-bold text-slate-400">
+                        + Add another custom option field to this product:
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="e.g. Profile PIN, Server Region, Backup Code"
+                          value={newStockModalCustomOption}
+                          onChange={(e) => setNewStockModalCustomOption(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              const t = newStockModalCustomOption.trim();
+                              if (t && !stockModalCustomFields.includes(t)) {
+                                setStockModalCustomFields([...stockModalCustomFields, t]);
+                                setNewStockModalCustomOption("");
+                              }
+                            }
+                          }}
+                          className="flex-1 px-3 py-1.5 text-xs rounded-xl bg-black/60 border border-white/15 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const t = newStockModalCustomOption.trim();
+                            if (t && !stockModalCustomFields.includes(t)) {
+                              setStockModalCustomFields([...stockModalCustomFields, t]);
+                              setNewStockModalCustomOption("");
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-bold hover:bg-cyan-500 hover:text-black transition-all cursor-pointer shrink-0"
+                        >
+                          + Add Field
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -2269,6 +2527,113 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                   onChange={(e) => setEditWarranty(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-indigo-500/30 text-xs text-white"
                 />
+              </div>
+
+              {/* Custom Options / Credential Fields to Deliver for Edit Product */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-black/40 border border-indigo-500/25 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-indigo-300 uppercase tracking-wider">
+                      Custom Options &amp; Credential Fields to Deliver
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-400">
+                    Define credentials buyer receives
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={editIncludeId}
+                      onChange={(e) => setEditIncludeId(e.target.checked)}
+                      className="rounded text-indigo-400"
+                    />
+                    <span>Account ID / Login</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={editIncludePassword}
+                      onChange={(e) => setEditIncludePassword(e.target.checked)}
+                      className="rounded text-indigo-400"
+                    />
+                    <span>Password</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={editIncludeKey}
+                      onChange={(e) => setEditIncludeKey(e.target.checked)}
+                      className="rounded text-indigo-400"
+                    />
+                    <span>License Key</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={editIncludePin}
+                      onChange={(e) => setEditIncludePin(e.target.checked)}
+                      className="rounded text-indigo-400"
+                    />
+                    <span>PIN / 2FA</span>
+                  </label>
+                </div>
+
+                {/* Extra Custom Options */}
+                <div className="space-y-2 pt-2 border-t border-white/10">
+                  <label className="block text-[11px] font-bold text-slate-300">
+                    Extra Custom Options (e.g. Profile PIN, Server, Backup Code, Region)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Type custom option name (e.g. Profile PIN)..."
+                      value={editNewCustomOptionInput}
+                      onChange={(e) => setEditNewCustomOptionInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddEditCustomOption();
+                        }
+                      }}
+                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddEditCustomOption}
+                      className="px-4 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500 text-indigo-300 hover:text-white border border-indigo-500/40 text-xs font-bold transition-all cursor-pointer shrink-0"
+                    >
+                      + Add Option
+                    </button>
+                  </div>
+
+                  {/* Badges for active custom options */}
+                  {editCustomOptionsList.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {editCustomOptionsList.map((optName) => (
+                        <span
+                          key={optName}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-semibold"
+                        >
+                          <span>{optName}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEditCustomOption(optName)}
+                            className="hover:text-rose-400 text-slate-400 font-bold ml-1 cursor-pointer"
+                            title="Remove custom option"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Product Visuals: Custom Logo & Background */}
