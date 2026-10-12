@@ -555,7 +555,9 @@ export default function HomePage() {
                     <span className="font-mono text-[10px] text-[#908fa0]">Nitro 1-Year Purchase</span>
                   </div>
                 </div>
-                <CheckCircle2 className="w-4 h-4 text-[#4edea3]" title="Cryptographically Verified" />
+                <span title="Cryptographically Verified">
+                  <CheckCircle2 className="w-4 h-4 text-[#4edea3]" />
+                </span>
               </div>
             </div>
 
@@ -587,7 +589,9 @@ export default function HomePage() {
                     <span className="font-mono text-[10px] text-[#908fa0]">Netflix 4K UHD Bulk</span>
                   </div>
                 </div>
-                <CheckCircle2 className="w-4 h-4 text-[#4edea3]" title="Cryptographically Verified" />
+                <span title="Cryptographically Verified">
+                  <CheckCircle2 className="w-4 h-4 text-[#4edea3]" />
+                </span>
               </div>
             </div>
 
@@ -619,7 +623,9 @@ export default function HomePage() {
                     <span className="font-mono text-[10px] text-[#908fa0]">CS2 Prime Aged</span>
                   </div>
                 </div>
-                <CheckCircle2 className="w-4 h-4 text-[#4edea3]" title="Cryptographically Verified" />
+                <span title="Cryptographically Verified">
+                  <CheckCircle2 className="w-4 h-4 text-[#4edea3]" />
+                </span>
               </div>
             </div>
           </div>

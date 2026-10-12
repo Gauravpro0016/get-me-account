@@ -5,6 +5,7 @@ import {
   getOrder,
   isAlreadySent,
 } from "@/lib/fulfillment";
+import { APP_CONFIG } from "@/lib/config";
 
 export const maxDuration = 45;
 

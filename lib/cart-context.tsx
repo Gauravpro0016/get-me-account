@@ -27,7 +27,7 @@ interface CartContextType {
   discount: number;
   promoCode: string;
   promoError: string;
-  applyPromo: (code: string) => boolean;
+  applyPromo: (code: string) => Promise<boolean>;
   removePromo: () => void;
   notification: string | null;
   openCheckoutWithProduct: (product: Product, quantity?: number) => void;

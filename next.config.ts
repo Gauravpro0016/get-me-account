@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-
+import { withBotId } from 'botid/next/config';
 const nextConfig: NextConfig = {
   env: {
     ATLOS_MERCHANT_ID:
@@ -24,5 +24,5 @@ const nextConfig: NextConfig = {
       "1",
   },
 };
+export default withBotId(nextConfig);
 
-export default nextConfig;
