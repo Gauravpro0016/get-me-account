@@ -11,6 +11,7 @@ import {
   ORDERS_HISTORY_KEY,
   StoredOrder,
 } from "@/lib/fulfillment";
+import { APP_CONFIG } from "@/lib/config";
 
 export const maxDuration = 45;
 
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
     const action = body.action || "create";
     const orderId = typeof body.orderId === "string" ? body.orderId.trim() : "";
     let email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-    const amount = Number(body.amount) || 25;
+    const amount = Number(body.amount) || APP_CONFIG.price;
     const quantity = Math.max(1, Number(body.quantity) || 1);
     const utr = typeof body.utr === "string" ? body.utr.trim() : undefined;
     const senderName = typeof body.senderName === "string" ? body.senderName.trim() : undefined;
@@ -183,17 +184,24 @@ export async function POST(req: NextRequest) {
       console.warn("Failed to store in used_bank_utrs:", e);
     }
 
+      const savedOrder = await getOrder(orderId);
+      const resolvedAmount = Number(body.amount) || savedOrder?.amount || amount;
+      const resolvedQuantity = Math.max(1, Number(body.quantity) || savedOrder?.quantity || quantity);
+      const resolvedProductId = productId || savedOrder?.productId;
+      const resolvedProductName = productName || savedOrder?.productName;
+      const resolvedCartItems = cartItems || savedOrder?.cartItems;
+
       // Fulfill order: Claim REAL credentials directly from product database inventory in Redis
       const result = await fulfillOrder({
         orderId,
         email,
         utr: confirmedUtr,
         senderName: senderName || "UPI Customer",
-        amount,
-        quantity,
-        productId,
-        productName,
-        cartItems,
+        amount: resolvedAmount,
+        quantity: resolvedQuantity,
+        productId: resolvedProductId,
+        productName: resolvedProductName,
+        cartItems: resolvedCartItems,
       });
 
       if (!result.success && result.error) {

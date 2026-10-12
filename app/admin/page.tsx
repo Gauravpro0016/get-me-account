@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { AdminProductsManager } from "@/components/AdminProductsManager";
+import { AdminCouponsManager } from "@/components/AdminCouponsManager";
+import { APP_CONFIG } from "@/lib/config";
 
 type Credential = {
   id: string;
@@ -74,7 +76,7 @@ export default function AdminPage() {
   const [authenticated, setAuthenticated] = useState(false);
 
   // ── Navigation Tab ───────────────────────────────────────────────────────
-  const [tab, setTab] = useState<"orders" | "products">("orders");
+  const [tab, setTab] = useState<"orders" | "products" | "coupons">("orders");
 
   // ── Search & Filter state ────────────────────────────────────────────────
   const [orderSearch, setOrderSearch] = useState("");
@@ -89,6 +91,8 @@ export default function AdminPage() {
   // ── Orders state ─────────────────────────────────────────────────────────
   const [orders, setOrders] = useState<StoredOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [orderViewMode, setOrderViewMode] = useState<"cards" | "split" | "table">("cards");
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [revealedOrderCreds, setRevealedOrderCreds] = useState<Set<string>>(new Set());
   const [revealedOrderEmailCreds, setRevealedOrderEmailCreds] = useState<Set<string>>(new Set());
   const [revealedOrderDiscordCreds, setRevealedOrderDiscordCreds] = useState<Set<string>>(new Set());
@@ -432,11 +436,13 @@ export default function AdminPage() {
   };
 
   // Metrics
+  const inrToUsdRate = APP_CONFIG.inrToUsdRate || 0.0118;
   const confirmedOrders = useMemo(() => orders.filter((o) => o.status === "confirmed"), [orders]);
   const totalRevenue = useMemo(
     () => confirmedOrders.reduce((sum, o) => sum + (Number(o.amount) || 0), 0),
     [confirmedOrders]
   );
+  const totalRevenueUsd = totalRevenue * inrToUsdRate;
   const openedOrdersCount = useMemo(
     () => orders.filter((o) => o.emailOpened || o.emailStatus === "opened").length,
     [orders]
@@ -911,23 +917,23 @@ export default function AdminPage() {
   // ── Login Gate ────────────────────────────────────────────────────────────
   if (!authenticated) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 bg-gradient-to-br from-[#0c0a21] via-[#1a1640] to-[#110e2e]">
-        <div className="w-full max-w-sm sm:max-w-md p-6 sm:p-10 rounded-2xl sm:rounded-3xl bg-white/[0.05] backdrop-blur-2xl border border-white/10 shadow-2xl space-y-6">
+      <div className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 bg-[#0f131c] text-[#dfe2ee]">
+        <div className="w-full max-w-sm sm:max-w-md p-6 sm:p-8 rounded-2xl bg-[#181c24] border border-[#262a33] shadow-2xl space-y-6">
           <div className="text-center space-y-2">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-3xl shadow-inner mb-1">
-              🛡️
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-[#262a33] border border-[#31353e] text-2xl shadow-inner mb-1">
+              ⚡
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-              Admin Portal
+            <h1 className="text-2xl font-bold text-[#dfe2ee] tracking-tight">
+              Trinitymart Admin Portal
             </h1>
-            <p className="text-xs sm:text-sm text-white/50 leading-relaxed">
+            <p className="font-mono text-xs text-[#908fa0] leading-relaxed">
               Enter your master key to oversee orders and live account inventory.
             </p>
           </div>
 
           <div className="space-y-4">
             <div>
-              <label htmlFor="admin-password-input" className="block text-xs font-semibold text-white/60 uppercase tracking-wider mb-2">
+              <label htmlFor="admin-password-input" className="block font-mono text-xs text-[#908fa0] uppercase tracking-wider mb-2">
                 Security Password
               </label>
               <input
@@ -940,14 +946,14 @@ export default function AdminPage() {
                 }}
                 onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                 placeholder="Enter admin password…"
-                className={`w-full px-4 py-3.5 rounded-xl bg-white/[0.06] text-white placeholder-white/30 text-base outline-none transition-all duration-200 border ${
+                className={`w-full px-4 py-3 rounded-xl bg-[#0f131c] text-[#dfe2ee] placeholder-[#908fa0]/60 font-mono text-sm outline-none transition-all duration-200 border ${
                   authError
-                    ? "border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-                    : "border-white/15 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                    ? "border-[#ffb4ab] focus:border-[#ffb4ab] focus:ring-1 focus:ring-[#ffb4ab]"
+                    : "border-[#262a33] focus:border-[#8083ff] focus:ring-1 focus:ring-[#8083ff]"
                 }`}
               />
               {authError && (
-                <p className="mt-2 text-xs text-red-400 flex items-center gap-1">
+                <p className="mt-2 text-xs text-[#ffb4ab] font-mono flex items-center gap-1">
                   <span>⚠️</span> {authError}
                 </p>
               )}
@@ -956,9 +962,9 @@ export default function AdminPage() {
             <button
               id="admin-login-btn"
               onClick={handleLogin}
-              className="w-full py-3.5 px-4 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-indigo-500 via-indigo-600 to-violet-600 hover:from-indigo-600 hover:to-violet-700 active:scale-[0.98] transition-all shadow-lg shadow-indigo-500/25 cursor-pointer flex items-center justify-center gap-2"
+              className="w-full py-3.5 px-4 rounded-xl font-bold font-mono text-xs text-[#0d0096] bg-[#8083ff] hover:bg-[#6366f1] hover:text-white active:scale-[0.98] transition-all shadow-lg shadow-[#8083ff]/20 cursor-pointer flex items-center justify-center gap-2"
             >
-              <span>Unlock Dashboard</span>
+              <span>UNLOCK DASHBOARD</span>
               <span>→</span>
             </button>
           </div>
@@ -969,29 +975,29 @@ export default function AdminPage() {
 
   // ── Main Dashboard ────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-[#0c0a21] via-[#1a1640] to-[#110e2e] text-white font-sans antialiased">
+    <div className="min-h-screen w-full bg-[#0f131c] text-[#dfe2ee] font-sans antialiased selection:bg-[#6366f1] selection:text-white">
       {/* ── Top Header ── */}
-      <header className="sticky top-0 z-30 bg-[#0c0a21]/80 backdrop-blur-xl border-b border-white/10">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
+      <header className="sticky top-0 z-30 bg-[#0a0e16]/95 backdrop-blur-xl border-b border-[#262a33]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
             {/* Brand & Status */}
             <div className="flex items-center justify-between sm:justify-start gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border border-white/15 flex items-center justify-center text-lg shadow-inner">
-                  🛡️
+                <div className="w-9 h-9 rounded-xl bg-[#262a33] border border-[#31353e] flex items-center justify-center text-lg shadow-sm">
+                  ⚡
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h1 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                      Admin Panel
+                    <h1 className="text-base sm:text-lg font-bold text-[#dfe2ee] tracking-tight">
+                      Trinitymart <span className="text-[#8083ff]">Operations</span>
                     </h1>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      Live
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#00a572]/20 text-[#4edea3] border border-[#00a572]/30 font-mono text-[10px] font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#4edea3] animate-pulse" />
+                      VAULT-EAST-01
                     </span>
                   </div>
-                  <p className="text-[11px] text-white/40 hidden sm:block">
-                    Automated Redis Delivery Engine
+                  <p className="font-mono text-[10px] text-[#908fa0] hidden sm:block">
+                    ENCRYPTION: AES-256-GCM • DISPATCH ENGINE ACTIVE
                   </p>
                 </div>
               </div>
@@ -1005,7 +1011,7 @@ export default function AdminPage() {
                     fetchCredentials();
                   }}
                   disabled={ordersLoading || fetchStatus === "loading"}
-                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 active:bg-white/15 border border-white/10 text-white text-xs transition-colors cursor-pointer"
+                  className="p-2 rounded-lg bg-[#181c24] hover:bg-[#262a33] border border-[#262a33] text-[#dfe2ee] text-xs transition-colors cursor-pointer"
                   title="Refresh Database"
                 >
                   <span className={ordersLoading || fetchStatus === "loading" ? "inline-block animate-spin" : ""}>
@@ -1015,7 +1021,7 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 text-xs font-semibold transition-colors cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-[#93000a]/20 hover:bg-[#93000a]/40 border border-[#ffb4ab]/30 text-[#ffb4ab] text-xs font-mono font-semibold transition-colors cursor-pointer"
                 >
                   Logout
                 </button>
@@ -1024,20 +1030,20 @@ export default function AdminPage() {
 
             {/* Navigation Tabs (Full width on mobile, auto on desktop) */}
             <div className="flex items-center gap-2">
-              <div className="flex w-full sm:w-auto p-1 bg-white/[0.06] rounded-xl border border-white/10">
+              <div className="flex w-full sm:w-auto p-1 bg-[#181c24] rounded-xl border border-[#262a33]">
                 <button
                   type="button"
                   onClick={() => setTab("orders")}
-                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer font-mono ${
                     tab === "orders"
-                      ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/30"
-                      : "text-white/60 hover:text-white hover:bg-white/5"
+                      ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-md"
+                      : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33]"
                   }`}
                 >
-                  <span>🧾 Orders &amp; Payments</span>
+                  <span>Orders &amp; Payments</span>
                   <span
                     className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                      tab === "orders" ? "bg-white/20 text-white" : "bg-white/10 text-white/60"
+                      tab === "orders" ? "bg-[#0d0096]/20 text-[#0d0096]" : "bg-[#262a33] text-[#c7c4d7]"
                     }`}
                   >
                     {orders.length}
@@ -1047,16 +1053,27 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => setTab("products")}
-                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer font-mono ${
                     tab === "products"
-                      ? "bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 text-white shadow-md shadow-cyan-600/30"
-                      : "text-white/60 hover:text-white hover:bg-white/5"
+                      ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-md"
+                      : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33]"
                   }`}
                 >
-                  <span>🏷️ Manage Products &amp; Stock</span>
+                  <span>Stock &amp; Products</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTab("coupons")}
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer font-mono ${
+                    tab === "coupons"
+                      ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-md"
+                      : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33]"
+                  }`}
+                >
+                  <span>🎟️ Coupons</span>
                 </button>
               </div>
-
 
               {/* Action Buttons for Tablet / Desktop */}
               <div className="hidden sm:flex items-center gap-2 ml-2">
@@ -1067,7 +1084,7 @@ export default function AdminPage() {
                     fetchCredentials();
                   }}
                   disabled={ordersLoading || fetchStatus === "loading"}
-                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 active:bg-white/15 border border-white/10 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3 py-2 rounded-lg bg-[#181c24] hover:bg-[#262a33] border border-[#262a33] text-[#dfe2ee] text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <span className={ordersLoading || fetchStatus === "loading" ? "inline-block animate-spin" : ""}>
                     🔄
@@ -1077,7 +1094,7 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="px-3.5 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 text-xs font-semibold transition-colors cursor-pointer"
+                  className="px-3.5 py-2 rounded-lg bg-[#93000a]/20 hover:bg-[#93000a]/40 border border-[#ffb4ab]/30 text-[#ffb4ab] text-xs font-mono font-semibold transition-colors cursor-pointer"
                 >
                   Logout
                 </button>
@@ -1088,31 +1105,31 @@ export default function AdminPage() {
       </header>
 
       {/* ── Main Content Container ── */}
-      <main className="max-w-6xl mx-auto px-3.5 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-6">
+      <main className="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-6">
         {/* Metric Summary Cards (2x2 on mobile, 5 columns on tablet/desktop) */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-4">
-          <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-lg relative overflow-hidden group hover:border-white/20 transition-all">
-            <div className="flex items-center justify-between text-white/50 text-[11px] sm:text-xs font-bold uppercase tracking-wider">
+          <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-[#181c24] border border-[#262a33] shadow-lg relative overflow-hidden group hover:border-[#8083ff]/40 transition-all">
+            <div className="flex items-center justify-between text-[#908fa0] text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider">
               <span>Total Orders</span>
               <span className="text-base sm:text-lg">🧾</span>
             </div>
-            <p className="mt-1.5 text-xl sm:text-2xl md:text-3xl font-extrabold text-white">
+            <p className="mt-1.5 text-xl sm:text-2xl md:text-3xl font-black font-mono text-[#dfe2ee]">
               {orders.length}
             </p>
-            <span className="text-[10px] text-white/40 block mt-0.5 truncate">
-              Recorded in Redis
+            <span className="font-mono text-[10px] text-[#908fa0] block mt-0.5 truncate">
+              Recorded in Redis DB
             </span>
           </div>
 
-          <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-lg relative overflow-hidden group hover:border-white/20 transition-all">
-            <div className="flex items-center justify-between text-emerald-400/70 text-[11px] sm:text-xs font-bold uppercase tracking-wider">
+          <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-[#181c24] border border-[#262a33] shadow-lg relative overflow-hidden group hover:border-[#00a572]/40 transition-all">
+            <div className="flex items-center justify-between text-[#4edea3]/80 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider">
               <span>Confirmed</span>
               <span className="text-base sm:text-lg">✅</span>
             </div>
-            <p className="mt-1.5 text-xl sm:text-2xl md:text-3xl font-extrabold text-emerald-400">
+            <p className="mt-1.5 text-xl sm:text-2xl md:text-3xl font-black font-mono text-[#4edea3]">
               {confirmedOrders.length}
             </p>
-            <span className="text-[10px] text-emerald-400/50 block mt-0.5 truncate">
+            <span className="font-mono text-[10px] text-[#4edea3]/70 block mt-0.5 truncate">
               {orders.length > 0
                 ? `${Math.round((confirmedOrders.length / orders.length) * 100)}% Conversion`
                 : "100% automated"}
@@ -1120,41 +1137,41 @@ export default function AdminPage() {
           </div>
 
           {/* Email Received & Verified Metric Card */}
-          <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-lg relative overflow-hidden group hover:border-white/20 transition-all">
-            <div className="flex items-center justify-between text-emerald-400/80 text-[11px] sm:text-xs font-bold uppercase tracking-wider">
+          <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-[#181c24] border border-[#262a33] shadow-lg relative overflow-hidden group hover:border-[#00a572]/40 transition-all">
+            <div className="flex items-center justify-between text-[#4edea3]/80 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider">
               <span>Email Received</span>
               <span className="text-base sm:text-lg">📬</span>
             </div>
             <div className="flex items-baseline gap-2 mt-1.5">
-              <p className="text-xl sm:text-2xl md:text-3xl font-extrabold text-emerald-300">
+              <p className="text-xl sm:text-2xl md:text-3xl font-black font-mono text-[#4edea3]">
                 {openedOrdersCount}
               </p>
-              <span className="text-[11px] text-white/40 font-semibold truncate">
+              <span className="font-mono text-[11px] text-[#908fa0] font-semibold truncate">
                 / {confirmedOrders.length}
               </span>
             </div>
-            <span className="text-[10px] text-emerald-400/70 block mt-0.5 truncate font-medium">
+            <span className="font-mono text-[10px] text-[#4edea3]/70 block mt-0.5 truncate">
               {confirmedOrders.length > 0
                 ? `${Math.round((openedOrdersCount / confirmedOrders.length) * 100)}% Delivered & Opened`
                 : "Live Open Tracking"}
             </span>
           </div>
 
-          <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-lg relative overflow-hidden group hover:border-white/20 transition-all">
-            <div className="flex items-center justify-between text-indigo-400/70 text-[11px] sm:text-xs font-bold uppercase tracking-wider">
+          <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-[#181c24] border border-[#262a33] shadow-lg relative overflow-hidden group hover:border-[#8083ff]/40 transition-all">
+            <div className="flex items-center justify-between text-[#8083ff] text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider">
               <span>Total Revenue</span>
               <span className="text-base sm:text-lg">💰</span>
             </div>
-            <p className="mt-1.5 text-xl sm:text-2xl md:text-3xl font-extrabold text-indigo-300">
+            <p className="mt-1.5 text-xl sm:text-2xl md:text-3xl font-black font-mono text-[#8083ff]">
               ₹{totalRevenue.toFixed(0)}
             </p>
-            <span className="text-[10px] text-indigo-300/50 block mt-0.5 truncate">
-              From completed UPI sales
+            <span className="font-mono text-[10px] text-[#c7c4d7] block mt-0.5 truncate">
+              ~${totalRevenueUsd.toFixed(2)} USD (UPI &amp; Crypto)
             </span>
           </div>
 
-          <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-lg relative overflow-hidden group hover:border-cyan-500/30 transition-all col-span-2 sm:col-span-1">
-            <div className="flex items-center justify-between text-cyan-400/70 text-[11px] sm:text-xs font-bold uppercase tracking-wider">
+          <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-[#181c24] border border-[#262a33] shadow-lg relative overflow-hidden group hover:border-[#8083ff]/40 transition-all col-span-2 sm:col-span-1">
+            <div className="flex items-center justify-between text-[#8083ff] text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider">
               <span>Products &amp; Stock</span>
               <span className="text-base sm:text-lg">🏷️</span>
             </div>
@@ -1163,10 +1180,10 @@ export default function AdminPage() {
               onClick={() => setTab("products")}
               className="mt-1.5 text-left w-full cursor-pointer block group-hover:scale-[1.02] transition-transform"
             >
-              <p className="text-xl sm:text-2xl md:text-3xl font-extrabold text-cyan-400">
+              <p className="text-xl sm:text-2xl md:text-3xl font-black font-mono text-[#8083ff]">
                 Products
               </p>
-              <span className="text-[10px] block mt-0.5 truncate text-cyan-400/60 font-semibold">
+              <span className="font-mono text-[10px] block mt-0.5 truncate text-[#c7c4d7]">
                 Manage Inventory &rarr;
               </span>
             </button>
@@ -1177,10 +1194,10 @@ export default function AdminPage() {
         {tab === "orders" && (
           <div className="space-y-4">
             {/* Search & Filter Toolbar */}
-            <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-[#181c24] border border-[#262a33] shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
               {/* Search Bar */}
               <div className="relative flex-1">
-                <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-white/40 text-xs">
+                <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-[#908fa0] text-xs">
                   🔍
                 </span>
                 <input
@@ -1188,13 +1205,13 @@ export default function AdminPage() {
                   value={orderSearch}
                   onChange={(e) => setOrderSearch(e.target.value)}
                   placeholder="Search by Order ID, customer email, or UTR…"
-                  className="w-full pl-9 pr-8 py-2 rounded-lg bg-white/[0.05] border border-white/10 text-white placeholder-white/30 text-xs sm:text-sm outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full pl-9 pr-8 py-2 rounded-lg bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 text-xs sm:text-sm font-mono outline-none focus:border-[#8083ff] transition-colors"
                 />
                 {orderSearch && (
                   <button
                     type="button"
                     onClick={() => setOrderSearch("")}
-                    className="absolute inset-y-0 right-2.5 flex items-center text-white/40 hover:text-white text-xs cursor-pointer"
+                    className="absolute inset-y-0 right-2.5 flex items-center text-[#908fa0] hover:text-[#dfe2ee] text-xs cursor-pointer"
                   >
                     ✕
                   </button>
@@ -1204,16 +1221,16 @@ export default function AdminPage() {
               {/* Status Filters & Email Filters */}
               <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none flex-wrap">
                 {/* Order Status Filters */}
-                <div className="flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/10">
+                <div className="flex items-center gap-1 bg-[#0f131c] p-1 rounded-xl border border-[#262a33]">
                   {(["all", "confirmed", "pending", "failed"] as const).map((filterStatus) => (
                     <button
                       key={filterStatus}
                       type="button"
                       onClick={() => setOrderStatusFilter(filterStatus)}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold capitalize whitespace-nowrap transition-all cursor-pointer ${
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold capitalize whitespace-nowrap transition-all cursor-pointer ${
                         orderStatusFilter === filterStatus
-                          ? "bg-indigo-600 text-white shadow-xs"
-                          : "text-white/60 hover:text-white hover:bg-white/5"
+                          ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-xs"
+                          : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33]"
                       }`}
                     >
                       {filterStatus}
@@ -1222,8 +1239,8 @@ export default function AdminPage() {
                 </div>
 
                 {/* Email Delivery Status Filter */}
-                <div className="flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/10">
-                  <span className="text-[10px] font-bold text-white/40 px-1.5 hidden xl:inline uppercase tracking-wider">
+                <div className="flex items-center gap-1 bg-[#0f131c] p-1 rounded-xl border border-[#262a33]">
+                  <span className="font-mono text-[10px] font-bold text-[#908fa0] px-1.5 hidden xl:inline uppercase tracking-wider">
                     Email:
                   </span>
                   {(
@@ -1238,10 +1255,10 @@ export default function AdminPage() {
                       key={f.id}
                       type="button"
                       onClick={() => setOrderEmailFilter(f.id)}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold whitespace-nowrap transition-all cursor-pointer ${
                         orderEmailFilter === f.id
-                          ? "bg-emerald-600 text-white shadow-xs"
-                          : "text-white/60 hover:text-white hover:bg-white/5"
+                          ? "bg-[#00a572]/20 text-[#4edea3] border border-[#00a572]/30 shadow-xs"
+                          : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33]"
                       }`}
                     >
                       {f.label}
@@ -1252,38 +1269,91 @@ export default function AdminPage() {
             </div>
 
             {/* Orders Container */}
-            <div className="rounded-2xl bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-xl overflow-hidden">
-              <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between flex-wrap gap-2">
+            <div className="rounded-2xl bg-[#181c24] border border-[#262a33] shadow-xl overflow-hidden">
+              {/* Header with Title and Modern View Mode Switcher */}
+              <div className="p-4 sm:p-5 border-b border-[#262a33] bg-[#0a0e16]/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-base sm:text-lg font-bold text-white">
-                    Customer Orders History
-                  </h2>
-                  <p className="text-xs text-white/40">
-                    Showing {filteredOrders.length} of {orders.length} recorded orders
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h2 className="text-base sm:text-lg font-bold text-[#dfe2ee]">
+                      Customer Orders History
+                    </h2>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[#8083ff]/15 text-[#8083ff] border border-[#8083ff]/30 font-semibold">
+                      {filteredOrders.length} of {orders.length} orders
+                    </span>
+                  </div>
+                  <p className="font-mono text-xs text-[#908fa0] mt-0.5">
+                    Zero-scroll navigation • Live status tracking • Instant credential audit
                   </p>
                 </div>
-                <span className="text-[11px] text-white/40 font-mono hidden sm:inline-block bg-white/5 px-2.5 py-1 rounded-md border border-white/10">
-                  Key: <code>orders_history</code>
-                </span>
+
+                {/* View Mode Switcher: Cards vs Split Inspector vs Contained Table */}
+                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#0f131c] border border-[#262a33] self-start md:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setOrderViewMode("cards")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                      orderViewMode === "cards"
+                        ? "bg-[#8083ff] text-[#0d0096] shadow-sm font-black"
+                        : "text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
+                    }`}
+                    title="Modern responsive cards layout (Fits screen, no scrolling right)"
+                  >
+                    <span>🗂️</span>
+                    <span>Cards Feed</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOrderViewMode("split");
+                      if (!selectedOrderId && filteredOrders.length > 0) {
+                        setSelectedOrderId(filteredOrders[0].orderId);
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                      orderViewMode === "split"
+                        ? "bg-[#8083ff] text-[#0d0096] shadow-sm font-black"
+                        : "text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
+                    }`}
+                    title="Split-pane inspector (Queue on left, detailed dossier on right)"
+                  >
+                    <span>📑</span>
+                    <span>Split Inspector</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setOrderViewMode("table")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                      orderViewMode === "table"
+                        ? "bg-[#8083ff] text-[#0d0096] shadow-sm font-black"
+                        : "text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
+                    }`}
+                    title="Contained table with on-screen scrollbar"
+                  >
+                    <span>📊</span>
+                    <span>Compact Table</span>
+                  </button>
+                </div>
               </div>
 
               {ordersLoading ? (
-                <div className="py-16 text-center text-white/50 text-sm">
-                  <div className="inline-block w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mb-2" />
+                <div className="py-16 text-center text-[#908fa0] text-sm font-mono">
+                  <div className="inline-block w-6 h-6 border-2 border-[#8083ff] border-t-transparent rounded-full animate-spin mb-2" />
                   <p>Loading orders from Upstash Redis…</p>
                 </div>
               ) : filteredOrders.length === 0 ? (
                 <div className="py-16 px-4 text-center space-y-2">
                   <div className="text-4xl">📭</div>
-                  <p className="text-base font-bold text-white/80">
+                  <p className="text-base font-bold text-[#dfe2ee]">
                     {orderSearch || orderStatusFilter !== "all"
                       ? "No orders match your filter"
                       : "No orders recorded yet"}
                   </p>
-                  <p className="text-xs text-white/40 max-w-sm mx-auto">
+                  <p className="text-xs text-[#908fa0] max-w-sm mx-auto font-mono">
                     {orderSearch || orderStatusFilter !== "all"
                       ? "Try resetting your search query or status filter above."
-                      : "When customers generate a UPI QR code or complete a payment, it will appear here instantly."}
+                      : "When customers generate a payment session, it will appear here instantly."}
                   </p>
                   {(orderSearch || orderStatusFilter !== "all") && (
                     <button
@@ -1292,105 +1362,51 @@ export default function AdminPage() {
                         setOrderSearch("");
                         setOrderStatusFilter("all");
                       }}
-                      className="mt-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-xs font-semibold text-white transition-colors cursor-pointer"
+                      className="mt-2 px-3 py-1.5 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-xs font-mono font-semibold text-[#dfe2ee] transition-colors cursor-pointer"
                     >
                       Clear Filters
                     </button>
                   )}
                 </div>
-              ) : (
-                <>
-                  {/* ── MOBILE / PHONE VIEW: Responsive Cards (block md:hidden) ── */}
-                  <div className="block md:hidden p-3.5 space-y-3">
-                    {filteredOrders.map((ord) => (
-                      <div
-                        key={ord.orderId}
-                        className="p-4 rounded-xl bg-white/[0.03] border border-white/10 shadow-md space-y-3"
-                      >
-                        {/* Header: Order ID & Status */}
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="font-mono text-xs font-bold text-indigo-400 truncate">
+              ) : orderViewMode === "cards" ? (
+                /* ── 1. MODERN CARDS FEED VIEW (NO HORIZONTAL SCROLL REQUIRED) ── */
+                <div className="p-4 sm:p-5 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  {filteredOrders.map((ord) => (
+                    <div
+                      key={ord.orderId}
+                      className="rounded-2xl bg-[#0f131c] border border-[#262a33] hover:border-[#31353e] p-4 sm:p-5 shadow-lg transition-all space-y-4 flex flex-col justify-between"
+                    >
+                      {/* Top Bar: Order ID, Timestamp, Status & Audit Button */}
+                      <div className="flex items-start justify-between gap-2.5 pb-3 border-b border-[#262a33]">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-sm font-bold text-[#8083ff]">
                               #{ord.orderId}
                             </span>
                             <button
                               type="button"
-                              onClick={() => copyVal(ord.orderId, `ord-id-${ord.orderId}`)}
-                              className="text-white/40 hover:text-white p-1 rounded hover:bg-white/10 text-xs shrink-0 cursor-pointer"
+                              onClick={() => copyVal(ord.orderId, `card-id-${ord.orderId}`)}
+                              className="text-[#908fa0] hover:text-[#dfe2ee] p-1 rounded bg-[#181c24] hover:bg-[#262a33] text-xs cursor-pointer transition-colors"
                               title="Copy Order ID"
                             >
-                              {copiedKey === `ord-id-${ord.orderId}` ? "✓" : "📋"}
+                              {copiedKey === `card-id-${ord.orderId}` ? "✓ Copied" : "📋 Copy"}
                             </button>
-                          </div>
-                          <div className="shrink-0">{getStatusBadge(ord.status)}</div>
-                        </div>
-
-                        {/* Customer Email & Date */}
-                        <div className="flex items-center justify-between text-xs text-white/70">
-                          <span className="font-medium text-white truncate max-w-[200px] select-all">
-                            {ord.email}
-                          </span>
-                          <span className="text-[11px] text-white/40 shrink-0">
-                            {new Date(ord.createdAt).toLocaleDateString([], {
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </span>
-                        </div>
-
-                        {/* Amount & Bank UTR Pill */}
-                        <div className="flex items-center justify-between p-2.5 rounded-lg bg-black/20 border border-white/5 text-xs">
-                          <div>
-                            <span className="text-[10px] uppercase font-bold text-white/40 block">Amount</span>
-                            <div className="flex items-baseline gap-1.5 mt-0.5">
-                              <span className="text-base font-extrabold text-white">₹{ord.amount}</span>
-                              {ord.quantity && ord.quantity > 1 && (
-                                <span className="text-[10px] font-bold text-indigo-300 bg-indigo-500/20 px-1.5 py-0.5 rounded">
-                                  {ord.quantity}x Accounts
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="text-right">
-                            <span className="text-[10px] uppercase font-bold text-white/40 block">Bank UTR</span>
-                            {ord.utr ? (
-                              <div className="flex items-center justify-end gap-1 font-mono text-xs text-emerald-400 font-semibold mt-0.5">
-                                <span>{ord.utr}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => copyVal(ord.utr, `ord-utr-${ord.orderId}`)}
-                                  className="text-white/40 hover:text-white p-0.5 rounded cursor-pointer"
-                                  title="Copy UTR"
-                                >
-                                  {copiedKey === `ord-utr-${ord.orderId}` ? "✓" : "📋"}
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-white/30 mt-0.5 block">—</span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Email Delivery & Receipt Status */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-2.5 rounded-lg bg-black/20 border border-white/5 text-xs">
-                          <div className="min-w-0 flex-1">
-                            <span className="text-[10px] uppercase font-bold text-white/40 block mb-1">
-                              Email Delivery Status
+                            <span className="text-[11px] font-mono text-[#908fa0]">
+                              {new Date(ord.createdAt).toLocaleDateString([], {
+                                month: "short",
+                                day: "numeric",
+                              })}{" "}
+                              at{" "}
+                              {new Date(ord.createdAt).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
                             </span>
-                            <div className="flex items-center gap-1.5 flex-wrap">{getEmailStatusBadge(ord)}</div>
-                            {ord.emailOpenedAt ? (
-                              <span className="text-[10px] text-emerald-400/80 font-mono block mt-1">
-                                Opened: {new Date(ord.emailOpenedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                              </span>
-                            ) : ord.emailSentAt ? (
-                              <span className="text-[10px] text-white/40 font-mono block mt-1">
-                                Sent: {new Date(ord.emailSentAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                              </span>
-                            ) : null}
                           </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {getStatusBadge(ord.status)}
                           <button
                             type="button"
                             onClick={() => {
@@ -1398,136 +1414,398 @@ export default function AdminPage() {
                               setResendCustomEmail(ord.email);
                               setResendStatusMsg(null);
                             }}
-                            className="w-full sm:w-auto px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold cursor-pointer transition-colors text-center shrink-0"
+                            className="px-2.5 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-xs font-mono font-bold cursor-pointer transition-colors shrink-0"
+                            title="Audit email delivery and resend credentials"
                           >
                             Audit &amp; Resend
                           </button>
                         </div>
+                      </div>
 
-                        {/* Delivered Credentials */}
-                        <div className="pt-1">
-                          <span className="text-[10px] uppercase tracking-wider font-bold text-white/40 block mb-1.5">
-                            Delivered Account
+                      {/* Main Details Grid: Customer Email, Amount, Payment UTR, Email Status */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        {/* Customer Email */}
+                        <div className="p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1">
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
+                            Customer Email
                           </span>
+                          <div className="flex items-center justify-between gap-1 font-mono text-[#dfe2ee] font-medium">
+                            <span className="truncate select-all">{ord.email}</span>
+                            <button
+                              type="button"
+                              onClick={() => copyVal(ord.email, `card-em-${ord.orderId}`)}
+                              className="text-[#908fa0] hover:text-[#dfe2ee] p-0.5 rounded cursor-pointer shrink-0"
+                              title="Copy Email"
+                            >
+                              {copiedKey === `card-em-${ord.orderId}` ? "✓" : "📋"}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Amount & Dual Currency */}
+                        <div className="p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1">
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
+                            Total Order Value
+                          </span>
+                          <div className="flex items-baseline gap-2 font-mono flex-wrap">
+                            <span className="text-base font-extrabold text-[#dfe2ee]">₹{ord.amount}</span>
+                            <span className="text-[11px] text-[#908fa0]">
+                              (~${((Number(ord.amount) || 0) * inrToUsdRate).toFixed(2)} USD)
+                            </span>
+                            {ord.quantity && ord.quantity > 1 && (
+                              <span className="text-[10px] font-bold text-[#8083ff] bg-[#8083ff]/15 px-1.5 py-0.5 rounded">
+                                {ord.quantity}x
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Payment Reference / UTR */}
+                        <div className="p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1">
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
+                            Bank UTR / Blockchain TxID
+                          </span>
+                          {ord.utr ? (
+                            <div className="flex items-center justify-between gap-1 font-mono text-[#4edea3] font-semibold">
+                              <span className="truncate select-all">{ord.utr}</span>
+                              <button
+                                type="button"
+                                onClick={() => copyVal(ord.utr, `card-utr-${ord.orderId}`)}
+                                className="text-[#908fa0] hover:text-[#dfe2ee] p-0.5 rounded cursor-pointer shrink-0"
+                                title="Copy UTR"
+                              >
+                                {copiedKey === `card-utr-${ord.orderId}` ? "✓" : "📋"}
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="font-mono text-[#908fa0]/60 block">— Pending Verification</span>
+                          )}
+                        </div>
+
+                        {/* Email Tracking Badge */}
+                        <div className="p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1">
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
+                            Delivery Telemetry
+                          </span>
+                          <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                            <div>{getEmailStatusBadge(ord)}</div>
+                            {ord.emailOpenedAt ? (
+                              <span className="text-[10px] font-mono text-[#4edea3]">
+                                Opened: {new Date(ord.emailOpenedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            ) : ord.emailSentAt ? (
+                              <span className="text-[10px] font-mono text-[#908fa0]">
+                                Sent: {new Date(ord.emailSentAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Delivered Credentials Box */}
+                      <div className="pt-1">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0]">
+                            Delivered Account &amp; Keys
+                          </span>
+                          <span className="text-[10px] font-mono text-[#8083ff]">
+                            Instant Auto-Assigned
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-[#181c24] border border-[#262a33]">
                           {renderOrderCredentials(ord)}
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
+                </div>
+              ) : orderViewMode === "split" ? (
+                /* ── 2. DUAL-PANE MASTER-DETAIL SPLIT INSPECTOR (ZERO HORIZONTAL SCROLL) ── */
+                <div className="flex flex-col lg:flex-row min-h-[600px] border-t border-[#262a33]">
+                  {/* Left Column: Order Stream Queue */}
+                  <div className="w-full lg:w-5/12 xl:w-4/12 max-h-[700px] overflow-y-auto p-3 space-y-2 border-b lg:border-b-0 lg:border-r border-[#262a33] bg-[#0a0e16]/40">
+                    <div className="px-2 py-1 text-[11px] font-mono font-bold text-[#908fa0] uppercase tracking-wider">
+                      Select Order to Inspect ({filteredOrders.length})
+                    </div>
+                    {filteredOrders.map((ord) => {
+                      const isSelected =
+                        (selectedOrderId || filteredOrders[0]?.orderId) === ord.orderId;
+                      return (
+                        <div
+                          key={ord.orderId}
+                          onClick={() => setSelectedOrderId(ord.orderId)}
+                          className={`p-3 rounded-xl border transition-all cursor-pointer space-y-2 ${
+                            isSelected
+                              ? "bg-[#181c24] border-[#8083ff] shadow-md shadow-[#8083ff]/10"
+                              : "bg-[#0f131c] border-[#262a33] hover:border-[#31353e] hover:bg-[#181c24]/50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-xs font-bold text-[#8083ff] truncate">
+                              #{ord.orderId}
+                            </span>
+                            <div className="shrink-0">{getStatusBadge(ord.status)}</div>
+                          </div>
 
-                  {/* ── TABLET / DESKTOP VIEW: Data Table (hidden md:block) ── */}
-                  <div className="hidden md:block overflow-x-auto">
-                    <table className="w-full min-w-[850px] text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="border-b border-white/10 bg-white/[0.02] text-white/45 font-bold uppercase tracking-wider text-[11px]">
-                          <th className="py-3 px-4">Order ID</th>
-                          <th className="py-3 px-4">Customer</th>
-                          <th className="py-3 px-4">Amount</th>
-                          <th className="py-3 px-4">Status</th>
-                          <th className="py-3 px-4">Email Receipt</th>
-                          <th className="py-3 px-4">Bank UTR</th>
-                          <th className="py-3 px-4">Delivered Accounts</th>
-                          <th className="py-3 px-4">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
-                        {filteredOrders.map((ord) => (
-                          <tr key={ord.orderId} className="hover:bg-white/[0.02] transition-colors">
-                            {/* Order ID */}
-                            <td className="py-3.5 px-4 font-mono text-indigo-400 font-semibold whitespace-nowrap">
-                              <div className="flex items-center gap-1.5">
-                                <span>{ord.orderId}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => copyVal(ord.orderId, `ord-id-tbl-${ord.orderId}`)}
-                                  className="text-white/30 hover:text-white p-1 rounded hover:bg-white/10 cursor-pointer"
-                                  title="Copy Order ID"
-                                >
-                                  {copiedKey === `ord-id-tbl-${ord.orderId}` ? "✓" : "📋"}
-                                </button>
-                              </div>
-                            </td>
-
-                            {/* Customer Email */}
-                            <td className="py-3.5 px-4 font-medium text-white max-w-[180px] truncate select-all">
+                          <div className="flex items-center justify-between text-xs font-mono">
+                            <span className="text-[#dfe2ee] truncate max-w-[170px]">
                               {ord.email}
-                            </td>
+                            </span>
+                            <span className="font-bold text-[#dfe2ee]">₹{ord.amount}</span>
+                          </div>
 
-                            {/* Amount */}
-                            <td className="py-3.5 px-4 whitespace-nowrap">
-                              <div className="font-bold text-white text-sm">₹{ord.amount}</div>
-                              <div className="text-[10px] font-semibold text-white/40">
-                                {ord.quantity && ord.quantity > 1 ? `📦 ${ord.quantity}x` : "1x"}
-                              </div>
-                            </td>
-
-                            {/* Status */}
-                            <td className="py-3.5 px-4 whitespace-nowrap">
-                              {getStatusBadge(ord.status)}
-                            </td>
-
-                            {/* Email Receipt Status */}
-                            <td className="py-3.5 px-4 whitespace-nowrap">
-                              <div className="flex flex-col gap-1 items-start">
-                                {getEmailStatusBadge(ord)}
-                                {ord.emailOpenedAt ? (
-                                  <span className="text-[10px] text-emerald-400/80 font-mono flex items-center gap-1">
-                                    <span>🕒</span>
-                                    <span>
-                                      {new Date(ord.emailOpenedAt).toLocaleDateString([], { month: "short", day: "numeric" })}{" "}
-                                      {new Date(ord.emailOpenedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                                    </span>
-                                  </span>
-                                ) : ord.emailSentAt ? (
-                                  <span className="text-[10px] text-white/40 font-mono flex items-center gap-1">
-                                    <span>Sent:</span>
-                                    <span>
-                                      {new Date(ord.emailSentAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                                    </span>
-                                  </span>
-                                ) : null}
-                              </div>
-                            </td>
-
-                            {/* Bank UTR */}
-                            <td className="py-3.5 px-4 font-mono whitespace-nowrap">
-                              {ord.utr ? (
-                                <div className="flex items-center gap-1.5 text-emerald-400 font-semibold">
-                                  <span>{ord.utr}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => copyVal(ord.utr, `ord-utr-tbl-${ord.orderId}`)}
-                                    className="text-white/40 hover:text-white p-0.5 rounded cursor-pointer"
-                                    title="Copy UTR"
-                                  >
-                                    {copiedKey === `ord-utr-tbl-${ord.orderId}` ? "✓" : "📋"}
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="text-white/30">—</span>
-                              )}
-                            </td>
-
-                            {/* Delivered Account */}
-                            <td className="py-3.5 px-4 min-w-[260px] max-w-[340px]">
-                              {renderOrderCredentials(ord)}
-                            </td>
-
-                            {/* Date */}
-                            <td className="py-3.5 px-4 text-white/40 whitespace-nowrap">
-                              {new Date(ord.createdAt).toLocaleString([], {
+                          <div className="flex items-center justify-between text-[11px] font-mono text-[#908fa0]">
+                            <span>
+                              {new Date(ord.createdAt).toLocaleDateString([], {
                                 month: "short",
                                 day: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
                               })}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            </span>
+                            <div>{getEmailStatusBadge(ord)}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </>
+
+                  {/* Right Column: Deep Order Record Inspector */}
+                  {(() => {
+                    const activeInspect =
+                      filteredOrders.find((o) => o.orderId === selectedOrderId) ||
+                      filteredOrders[0];
+                    if (!activeInspect) {
+                      return (
+                        <div className="flex-1 flex items-center justify-center p-12 text-[#908fa0] font-mono text-sm">
+                          Select an order from the list to view its complete audit details.
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="flex-1 max-h-[700px] overflow-y-auto p-5 sm:p-7 space-y-6">
+                        {/* Header Dossier */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#262a33] gap-3">
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-lg font-black text-[#8083ff]">
+                                #{activeInspect.orderId}
+                              </span>
+                              {getStatusBadge(activeInspect.status)}
+                              {getEmailStatusBadge(activeInspect)}
+                            </div>
+                            <p className="font-mono text-xs text-[#908fa0] mt-1">
+                              Session Created: {new Date(activeInspect.createdAt).toLocaleString()}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAuditModalOrder(activeInspect);
+                                setResendCustomEmail(activeInspect.email);
+                                setResendStatusMsg(null);
+                              }}
+                              className="px-4 py-2 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white font-mono font-bold text-xs shadow-md shadow-[#8083ff]/20 transition-all cursor-pointer"
+                            >
+                              ⚡ Audit &amp; Resend Email
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Customer & Transaction Breakdown Cards */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="p-4 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-2">
+                            <span className="text-[10px] font-mono font-bold uppercase text-[#908fa0] block">
+                              Buyer Email Address
+                            </span>
+                            <div className="flex items-center justify-between font-mono text-sm font-semibold text-[#dfe2ee]">
+                              <span className="select-all truncate">{activeInspect.email}</span>
+                              <button
+                                type="button"
+                                onClick={() => copyVal(activeInspect.email, `insp-em-${activeInspect.orderId}`)}
+                                className="text-[#908fa0] hover:text-[#dfe2ee] p-1 rounded cursor-pointer"
+                              >
+                                {copiedKey === `insp-em-${activeInspect.orderId}` ? "✓" : "📋"}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="p-4 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-2">
+                            <span className="text-[10px] font-mono font-bold uppercase text-[#908fa0] block">
+                              Dual Currency Billing Total
+                            </span>
+                            <div className="flex items-baseline gap-2 font-mono">
+                              <span className="text-xl font-black text-[#dfe2ee]">₹{activeInspect.amount}</span>
+                              <span className="text-xs text-[#908fa0]">
+                                (~${((Number(activeInspect.amount) || 0) * inrToUsdRate).toFixed(2)} USD)
+                              </span>
+                              {activeInspect.quantity && activeInspect.quantity > 1 && (
+                                <span className="text-xs font-bold text-[#8083ff] bg-[#8083ff]/15 px-2 py-0.5 rounded">
+                                  {activeInspect.quantity} Units
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="p-4 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-2">
+                            <span className="text-[10px] font-mono font-bold uppercase text-[#908fa0] block">
+                              Payment Gateway Reference (UTR / TxID)
+                            </span>
+                            {activeInspect.utr ? (
+                              <div className="flex items-center justify-between font-mono text-sm text-[#4edea3] font-semibold">
+                                <span className="select-all truncate">{activeInspect.utr}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyVal(activeInspect.utr, `insp-utr-${activeInspect.orderId}`)}
+                                  className="text-[#908fa0] hover:text-[#dfe2ee] p-1 rounded cursor-pointer"
+                                >
+                                  {copiedKey === `insp-utr-${activeInspect.orderId}` ? "✓" : "📋"}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="font-mono text-xs text-[#908fa0]/60">— No UTR submitted yet</span>
+                            )}
+                          </div>
+
+                          <div className="p-4 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-2">
+                            <span className="text-[10px] font-mono font-bold uppercase text-[#908fa0] block">
+                              Email Delivery Timeline
+                            </span>
+                            <div className="font-mono text-xs space-y-1">
+                              {activeInspect.emailOpenedAt ? (
+                                <div className="text-[#4edea3]">
+                                  ✓ Customer opened email on {new Date(activeInspect.emailOpenedAt).toLocaleString()}
+                                </div>
+                              ) : activeInspect.emailSentAt ? (
+                                <div className="text-[#908fa0]">
+                                  ✉️ Dispatched at {new Date(activeInspect.emailSentAt).toLocaleTimeString()}
+                                </div>
+                              ) : (
+                                <div className="text-[#908fa0]/60">Email pending dispatch</div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Complete Credentials Display */}
+                        <div className="space-y-2">
+                          <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-[#8083ff]">
+                            Delivered Account Credentials Payload
+                          </h3>
+                          <div className="p-4 rounded-xl bg-[#0f131c] border border-[#262a33]">
+                            {renderOrderCredentials(activeInspect)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                /* ── 3. FIXED CONTAINED TABLE VIEW (ON-SCREEN SCROLLBAR, NEVER SCROLL DOWN 2000PX) ── */
+                <div className="max-h-[580px] overflow-auto scrollbar-thin">
+                  <table className="w-full min-w-[850px] text-left border-collapse text-xs">
+                    <thead className="sticky top-0 bg-[#0a0e16] border-b border-[#262a33] z-10 shadow-sm">
+                      <tr className="text-[#908fa0] font-mono font-bold uppercase tracking-wider text-[11px]">
+                        <th className="py-3 px-4">Order ID</th>
+                        <th className="py-3 px-4">Customer</th>
+                        <th className="py-3 px-4">Amount</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4">Email Receipt</th>
+                        <th className="py-3 px-4">Bank UTR / Tx</th>
+                        <th className="py-3 px-4">Delivered Accounts</th>
+                        <th className="py-3 px-4">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#262a33]/60 bg-[#181c24]/50">
+                      {filteredOrders.map((ord) => (
+                        <tr key={ord.orderId} className="hover:bg-[#262a33]/30 transition-colors">
+                          {/* Order ID */}
+                          <td className="py-3.5 px-4 font-mono text-[#8083ff] font-semibold whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <span>#{ord.orderId}</span>
+                              <button
+                                type="button"
+                                onClick={() => copyVal(ord.orderId, `ord-id-tbl-${ord.orderId}`)}
+                                className="text-[#908fa0] hover:text-[#dfe2ee] p-1 rounded hover:bg-[#262a33] cursor-pointer"
+                                title="Copy Order ID"
+                              >
+                                {copiedKey === `ord-id-tbl-${ord.orderId}` ? "✓" : "📋"}
+                              </button>
+                            </div>
+                          </td>
+
+                          {/* Customer Email */}
+                          <td className="py-3.5 px-4 font-mono font-medium text-[#dfe2ee] max-w-[180px] truncate select-all">
+                            {ord.email}
+                          </td>
+
+                          {/* Amount (Dual Currency) */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <div className="font-bold font-mono text-[#dfe2ee] text-sm">₹{ord.amount}</div>
+                            <div className="text-[10px] font-mono text-[#908fa0]">
+                              ~${((Number(ord.amount) || 0) * inrToUsdRate).toFixed(2)} USD
+                            </div>
+                          </td>
+
+                          {/* Status */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            {getStatusBadge(ord.status)}
+                          </td>
+
+                          {/* Email Receipt Status */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <div className="flex flex-col gap-1 items-start">
+                              {getEmailStatusBadge(ord)}
+                              {ord.emailOpenedAt && (
+                                <span className="text-[10px] text-[#4edea3] font-mono">
+                                  Opened: {new Date(ord.emailOpenedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Bank UTR */}
+                          <td className="py-3.5 px-4 font-mono whitespace-nowrap">
+                            {ord.utr ? (
+                              <div className="flex items-center gap-1.5 text-[#4edea3] font-semibold">
+                                <span>{ord.utr}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyVal(ord.utr, `ord-utr-tbl-${ord.orderId}`)}
+                                  className="text-[#908fa0] hover:text-[#dfe2ee] p-0.5 rounded cursor-pointer"
+                                >
+                                  {copiedKey === `ord-utr-tbl-${ord.orderId}` ? "✓" : "📋"}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-[#908fa0]/60">—</span>
+                            )}
+                          </td>
+
+                          {/* Delivered Account */}
+                          <td className="py-3.5 px-4 min-w-[240px] max-w-[320px]">
+                            {renderOrderCredentials(ord)}
+                          </td>
+
+                          {/* Actions */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAuditModalOrder(ord);
+                                setResendCustomEmail(ord.email);
+                                setResendStatusMsg(null);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-xs font-mono font-bold cursor-pointer transition-colors"
+                            >
+                              Audit / Resend
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>
@@ -1536,6 +1814,11 @@ export default function AdminPage() {
         {/* ── TAB 3: CUSTOM PRODUCTS MANAGEMENT ── */}
         {tab === "products" && (
           <AdminProductsManager adminPassword={password} />
+        )}
+
+        {/* ── TAB 4: PROMO COUPONS MANAGEMENT ── */}
+        {tab === "coupons" && (
+          <AdminCouponsManager adminPassword={password} />
         )}
       </main>
 
@@ -1546,26 +1829,26 @@ export default function AdminPage() {
           onClick={() => setAuditModalOrder(null)}
         >
           <div
-            className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-[#131033] border border-white/15 p-5 sm:p-7 shadow-2xl space-y-5 text-white text-xs scrollbar-thin"
+            className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-[#181c24] border border-[#262a33] p-5 sm:p-7 shadow-2xl space-y-5 text-[#dfe2ee] text-xs scrollbar-thin"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+            <div className="flex items-start justify-between gap-3 border-b border-[#262a33] pb-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="text-xl">📬</span>
-                  <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                  <h3 className="text-base sm:text-lg font-bold text-[#dfe2ee] tracking-tight">
                     Email Delivery &amp; Receipt Audit
                   </h3>
                 </div>
-                <p className="text-xs text-white/50">
+                <p className="font-mono text-xs text-[#908fa0]">
                   Verify whether the customer received, opened, or confirmed their credentials email.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setAuditModalOrder(null)}
-                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-sm cursor-pointer transition-colors shrink-0"
+                className="w-8 h-8 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#908fa0] hover:text-[#dfe2ee] flex items-center justify-center text-sm cursor-pointer transition-colors shrink-0"
               >
                 ✕
               </button>
@@ -1575,12 +1858,12 @@ export default function AdminPage() {
             <div
               className={`p-4 rounded-xl border flex items-start gap-3.5 ${
                 auditModalOrder.emailOpened || auditModalOrder.emailStatus === "opened"
-                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-200"
+                  ? "bg-[#00a572]/15 border-[#00a572]/40 text-[#4edea3]"
                   : auditModalOrder.emailStatus === "failed"
-                  ? "bg-red-500/10 border-red-500/30 text-red-200"
+                  ? "bg-[#93000a]/20 border-[#ffb4ab]/30 text-[#ffb4ab]"
                   : auditModalOrder.emailStatus === "sent" || (auditModalOrder.status === "confirmed" && !auditModalOrder.emailStatus)
-                  ? "bg-sky-500/10 border-sky-500/30 text-sky-200"
-                  : "bg-white/5 border-white/10 text-white/70"
+                  ? "bg-[#8083ff]/15 border-[#8083ff]/30 text-[#8083ff]"
+                  : "bg-[#0f131c] border-[#262a33] text-[#c7c4d7]"
               }`}
             >
               <div className="text-2xl shrink-0 mt-0.5">
@@ -1593,7 +1876,7 @@ export default function AdminPage() {
                   : "⏳"}
               </div>
               <div className="space-y-1 min-w-0 flex-1">
-                <div className="font-bold text-sm text-white">
+                <div className="font-bold text-sm text-[#dfe2ee]">
                   {auditModalOrder.emailOpened || auditModalOrder.emailStatus === "opened"
                     ? "Email Delivered & Received by Customer"
                     : auditModalOrder.emailStatus === "failed"
@@ -1602,7 +1885,7 @@ export default function AdminPage() {
                     ? "Email Dispatched — Awaiting Customer Open"
                     : "Payment Pending — Email Not Sent"}
                 </div>
-                <p className="text-xs opacity-80 leading-relaxed">
+                <p className="text-xs opacity-80 leading-relaxed font-mono">
                   {auditModalOrder.emailOpened || auditModalOrder.emailStatus === "opened"
                     ? `The customer opened this email${
                         auditModalOrder.emailOpenCount && auditModalOrder.emailOpenCount > 1
@@ -1625,30 +1908,30 @@ export default function AdminPage() {
             {/* Audit Diagnostics Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {/* Order ID */}
-              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-white/40 block">Order ID</span>
-                <span className="font-mono text-white text-xs font-semibold">{auditModalOrder.orderId}</span>
+              <div className="p-3 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-1">
+                <span className="font-mono text-[10px] uppercase font-bold text-[#908fa0] block">Order ID</span>
+                <span className="font-mono text-[#8083ff] text-xs font-semibold">{auditModalOrder.orderId}</span>
               </div>
 
               {/* Customer Email */}
-              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
+              <div className="p-3 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-bold text-white/40 block">Recipient Email</span>
+                  <span className="font-mono text-[10px] uppercase font-bold text-[#908fa0] block">Recipient Email</span>
                   <button
                     type="button"
                     onClick={() => copyVal(auditModalOrder.email, "audit-email")}
-                    className="text-[10px] text-white/50 hover:text-white cursor-pointer"
+                    className="font-mono text-[10px] text-[#908fa0] hover:text-[#dfe2ee] cursor-pointer"
                   >
                     {copiedKey === "audit-email" ? "✓ Copied" : "📋 Copy"}
                   </button>
                 </div>
-                <span className="font-medium text-white text-xs truncate block select-all">{auditModalOrder.email}</span>
+                <span className="font-mono font-medium text-[#dfe2ee] text-xs truncate block select-all">{auditModalOrder.email}</span>
               </div>
 
               {/* Email Sent At */}
-              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-white/40 block">Dispatched via SMTP</span>
-                <span className="text-white/80 text-xs">
+              <div className="p-3 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-1">
+                <span className="font-mono text-[10px] uppercase font-bold text-[#908fa0] block">Dispatched via SMTP</span>
+                <span className="font-mono text-[#c7c4d7] text-xs">
                   {auditModalOrder.emailSentAt
                     ? new Date(auditModalOrder.emailSentAt).toLocaleString()
                     : auditModalOrder.status === "confirmed"
@@ -1656,22 +1939,22 @@ export default function AdminPage() {
                     : "Not sent"}
                 </span>
                 {auditModalOrder.emailResentCount ? (
-                  <span className="text-[10px] text-indigo-400 block font-semibold">
+                  <span className="font-mono text-[10px] text-[#8083ff] block font-semibold">
                     Resent {auditModalOrder.emailResentCount} time(s)
                   </span>
                 ) : null}
               </div>
 
               {/* Email Opened At */}
-              <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-white/40 block">First Opened / Received</span>
-                <span className="text-white/80 text-xs">
+              <div className="p-3 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-1">
+                <span className="font-mono text-[10px] uppercase font-bold text-[#908fa0] block">First Opened / Received</span>
+                <span className="font-mono text-[#c7c4d7] text-xs">
                   {auditModalOrder.emailOpenedAt
                     ? new Date(auditModalOrder.emailOpenedAt).toLocaleString()
                     : "Awaiting open detection"}
                 </span>
                 {auditModalOrder.emailLastOpenedAt && auditModalOrder.emailLastOpenedAt !== auditModalOrder.emailOpenedAt ? (
-                  <span className="text-[10px] text-emerald-400/80 block font-mono">
+                  <span className="text-[10px] text-[#4edea3] block font-mono">
                     Last: {new Date(auditModalOrder.emailLastOpenedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span>
                 ) : null}
@@ -1679,9 +1962,9 @@ export default function AdminPage() {
 
               {/* Message ID */}
               {auditModalOrder.emailMessageId && (
-                <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 col-span-1 sm:col-span-2">
-                  <span className="text-[10px] uppercase font-bold text-white/40 block">SMTP Message ID</span>
-                  <span className="font-mono text-[11px] text-white/70 break-all select-all">
+                <div className="p-3 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-1 col-span-1 sm:col-span-2">
+                  <span className="font-mono text-[10px] uppercase font-bold text-[#908fa0] block">SMTP Message ID</span>
+                  <span className="font-mono text-[11px] text-[#908fa0] break-all select-all">
                     {auditModalOrder.emailMessageId}
                   </span>
                 </div>
@@ -1689,9 +1972,9 @@ export default function AdminPage() {
 
               {/* Client User Agent (Device) */}
               {auditModalOrder.emailClientUserAgent && (
-                <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 col-span-1 sm:col-span-2">
-                  <span className="text-[10px] uppercase font-bold text-white/40 block">Email Client / Proxy Device</span>
-                  <span className="font-mono text-[10px] text-white/60 break-all">
+                <div className="p-3 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-1 col-span-1 sm:col-span-2">
+                  <span className="font-mono text-[10px] uppercase font-bold text-[#908fa0] block">Email Client / Proxy Device</span>
+                  <span className="font-mono text-[10px] text-[#908fa0] break-all">
                     {auditModalOrder.emailClientUserAgent}
                   </span>
                 </div>
@@ -1699,12 +1982,12 @@ export default function AdminPage() {
             </div>
 
             {/* Resend Action Form */}
-            <div className="p-4 rounded-xl bg-white/[0.04] border border-white/10 space-y-3">
+            <div className="p-4 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-3">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-xs text-white flex items-center gap-1.5">
+                <span className="font-bold text-xs text-[#dfe2ee] flex items-center gap-1.5 font-mono">
                   <span>✉️</span> Resend Credentials Email
                 </span>
-                <span className="text-[10px] text-white/40">
+                <span className="font-mono text-[10px] text-[#908fa0]">
                   Deliver immediately with live tracking pixel
                 </span>
               </div>
@@ -1715,13 +1998,13 @@ export default function AdminPage() {
                   value={resendCustomEmail}
                   onChange={(e) => setResendCustomEmail(e.target.value)}
                   placeholder="Recipient email address…"
-                  className="flex-1 px-3.5 py-2 rounded-lg bg-black/40 border border-white/15 text-white text-xs placeholder-white/30 outline-none focus:border-indigo-500 transition-colors"
+                  className="flex-1 px-3.5 py-2 rounded-lg bg-[#181c24] border border-[#262a33] text-[#dfe2ee] text-xs font-mono placeholder-[#908fa0]/60 outline-none focus:border-[#8083ff] transition-colors"
                 />
                 <button
                   type="button"
                   onClick={() => handleResendEmail(auditModalOrder.orderId, resendCustomEmail)}
                   disabled={resendingEmail || !resendCustomEmail.trim()}
-                  className="px-4 py-2 rounded-lg font-bold text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-indigo-600/20 shrink-0"
+                  className="px-4 py-2 rounded-lg font-bold font-mono text-xs bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white disabled:opacity-50 flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-[#8083ff]/20 shrink-0"
                 >
                   {resendingEmail ? (
                     <>
@@ -1738,10 +2021,10 @@ export default function AdminPage() {
 
               {resendStatusMsg && (
                 <div
-                  className={`text-xs p-2.5 rounded-lg flex items-center gap-2 ${
+                  className={`text-xs p-2.5 rounded-lg flex items-center gap-2 font-mono ${
                     resendStatusMsg.type === "success"
-                      ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
-                      : "bg-red-500/20 border border-red-500/30 text-red-300"
+                      ? "bg-[#00a572]/20 border border-[#00a572]/30 text-[#4edea3]"
+                      : "bg-[#93000a]/20 border border-[#ffb4ab]/30 text-[#ffb4ab]"
                   }`}
                 >
                   <span>{resendStatusMsg.type === "success" ? "✅" : "⚠️"}</span>
@@ -1751,8 +2034,8 @@ export default function AdminPage() {
             </div>
 
             {/* Secondary Actions: Manual Override & Direct Links */}
-            <div className="space-y-2 pt-1 border-t border-white/10">
-              <span className="text-[10px] uppercase font-bold text-white/40 block">
+            <div className="space-y-2 pt-1 border-t border-[#262a33]">
+              <span className="font-mono text-[10px] uppercase font-bold text-[#908fa0] block">
                 Verification Tools &amp; Manual Override
               </span>
               <div className="flex flex-wrap items-center gap-2">
@@ -1766,10 +2049,10 @@ export default function AdminPage() {
                     )
                   }
                   disabled={togglingManualReceipt}
-                  className={`px-3 py-2 rounded-lg font-semibold text-xs border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  className={`px-3 py-2 rounded-lg font-mono font-semibold text-xs border transition-colors cursor-pointer flex items-center gap-1.5 ${
                     auditModalOrder.emailOpened || auditModalOrder.emailStatus === "opened"
                       ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-300"
-                      : "bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
+                      : "bg-[#00a572]/20 hover:bg-[#00a572]/30 border-[#00a572]/30 text-[#4edea3]"
                   }`}
                 >
                   {togglingManualReceipt ? (
@@ -1788,7 +2071,7 @@ export default function AdminPage() {
                     const confirmUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/api/track-email/confirm?orderId=${encodeURIComponent(auditModalOrder.orderId)}`;
                     copyVal(confirmUrl, `audit-conf-${auditModalOrder.orderId}`);
                   }}
-                  className="px-3 py-2 rounded-lg font-semibold text-xs bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 transition-colors cursor-pointer flex items-center gap-1.5"
+                  className="px-3 py-2 rounded-lg font-mono font-semibold text-xs bg-[#262a33] hover:bg-[#31353e] border border-[#31353e] text-[#dfe2ee] transition-colors cursor-pointer flex items-center gap-1.5"
                 >
                   {copiedKey === `audit-conf-${auditModalOrder.orderId}` ? "✓ Link Copied" : "🔗 Copy Web Receipt Link"}
                 </button>
@@ -1798,7 +2081,7 @@ export default function AdminPage() {
                   href={`/api/track-email/confirm?orderId=${encodeURIComponent(auditModalOrder.orderId)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-2 rounded-lg font-semibold text-xs bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 transition-colors cursor-pointer flex items-center gap-1.5"
+                  className="px-3 py-2 rounded-lg font-mono font-semibold text-xs bg-[#262a33] hover:bg-[#31353e] border border-[#31353e] text-[#dfe2ee] transition-colors cursor-pointer flex items-center gap-1.5"
                 >
                   ↗️ Open Web Voucher
                 </a>

@@ -18,8 +18,14 @@ import {
   QrCode,
   Smartphone,
   Lock,
+  Coins,
+  Wallet,
+  Ticket,
+  Tag,
+  Percent,
 } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
+import { useCurrency } from "@/lib/currency-context";
 import { ProductIcon } from "./ProductIcons";
 import { APP_CONFIG } from "@/lib/config";
 
@@ -33,6 +39,16 @@ interface FamGatewayOrder {
   checkout_url: string;
   upi_intent: string;
   expires_at_ist?: string;
+}
+
+interface CryptoOrderData {
+  order_id: string;
+  amount_inr: number;
+  amount_usd: number;
+  quantity: number;
+  merchant_id: string;
+  email: string;
+  productName: string;
 }
 
 interface CredentialResult {
@@ -55,43 +71,94 @@ export function CheckoutModal() {
     isCheckoutOpen,
     setIsCheckoutOpen,
     checkoutProduct,
+    checkoutQuantity,
+    setCheckoutQuantity,
     items,
     subtotal,
     clearCart,
   } = useCart();
+  const { currency, formatPrice, inrToUsdRate } = useCurrency();
 
   const ACTIVE_ORDER_STORAGE_KEY = "trinitymart_active_checkout_v2";
 
+  // Selected payment gateway method: "upi" (FamGateway) or "crypto" (Atlos)
+  const [paymentMethod, setPaymentMethod] = useState<"upi" | "crypto">("upi");
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
   const [loading, setLoading] = useState(false);
   const [order, setOrder] = useState<FamGatewayOrder | null>(null);
+  const [cryptoOrder, setCryptoOrder] = useState<CryptoOrderData | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<
     "idle" | "pending" | "success" | "failed"
   >("idle");
   const [timeLeft, setTimeLeft] = useState(300);
   const [deliveredCreds, setDeliveredCreds] = useState<CredentialResult | null>(
-    null
+    null,
   );
   const [deliveredList, setDeliveredList] = useState<CredentialResult[]>([]);
   const [failReason, setFailReason] = useState("");
   const [copiedField, setCopiedField] = useState("");
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
-  // Bank UTR submission & verification state
+  // Bank UTR submission & verification state (for UPI)
   const [utrInput, setUtrInput] = useState("");
   const [verifyingPayment, setVerifyingPayment] = useState(false);
   const [verificationError, setVerificationError] = useState("");
 
+  // Blockchain Transaction Hash (TxID) verification state (for Crypto)
+  const [cryptoHashInput, setCryptoHashInput] = useState("");
+  const [verifyingCryptoHash, setVerifyingCryptoHash] = useState(false);
+  const [cryptoHashError, setCryptoHashError] = useState("");
+  const [mempoolDetected, setMempoolDetected] = useState(false);
+
+  // Coupon / Promo code state
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discountAmount: number;
+    discountType: string;
+    discountValue: number;
+  } | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState("");
+  const [couponSuccessMsg, setCouponSuccessMsg] = useState("");
+
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isPollingRef = useRef(false);
 
+  // Automatically recommend crypto for USD users and UPI for INR users (after states are initialized)
+  useEffect(() => {
+    if (isCheckoutOpen && paymentStatus === "idle") {
+      if (currency === "USD") {
+        setPaymentMethod("crypto");
+      } else {
+        setPaymentMethod("upi");
+      }
+    }
+  }, [isCheckoutOpen, currency, paymentStatus]);
+
   // Determine active purchase items & total amount
   const isSingleProduct = checkoutProduct !== null;
-  const currentTotal = isSingleProduct ? checkoutProduct.price : subtotal;
+  const activeQuantity = isSingleProduct
+    ? Math.max(1, checkoutQuantity || 1)
+    : items.reduce((acc, curr) => acc + curr.quantity, 0);
+  const rawSubtotal = isSingleProduct
+    ? checkoutProduct.price * activeQuantity
+    : subtotal;
   const currentTitle = isSingleProduct
     ? checkoutProduct.name
     : `${items.length} items in cart`;
+
+  // Apply coupon discount if active (keep minimum 1 INR for gateway processing)
+  const discountAmount = appliedCoupon ? appliedCoupon.discountAmount : 0;
+  const currentTotal = Math.max(1, Math.round(rawSubtotal - discountAmount));
+
+  // Calculated USD amount for Atlos crypto gateway
+  const inrRate = inrToUsdRate || APP_CONFIG.inrToUsdRate || 0.0118;
+  const equivalentUsd = Math.max(
+    0.01,
+    Number((currentTotal * inrRate).toFixed(2)),
+  );
 
   const isOutOfStock = isSingleProduct
     ? !checkoutProduct.inStock ||
@@ -101,11 +168,15 @@ export function CheckoutModal() {
         (item) =>
           !item.product.inStock ||
           (item.product.stockCount !== undefined &&
-            item.product.stockCount <= 0)
+            item.product.stockCount <= 0),
       );
 
-  // Poll for payment confirmation
-  const startPolling = (orderId: string, emailToPoll?: string) => {
+  // Poll for payment confirmation (supports both UPI and Atlos Crypto auto-checks)
+  const startPolling = (
+    orderId: string,
+    emailToPoll?: string,
+    method: "upi" | "crypto" = paymentMethod,
+  ) => {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     const targetEmail = (emailToPoll || email).trim().toLowerCase();
 
@@ -115,22 +186,36 @@ export function CheckoutModal() {
       isPollingRef.current = true;
 
       try {
-        const queryParams = new URLSearchParams({ order_id: orderId, orderId });
+        const queryParams = new URLSearchParams({
+          order_id: orderId,
+          orderId,
+          method,
+        });
         if (targetEmail) queryParams.set("email", targetEmail);
 
-        const res = await fetch(`/api/confirm-payment?${queryParams.toString()}`, {
-          cache: "no-store",
-        });
+        const res = await fetch(
+          `/api/confirm-payment?${queryParams.toString()}`,
+          {
+            cache: "no-store",
+          },
+        );
         const data = await res.json();
 
-        if (
+        // Automatic mempool detection indicator
+        if (data.status === "mempool_detected") {
+          setMempoolDetected(true);
+        } else if (
           data.status === "COMPLETED" ||
           data.status === "SUCCESS" ||
           data.status === "confirmed"
         ) {
           if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
           setPaymentStatus("success");
-          if (data.credentials && Array.isArray(data.credentials) && data.credentials.length > 0) {
+          if (
+            data.credentials &&
+            Array.isArray(data.credentials) &&
+            data.credentials.length > 0
+          ) {
             setDeliveredCreds(data.credentials[0]);
             setDeliveredList(data.credentials);
           } else if (data.credential) {
@@ -146,7 +231,9 @@ export function CheckoutModal() {
         } else if (data.status === "FAILED" || data.status === "failed") {
           if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
           setPaymentStatus("failed");
-          setFailReason(data.message || data.reason || "Payment transaction was rejected.");
+          setFailReason(
+            data.message || data.reason || "Payment transaction was rejected.",
+          );
         }
       } catch (err) {
         console.warn("Polling payment error:", err);
@@ -164,12 +251,17 @@ export function CheckoutModal() {
         const saved = JSON.parse(savedRaw);
         const age = Date.now() - (saved.timestamp || 0);
         // Valid for up to 15 minutes
-        if (age < 15 * 60 * 1000 && saved.order) {
+        if (age < 15 * 60 * 1000 && (saved.order || saved.cryptoOrder)) {
           setEmail(saved.email || "");
-          setOrder(saved.order);
+          if (saved.order) setOrder(saved.order);
+          if (saved.cryptoOrder) setCryptoOrder(saved.cryptoOrder);
+          if (saved.paymentMethod) setPaymentMethod(saved.paymentMethod);
           setPaymentStatus(saved.paymentStatus || "pending");
           if (saved.timeLeft) {
-            const remaining = Math.max(10, saved.timeLeft - Math.floor(age / 1000));
+            const remaining = Math.max(
+              10,
+              saved.timeLeft - Math.floor(age / 1000),
+            );
             setTimeLeft(remaining);
           }
           if (saved.deliveredCreds) setDeliveredCreds(saved.deliveredCreds);
@@ -177,7 +269,11 @@ export function CheckoutModal() {
           setIsCheckoutOpen(true);
 
           if (saved.paymentStatus === "pending") {
-            startPolling(saved.order.order_id, saved.email);
+            const activeId =
+              saved.cryptoOrder?.order_id || saved.order?.order_id;
+            if (activeId) {
+              startPolling(activeId, saved.email, saved.paymentMethod || "upi");
+            }
           }
         } else {
           localStorage.removeItem(ACTIVE_ORDER_STORAGE_KEY);
@@ -190,33 +286,37 @@ export function CheckoutModal() {
 
   // Save active order state to localStorage whenever pending or success
   useEffect(() => {
-    if (paymentStatus === "pending" && order) {
+    if (paymentStatus === "pending" && (order || cryptoOrder)) {
       try {
         localStorage.setItem(
           ACTIVE_ORDER_STORAGE_KEY,
           JSON.stringify({
             order,
+            cryptoOrder,
+            paymentMethod,
             email,
             paymentStatus,
             timeLeft,
             timestamp: Date.now(),
             deliveredCreds,
             deliveredList,
-          })
+          }),
         );
       } catch {}
-    } else if (paymentStatus === "success" && order) {
+    } else if (paymentStatus === "success" && (order || cryptoOrder)) {
       try {
         localStorage.setItem(
           ACTIVE_ORDER_STORAGE_KEY,
           JSON.stringify({
             order,
+            cryptoOrder,
+            paymentMethod,
             email,
             paymentStatus,
             timestamp: Date.now(),
             deliveredCreds,
             deliveredList,
-          })
+          }),
         );
       } catch {}
     } else if (paymentStatus === "idle" || paymentStatus === "failed") {
@@ -224,14 +324,24 @@ export function CheckoutModal() {
         localStorage.removeItem(ACTIVE_ORDER_STORAGE_KEY);
       } catch {}
     }
-  }, [paymentStatus, order, email, timeLeft, deliveredCreds, deliveredList]);
+  }, [
+    paymentStatus,
+    order,
+    cryptoOrder,
+    paymentMethod,
+    email,
+    timeLeft,
+    deliveredCreds,
+    deliveredList,
+  ]);
 
   // Window beforeunload protection: warns user if they refresh while payment is pending
   useEffect(() => {
     if (paymentStatus !== "pending") return;
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
-      e.returnValue = "UPI payment in progress! Leaving or refreshing will interrupt your active session.";
+      e.returnValue =
+        "Payment in progress! Leaving or refreshing will interrupt your active session.";
       return e.returnValue;
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -248,10 +358,18 @@ export function CheckoutModal() {
       } catch {}
     }
     setOrder(null);
+    setCryptoOrder(null);
     setPaymentStatus("idle");
     setUtrInput("");
     setVerificationError("");
+    setCryptoHashInput("");
+    setCryptoHashError("");
+    setMempoolDetected(false);
     setShowCancelConfirm(false);
+    setAppliedCoupon(null);
+    setCouponInput("");
+    setCouponError("");
+    setCouponSuccessMsg("");
     isPollingRef.current = false;
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
   };
@@ -263,6 +381,53 @@ export function CheckoutModal() {
     handleClose();
   };
 
+  // Coupon application logic
+  const handleApplyCoupon = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const clean = couponInput.trim().toUpperCase();
+    if (!clean) {
+      setCouponError("Please enter a coupon code");
+      return;
+    }
+    setCouponError("");
+    setCouponLoading(true);
+    try {
+      const res = await fetch("/api/coupons/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: clean,
+          amount: rawSubtotal,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.valid) {
+        setCouponError(data.error || "Invalid coupon code");
+        setAppliedCoupon(null);
+      } else {
+        setAppliedCoupon({
+          code: data.code,
+          discountAmount: data.discountAmount,
+          discountType: data.discountType,
+          discountValue: data.discountValue,
+        });
+        setCouponSuccessMsg(data.message || `Coupon ${data.code} applied!`);
+        setCouponError("");
+      }
+    } catch {
+      setCouponError("Could not validate coupon. Please try again.");
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput("");
+    setCouponSuccessMsg("");
+    setCouponError("");
+  };
+
   // Timer countdown
   useEffect(() => {
     if (paymentStatus !== "pending") return;
@@ -271,7 +436,9 @@ export function CheckoutModal() {
         if (prev <= 1) {
           clearInterval(interval);
           setPaymentStatus("failed");
-          setFailReason("Payment session expired (5 minutes). Please try again.");
+          setFailReason(
+            "Payment session expired (5 minutes). Please try again.",
+          );
           return 0;
         }
         return prev - 1;
@@ -287,6 +454,59 @@ export function CheckoutModal() {
     };
   }, []);
 
+  // Helper to launch Atlos Crypto Payment modal
+  const handleOpenAtlosModal = (customCrypto?: CryptoOrderData) => {
+    const activeCrypto = customCrypto || cryptoOrder;
+    const targetOrderId = activeCrypto?.order_id || order?.order_id;
+    const targetUsd = activeCrypto?.amount_usd || equivalentUsd;
+    const merchantId =
+      activeCrypto?.merchant_id ||
+      APP_CONFIG.atlosMerchantId ||
+      process.env.ATLOS_MERCHANT_ID ||
+      process.env.ATLOS_MERCHANT_ID ||
+      "ADK7QABYR0";
+
+    if (!targetOrderId) return;
+
+    if (typeof window !== "undefined" && (window as any).atlos) {
+      try {
+        (window as any).atlos.Pay({
+          merchantId: merchantId || "demo",
+          orderId: targetOrderId,
+          orderAmount: targetUsd,
+          orderCurrency: "USD",
+          userEmail: email,
+          theme: "dark",
+          onSuccess: (blockchain: string, asset: string, txid: string) => {
+            console.log(
+              "Atlos tx broadcast detected:",
+              blockchain,
+              asset,
+              txid,
+            );
+            setMempoolDetected(true);
+            if (txid) {
+              setCryptoHashInput(txid);
+              // Immediately auto-verify and fulfill order with broadcast txid
+              handleConfirmWithCryptoHash(txid);
+            }
+          },
+          onCompleted: () => {
+            console.log("Atlos onCompleted callback triggered");
+            startPolling(targetOrderId, email, "crypto");
+          },
+          onCanceled: () => {
+            console.log("Atlos modal closed");
+          },
+        });
+      } catch (err) {
+        console.warn("Could not invoke atlos.Pay:", err);
+      }
+    } else {
+      console.warn("Atlos widget script not loaded yet");
+    }
+  };
+
   const handleInitiatePayment = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -294,7 +514,7 @@ export function CheckoutModal() {
       setEmailError(
         isSingleProduct
           ? `"${checkoutProduct.name}" is currently out of stock.`
-          : "Your cart contains out-of-stock items. Please remove them before checkout."
+          : "Your cart contains out-of-stock items. Please remove them before checkout.",
       );
       return;
     }
@@ -308,12 +528,17 @@ export function CheckoutModal() {
     setLoading(true);
 
     try {
-      const quantity = isSingleProduct
-        ? 1
-        : items.reduce((acc, curr) => acc + curr.quantity, 0);
+      const quantity = activeQuantity;
 
       const cartItemsPayload = isSingleProduct
-        ? [{ productId: checkoutProduct.id, productName: checkoutProduct.name, quantity: 1, price: checkoutProduct.price }]
+        ? [
+            {
+              productId: checkoutProduct.id,
+              productName: checkoutProduct.name,
+              quantity: activeQuantity,
+              price: checkoutProduct.price,
+            },
+          ]
         : items.map((item) => ({
             productId: item.product.id,
             productName: item.product.name,
@@ -321,41 +546,144 @@ export function CheckoutModal() {
             price: item.product.price,
           }));
 
-      const res = await fetch("/api/famgateway/create-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: cleanEmail,
-          quantity,
-          amount: currentTotal,
-          productId: isSingleProduct ? checkoutProduct.id : "cart",
-          productName: currentTitle,
-          cartItems: cartItemsPayload,
-        }),
-      });
+      if (paymentMethod === "crypto") {
+        const res = await fetch("/api/crypto/create-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: cleanEmail,
+            quantity,
+            amount: currentTotal,
+            productId: isSingleProduct ? checkoutProduct.id : "cart",
+            productName: currentTitle,
+            cartItems: cartItemsPayload,
+            couponCode: appliedCoupon?.code,
+            discountAmount,
+          }),
+        });
 
-      const json = await res.json();
-      if (!res.ok || json.error || !json.data) {
-        setEmailError(
-          json.error ||
-            "Unable to generate live UPI payment session. Please try again."
-        );
+        const json = await res.json();
+        if (!res.ok || json.error || !json.data) {
+          setEmailError(
+            json.error ||
+              "Unable to generate live Atlos crypto checkout session. Please try again.",
+          );
+        } else {
+          const cryptoData: CryptoOrderData = json.data;
+          setCryptoOrder(cryptoData);
+          setOrder({
+            order_id: cryptoData.order_id,
+            amount: currentTotal,
+            payable_amount: cryptoData.amount_usd,
+            quantity: activeQuantity,
+            qr_url: "",
+            checkout_url: "",
+            upi_intent: "",
+          });
+          setPaymentStatus("pending");
+          setTimeLeft(300);
+          startPolling(cryptoData.order_id, cleanEmail, "crypto");
+          handleOpenAtlosModal(cryptoData);
+        }
       } else {
-        setOrder(json.data);
-        setPaymentStatus("pending");
-        setTimeLeft(300);
-        startPolling(json.data.order_id, cleanEmail);
+        const res = await fetch("/api/famgateway/create-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: cleanEmail,
+            quantity,
+            amount: currentTotal,
+            productId: isSingleProduct ? checkoutProduct.id : "cart",
+            productName: currentTitle,
+            cartItems: cartItemsPayload,
+            couponCode: appliedCoupon?.code,
+            discountAmount,
+          }),
+        });
+
+        const json = await res.json();
+        if (!res.ok || json.error || !json.data) {
+          setEmailError(
+            json.error ||
+              "Unable to generate live UPI payment session. Please try again.",
+          );
+        } else {
+          setOrder(json.data);
+          setPaymentStatus("pending");
+          setTimeLeft(300);
+          startPolling(json.data.order_id, cleanEmail, "upi");
+        }
       }
     } catch {
       setEmailError(
-        "Failed to connect to payment gateway. Please check your internet connection."
+        "Failed to connect to payment gateway. Please check your internet connection.",
       );
     } finally {
       setLoading(false);
     }
   };
 
-  // Confirm payment in database with UTR
+  // Verify and confirm payment with Blockchain Transaction Hash (TxID)
+  const handleConfirmWithCryptoHash = async (providedHash?: string) => {
+    const targetOrderId = cryptoOrder?.order_id || order?.order_id;
+    if (!targetOrderId) return;
+
+    const finalHash = (providedHash || cryptoHashInput).trim();
+    if (!finalHash) {
+      setCryptoHashError(
+        "Please enter your blockchain Transaction Hash (TxID).",
+      );
+      return;
+    }
+
+    setVerifyingCryptoHash(true);
+    setCryptoHashError("");
+
+    try {
+      const res = await fetch("/api/crypto/verify-hash", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: targetOrderId,
+          email,
+          txHash: finalHash,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        setPaymentStatus("success");
+        if (
+          data.credentials &&
+          Array.isArray(data.credentials) &&
+          data.credentials.length > 0
+        ) {
+          setDeliveredCreds(data.credentials[0]);
+          setDeliveredList(data.credentials);
+        } else if (data.credential) {
+          setDeliveredCreds(data.credential);
+        }
+
+        confetti({
+          particleCount: 120,
+          spread: 80,
+          origin: { y: 0.6 },
+        });
+      } else {
+        setCryptoHashError(
+          data.error ||
+            "Transaction verification failed. Please check the TxID or allow 30-60 seconds for blockchain confirmation.",
+        );
+      }
+    } catch {
+      setCryptoHashError("Network error while verifying transaction hash.");
+    } finally {
+      setVerifyingCryptoHash(false);
+    }
+  };
+
+  // Confirm payment in database with UTR (for UPI)
   const handleConfirmWithUtr = async (providedUtr?: string) => {
     if (!order) return;
     setVerifyingPayment(true);
@@ -363,25 +691,32 @@ export function CheckoutModal() {
 
     const finalUtr = (providedUtr || utrInput).trim();
     if (!finalUtr) {
-      setVerificationError("Please enter your 12-digit UPI Bank Reference / UTR number.");
+      setVerificationError(
+        "Please enter your 12-digit UPI Bank Reference / UTR number.",
+      );
       setVerifyingPayment(false);
       return;
     }
     if (!/^\d{12}$/.test(finalUtr)) {
       setVerificationError(
-        "Invalid UTR: Bank Transaction Reference must be exactly 12 numeric digits (e.g. 423456789012)."
+        "Invalid UTR: Bank Transaction Reference must be exactly 12 numeric digits (e.g. 423456789012).",
       );
       setVerifyingPayment(false);
       return;
     }
 
     try {
-      const quantity = isSingleProduct
-        ? 1
-        : items.reduce((acc, curr) => acc + curr.quantity, 0);
+      const quantity = activeQuantity;
 
       const cartItemsPayload = isSingleProduct
-        ? [{ productId: checkoutProduct.id, productName: checkoutProduct.name, quantity: 1, price: checkoutProduct.price }]
+        ? [
+            {
+              productId: checkoutProduct.id,
+              productName: checkoutProduct.name,
+              quantity: activeQuantity,
+              price: checkoutProduct.price,
+            },
+          ]
         : items.map((item) => ({
             productId: item.product.id,
             productName: item.product.name,
@@ -409,7 +744,11 @@ export function CheckoutModal() {
       if (res.ok && data.success) {
         if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
         setPaymentStatus("success");
-        if (data.credentials && Array.isArray(data.credentials) && data.credentials.length > 0) {
+        if (
+          data.credentials &&
+          Array.isArray(data.credentials) &&
+          data.credentials.length > 0
+        ) {
           setDeliveredCreds(data.credentials[0]);
           setDeliveredList(data.credentials);
         } else if (data.credential) {
@@ -424,11 +763,13 @@ export function CheckoutModal() {
       } else {
         setVerificationError(
           data.error ||
-            "Payment verification failed: No matching bank settlement found. Please ensure payment is completed in UPI."
+            "Payment verification failed: No matching bank settlement found. Please ensure payment is completed in UPI.",
         );
       }
     } catch {
-      setVerificationError("Network error while verifying payment with database.");
+      setVerificationError(
+        "Network error while verifying payment with database.",
+      );
     } finally {
       setVerifyingPayment(false);
     }
@@ -471,33 +812,36 @@ export function CheckoutModal() {
       />
 
       {/* Modal Box */}
-      <div className="relative w-full max-w-lg bg-[#080e1c] dark:bg-[#080e1c] light:bg-white rounded-3xl shadow-2xl border border-cyan-500/30 text-white z-10 overflow-hidden animate-in fade-in zoom-in-95">
+      <div className="relative w-full max-w-lg bg-[#0f131c] rounded-2xl shadow-2xl border border-[#262a33] text-[#dfe2ee] z-10 overflow-hidden animate-in fade-in zoom-in-95">
         {/* Cancel Confirmation Prompt for Active Payment */}
         {showCancelConfirm && (
-          <div className="absolute inset-0 z-30 bg-[#080e1c]/95 backdrop-blur-md p-6 flex flex-col items-center justify-center text-center space-y-4 animate-in fade-in">
-            <div className="w-14 h-14 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center border border-amber-500/30 animate-pulse">
+          <div className="absolute inset-0 z-30 bg-[#0f131c]/95 backdrop-blur-md p-6 flex flex-col items-center justify-center text-center space-y-4 animate-in fade-in">
+            <div className="w-14 h-14 rounded-full bg-[#93000a]/20 text-[#ffb4ab] flex items-center justify-center border border-[#ffb4ab]/30 animate-pulse">
               <AlertCircle className="w-7 h-7" />
             </div>
             <div>
-              <h4 className="text-base font-black text-white">
+              <h4 className="text-base font-bold text-[#dfe2ee]">
                 Payment In Progress!
               </h4>
-              <p className="text-xs text-slate-300 mt-1.5 max-w-sm leading-relaxed">
-                If you already sent money or scanned the QR code via UPI, <strong>do not cancel!</strong> Please enter your 12-digit UPI Bank Reference / UTR number below to receive your account credentials immediately.
+              <p className="text-xs text-[#c7c4d7] mt-1.5 max-w-sm leading-relaxed">
+                If you already sent money or scanned the QR code via UPI,{" "}
+                <strong>do not cancel!</strong> Please enter your 12-digit UPI
+                Bank Reference / UTR number below to receive your account
+                credentials immediately.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-2.5 w-full max-w-xs pt-1">
               <button
                 type="button"
                 onClick={() => setShowCancelConfirm(false)}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-500/25 transition-all cursor-pointer"
+                className="w-full py-2.5 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white text-xs font-bold shadow-md transition-all cursor-pointer"
               >
                 Keep Open &amp; Enter UTR
               </button>
               <button
                 type="button"
                 onClick={handleForceClose}
-                className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold border border-rose-500/30 transition-all cursor-pointer"
+                className="w-full py-2.5 rounded-xl bg-[#93000a]/20 hover:bg-[#93000a]/40 text-[#ffb4ab] text-xs font-semibold border border-[#ffb4ab]/30 transition-all cursor-pointer"
               >
                 Cancel Session
               </button>
@@ -506,18 +850,18 @@ export function CheckoutModal() {
         )}
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-cyan-500/20 bg-[#050811]/90">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#262a33] bg-[#0a0e16]/95">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-[#262a33] text-[#8083ff] border border-[#31353e]">
               <Lock className="w-4 h-4" />
             </div>
-            <h3 className="text-base font-black text-white dark:text-white light:text-slate-900">
+            <h3 className="text-base font-bold text-[#dfe2ee]">
               Instant Automated Checkout
             </h3>
           </div>
           <button
             onClick={handleCloseButtonClick}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white transition-colors"
+            className="p-1.5 rounded-lg text-[#908fa0] hover:text-white transition-colors cursor-pointer"
             title="Close"
           >
             <X className="w-5 h-5" />
@@ -529,49 +873,115 @@ export function CheckoutModal() {
           {paymentStatus === "idle" && (
             <form onSubmit={handleInitiatePayment} className="space-y-5">
               {/* Product preview banner */}
-              <div className="p-4 rounded-2xl bg-[#0b1222] border border-cyan-500/25 flex items-center gap-3.5">
+              <div className="p-4 rounded-2xl bg-[#181c24] border border-[#262a33] flex items-center gap-3.5">
                 {isSingleProduct ? (
                   <ProductIcon
                     type={checkoutProduct.iconType}
                     customLogoUrl={checkoutProduct.customLogoUrl}
                     logoSize={checkoutProduct.logoSize}
-                    className="w-12 h-12 shrink-0"
+                    className="w-12 h-12 shrink-0 rounded-xl bg-[#0f131c] border border-[#262a33] p-1"
                     size={22}
                   />
                 ) : (
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm">
+                  <div className="w-12 h-12 rounded-2xl bg-[#8083ff] flex items-center justify-center text-[#0d0096] font-black text-sm">
                     {items.length}x
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                  <h4 className="text-sm font-bold text-[#dfe2ee] truncate">
                     {currentTitle}
                   </h4>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-base font-black text-cyan-600 dark:text-cyan-400">
-                      {APP_CONFIG.currencySymbol}
-                      {currentTotal}
+                  <div className="flex items-baseline flex-wrap gap-2 mt-1">
+                    <span className="text-base font-black text-[#8083ff] font-mono">
+                      {formatPrice(currentTotal)}
                     </span>
+                    {discountAmount > 0 && (
+                      <span className="text-xs text-[#908fa0] line-through font-mono">
+                        {formatPrice(rawSubtotal)}
+                      </span>
+                    )}
+                    <span className="text-xs text-[#908fa0] font-mono">
+                      {currency === "USD"
+                        ? `(~₹${currentTotal} INR)`
+                        : `(~$${equivalentUsd} USD)`}
+                    </span>
+                    {isSingleProduct && activeQuantity > 1 && (
+                      <span className="text-xs text-[#908fa0] font-mono">
+                        ({formatPrice(checkoutProduct.price)} × {activeQuantity}
+                        )
+                      </span>
+                    )}
+                    {discountAmount > 0 && (
+                      <span className="text-[10px] px-2 py-0.5 rounded font-bold text-emerald-400 bg-emerald-500/20 border border-emerald-500/30">
+                        -₹{discountAmount} COUPON
+                      </span>
+                    )}
                     <span
                       className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
                         isOutOfStock
-                          ? "text-rose-400 bg-rose-500/10 border border-rose-500/30"
-                          : "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
+                          ? "text-[#ffb4ab] bg-[#93000a]/20 border border-[#ffb4ab]/30"
+                          : "text-[#4edea3] bg-[#005236]/30 border border-[#4edea3]/30"
                       }`}
                     >
-                      {isOutOfStock ? "Out of Stock" : "Instant Automated Delivery"}
+                      {isOutOfStock
+                        ? "Out of Stock"
+                        : "Instant Automated Delivery"}
                     </span>
                   </div>
+
+                  {isSingleProduct && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="text-[11px] text-[#908fa0] font-medium">
+                        Quantity:
+                      </span>
+                      <div className="inline-flex items-center rounded-lg bg-[#10141d] border border-[#262a33] p-0.5">
+                        <button
+                          type="button"
+                          disabled={activeQuantity <= 1}
+                          onClick={() =>
+                            setCheckoutQuantity(Math.max(1, activeQuantity - 1))
+                          }
+                          className="w-6 h-6 rounded flex items-center justify-center text-xs text-[#908fa0] hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
+                        >
+                          -
+                        </button>
+                        <span className="w-7 text-center text-xs font-bold text-[#dfe2ee] font-mono">
+                          {activeQuantity}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={
+                            checkoutProduct.stockCount !== undefined &&
+                            activeQuantity >= checkoutProduct.stockCount
+                          }
+                          onClick={() => {
+                            const maxStock = checkoutProduct.stockCount ?? 99;
+                            setCheckoutQuantity(
+                              Math.min(maxStock, activeQuantity + 1),
+                            );
+                          }}
+                          className="w-6 h-6 rounded flex items-center justify-center text-xs text-[#908fa0] hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
+                        >
+                          +
+                        </button>
+                      </div>
+                      {checkoutProduct.stockCount !== undefined && (
+                        <span className="text-[10px] text-[#908fa0] font-mono">
+                          ({checkoutProduct.stockCount} in stock)
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Email Input */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                <label className="block text-xs font-bold text-[#c7c4d7]">
                   Recipient Email (For Keys & Credentials Delivery)
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <Mail className="w-4 h-4 text-[#908fa0] absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="email"
                     required
@@ -581,41 +991,206 @@ export function CheckoutModal() {
                       if (emailError) setEmailError("");
                     }}
                     placeholder="your-email@gmail.com"
-                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-cyan-500"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#10141d] border border-[#262a33] text-sm text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff]"
                   />
                 </div>
                 {emailError && (
-                  <p className="text-xs text-rose-500 font-medium">
+                  <p className="text-xs text-[#ffb4ab] font-medium">
                     {emailError}
                   </p>
                 )}
-                <p className="text-[11px] text-slate-400">
-                  Your credentials and order receipt will be instantly dispatched here.
+                <p className="text-[11px] text-[#908fa0]">
+                  Your credentials and order receipt will be instantly
+                  dispatched here.
                 </p>
               </div>
 
-              {/* Payment Methods Pill */}
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/5 flex items-center justify-between text-xs text-slate-500">
-                <div className="flex items-center gap-1.5">
-                  <QrCode className="w-4 h-4 text-cyan-500" />
-                  <span>Google Pay, PhonePe, Paytm, BHIM, UPI</span>
+              {/* Coupon / Promo Code Section */}
+              <div className="p-3.5 rounded-2xl bg-[#10141d] border border-[#262a33] space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#c7c4d7] flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-[#8083ff]" />
+                    <span>Have a Promo / Coupon Code?</span>
+                  </label>
+                  {appliedCoupon && (
+                    <span className="text-[10px] font-mono text-[#4edea3] font-bold bg-[#00a572]/20 px-2 py-0.5 rounded-md border border-[#00a572]/30">
+                      ✓ APPLIED
+                    </span>
+                  )}
                 </div>
-                <span className="font-semibold text-emerald-500">0% Surcharge</span>
+
+                {appliedCoupon ? (
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+                    <div className="flex items-center gap-2">
+                      <Ticket className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <div>
+                        <div className="text-xs font-mono font-bold text-emerald-300">
+                          {appliedCoupon.code}
+                        </div>
+                        <div className="text-[10px] text-emerald-400/80">
+                          {appliedCoupon.discountType === "percentage"
+                            ? `${appliedCoupon.discountValue}% OFF`
+                            : `Flat ₹${appliedCoupon.discountValue} OFF`}{" "}
+                          (Saved ₹{appliedCoupon.discountAmount})
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemoveCoupon}
+                      className="text-xs text-red-400 hover:text-red-300 font-semibold px-2 py-1 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
+                    >
+                      ✕ Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={couponInput}
+                        onChange={(e) => {
+                          setCouponInput(e.target.value.toUpperCase());
+                          if (couponError) setCouponError("");
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleApplyCoupon();
+                          }
+                        }}
+                        placeholder="ENTER CODE (e.g. WELCOME10)"
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#181c24] border border-[#262a33] text-xs font-mono text-[#dfe2ee] placeholder-[#908fa0]/50 uppercase outline-none focus:border-[#8083ff]"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleApplyCoupon}
+                        disabled={couponLoading || !couponInput.trim()}
+                        className="px-4 py-2.5 rounded-xl bg-[#262a33] hover:bg-[#8083ff] hover:text-[#0d0096] disabled:opacity-40 disabled:hover:bg-[#262a33] disabled:hover:text-inherit text-[#dfe2ee] text-xs font-bold font-mono transition-all cursor-pointer shrink-0"
+                      >
+                        {couponLoading ? "Applying…" : "Apply"}
+                      </button>
+                    </div>
+                    {couponError && (
+                      <p className="text-xs text-[#ffb4ab] font-medium flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{couponError}</span>
+                      </p>
+                    )}
+                    {couponSuccessMsg && !couponError && (
+                      <p className="text-xs text-[#4edea3] font-medium flex items-center gap-1">
+                        <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{couponSuccessMsg}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
+
+              {/* Payment Gateway Method Selector */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-[#c7c4d7]">
+                    Select Payment Gateway
+                  </label>
+                  <span className="text-[10px] text-[#908fa0] font-mono">
+                    Currency: {currency}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2.5 p-1 rounded-2xl bg-[#10141d] border border-[#262a33]">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("upi")}
+                    className={`py-3 px-3 rounded-xl flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                      paymentMethod === "upi"
+                        ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-lg shadow-[#8083ff]/20 border border-[#8083ff]"
+                        : "text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24] font-medium"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-black">
+                      <Zap
+                        className={`w-3.5 h-3.5 ${paymentMethod === "upi" ? "text-[#0d0096]" : "text-amber-400"}`}
+                      />
+                      <span>UPI (FamGateway)</span>
+                    </div>
+                    <span className="text-[10px] opacity-90 font-mono">
+                      ₹{currentTotal} INR • Instant QR
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("crypto")}
+                    className={`py-3 px-3 rounded-xl flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                      paymentMethod === "crypto"
+                        ? "bg-gradient-to-r from-amber-500 via-orange-500 to-indigo-600 text-white font-bold shadow-lg shadow-orange-500/25 border border-orange-400/40"
+                        : "text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24] font-medium"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-black">
+                      <Coins
+                        className={`w-3.5 h-3.5 ${paymentMethod === "crypto" ? "text-yellow-200" : "text-amber-400"}`}
+                      />
+                      <span>Crypto (ATLOS)</span>
+                    </div>
+                    <span className="text-[10px] opacity-90 font-mono">
+                      ${equivalentUsd} USD • 0% Fees
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Payment Methods Pill */}
+              {paymentMethod === "upi" ? (
+                <div className="p-3 rounded-xl bg-[#181c24] border border-[#262a33] flex items-center justify-between text-xs text-[#908fa0]">
+                  <div className="flex items-center gap-1.5">
+                    <QrCode className="w-4 h-4 text-[#8083ff]" />
+                    <span>Instant UPI Settlement • ₹{currentTotal} INR</span>
+                  </div>
+                  <span className="font-semibold text-[#4edea3]">0% Extra</span>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-[#181c24] border border-amber-500/25 flex items-center justify-between text-xs text-[#908fa0]">
+                  <div className="flex items-center gap-1.5">
+                    <Coins className="w-4 h-4 text-amber-400" />
+                    <span>
+                      Non-Custodial Atlos Gateway • ${equivalentUsd} USD
+                    </span>
+                  </div>
+                  <span className="font-semibold text-[#4edea3]">
+                    0% Platform Fee
+                  </span>
+                </div>
+              )}
 
               {/* Submit CTA */}
               <button
                 type="submit"
                 disabled={loading || isOutOfStock}
-                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-600 text-white font-extrabold text-sm shadow-xl shadow-cyan-500/25 hover:shadow-cyan-500/40 hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-extrabold text-sm shadow-xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                  paymentMethod === "crypto"
+                    ? "bg-gradient-to-r from-amber-500 via-orange-500 to-indigo-600 text-white shadow-orange-500/25 hover:shadow-orange-500/40 hover:scale-[1.01] active:scale-[0.99]"
+                    : "bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white shadow-[#8083ff]/25 hover:shadow-[#8083ff]/40 hover:scale-[1.01] active:scale-[0.99]"
+                }`}
               >
                 {loading ? (
-                  <span>Generating Secure UPI Session...</span>
+                  <span>
+                    {paymentMethod === "crypto"
+                      ? "Initializing Atlos Crypto Session..."
+                      : "Generating Secure UPI Session..."}
+                  </span>
                 ) : isOutOfStock ? (
                   <span>Product Out of Stock — Cannot Proceed</span>
+                ) : paymentMethod === "crypto" ? (
+                  <>
+                    <span>Proceed with Crypto (${equivalentUsd} USD)</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
                 ) : (
                   <>
-                    <span>Generate Instant UPI Payment</span>
+                    <span>
+                      Generate Instant UPI Payment (₹{currentTotal} INR)
+                    </span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -634,108 +1209,290 @@ export function CheckoutModal() {
                 </span>
               </div>
 
-              {/* Protection notice */}
-              <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center gap-2 text-left">
-                <ShieldCheck className="w-4 h-4 text-cyan-400 shrink-0" />
-                <span className="text-[11px] text-cyan-200 leading-snug">
-                  <strong>Protected Session:</strong> Accidental clicks or page refreshes will not lose your order or money.
-                </span>
-              </div>
-
-              {/* Amount to pay */}
-              <div>
-                <span className="text-xs text-slate-400">Amount Payable</span>
-                <div className="text-3xl font-black text-slate-900 dark:text-white mt-0.5">
-                  {APP_CONFIG.currencySymbol}
-                  {order.payable_amount}
-                </div>
-              </div>
-
-              {/* UPI QR Display or UPI link */}
-              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 flex flex-col items-center justify-center space-y-3">
-                {order.qr_url ? (
-                  <div className="relative w-48 h-48 rounded-xl overflow-hidden shadow-md">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={order.qr_url}
-                      alt="UPI QR Code"
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                ) : (
-                  <div className="w-44 h-44 rounded-2xl bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-cyan-500/40 flex flex-col items-center justify-center p-4">
-                    <QrCode className="w-16 h-16 text-cyan-500 mb-2 animate-pulse" />
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Scan with any UPI App
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      {order.upi_id || "trinitymart@upi"}
+              {paymentMethod === "crypto" ? (
+                <>
+                  {/* Protection notice */}
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-2 text-left">
+                    <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span className="text-[11px] text-amber-200 leading-snug">
+                      <strong>Non-Custodial Atlos Gateway:</strong> Direct
+                      wallet payment. Accidental page refreshes will not lose
+                      your session.
                     </span>
                   </div>
-                )}
 
-                {/* Mobile Intent link */}
-                <a
-                  href={order.upi_intent || "#"}
-                  className="w-full py-2.5 rounded-xl bg-[#5865F2] hover:bg-[#4752c4] text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors"
-                >
-                  <Smartphone className="w-4 h-4" />
-                  <span>Open in UPI App (GPay / PhonePe / Paytm)</span>
-                </a>
-              </div>
+                  {/* Amount to pay */}
+                  <div>
+                    <span className="text-xs text-[#908fa0]">
+                      Total Payable in Crypto
+                    </span>
+                    <div className="text-3xl font-black text-amber-400 font-mono mt-0.5">
+                      ${order.payable_amount}{" "}
+                      <span className="text-base text-[#908fa0] font-normal font-sans">
+                        USD
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-[#908fa0] font-mono">
+                      (Equivalent to ₹{order.amount || currentTotal} INR for{" "}
+                      {order.quantity || activeQuantity}{" "}
+                      {(order.quantity || activeQuantity) === 1
+                        ? "unit"
+                        : "units"}
+                      )
+                    </span>
+                  </div>
 
-              {/* Bank Reference / UTR Input Section */}
-              <div className="p-4 rounded-2xl bg-white/[0.04] border border-cyan-500/25 space-y-3 text-left">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="utr-input" className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <span>🏦</span> Paid via UPI? Enter Bank UTR / Ref ID:
-                  </label>
-                  <span className="text-[10px] text-cyan-400 font-semibold bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20">
-                    Instant Delivery
-                  </span>
-                </div>
+                  {/* Mempool live detection indicator banner */}
+                  {mempoolDetected && (
+                    <div className="p-3 rounded-2xl bg-amber-500/15 border border-amber-400/40 text-amber-300 text-xs font-bold flex items-center justify-center gap-2 animate-pulse shadow-lg shadow-amber-500/20">
+                      <span>⚡</span>
+                      <span>
+                        Coin transaction detected in Mempool! Confirming
+                        on-chain...
+                      </span>
+                    </div>
+                  )}
 
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <input
-                    id="utr-input"
-                    type="text"
-                    value={utrInput}
-                    onChange={(e) => {
-                      setUtrInput(e.target.value);
-                      setVerificationError("");
-                    }}
-                    placeholder="12-digit UTR (e.g. 423456789012)"
-                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/15 text-white placeholder-white/30 text-xs font-mono outline-none focus:border-cyan-400 transition-colors"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleConfirmWithUtr()}
-                    disabled={verifyingPayment}
-                    className="px-4 py-2.5 rounded-xl font-bold text-xs bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-white flex items-center justify-center gap-1.5 transition-all shadow-md shadow-emerald-500/25 cursor-pointer shrink-0"
-                  >
-                    {verifyingPayment ? (
-                      <>
-                        <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                        <span>Verifying DB…</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>✅ Confirm &amp; Claim</span>
-                      </>
+                  {/* Atlos Pay Launch Card */}
+                  <div className="p-5 rounded-2xl bg-[#181c24] border border-[#262a33] flex flex-col items-center justify-center space-y-3.5">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAtlosModal()}
+                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-indigo-600 hover:from-amber-400 hover:to-orange-500 text-white text-xs font-black flex items-center justify-center gap-2 transition-all shadow-xl shadow-orange-500/25 hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                    >
+                      <Coins className="w-4 h-4 text-yellow-200" />
+                      <span>
+                        Open Atlos Crypto Checkout (Select Coin &amp; Wallet)
+                      </span>
+                      <ExternalLink className="w-3.5 h-3.5 text-white/80" />
+                    </button>
+
+                    <div className="w-full flex items-center justify-center gap-1.5 flex-wrap text-[11px] text-[#dfe2ee] font-mono pt-1">
+                      <span className="px-2 py-0.5 rounded-md bg-[#10141d] border border-[#262a33]">
+                        USDT
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-[#10141d] border border-[#262a33]">
+                        USDC
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-[#10141d] border border-[#262a33]">
+                        BTC
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-[#10141d] border border-[#262a33]">
+                        ETH
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-[#10141d] border border-[#262a33]">
+                        SOL
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-[#10141d] border border-[#262a33]">
+                        LTC
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-[#10141d] border border-[#262a33]">
+                        TRX
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-[11px] text-[#4edea3]">
+                      <span className="w-2 h-2 rounded-full bg-[#4edea3] animate-ping" />
+                      <span>
+                        Auto-detecting incoming coin on blockchain every 2.5s
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Blockchain Transaction Hash / TxID Verification Section */}
+                  <div className="p-4 rounded-2xl bg-[#181c24] border border-[#262a33] space-y-3 text-left">
+                    <div className="flex items-center justify-between">
+                      <label
+                        htmlFor="crypto-hash-input"
+                        className="text-xs font-bold text-[#dfe2ee] flex items-center gap-1.5"
+                      >
+                        <span>🔗</span> Sent Crypto? Enter Blockchain Tx Hash
+                        (TxID):
+                      </label>
+                      <span className="text-[10px] text-amber-400 font-semibold bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 font-mono">
+                        Instant Auto-Verify
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        id="crypto-hash-input"
+                        type="text"
+                        value={cryptoHashInput}
+                        onChange={(e) => {
+                          setCryptoHashInput(e.target.value);
+                          if (cryptoHashError) setCryptoHashError("");
+                        }}
+                        placeholder="0x... or Solana / BTC TxID"
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/50 text-xs font-mono outline-none focus:border-amber-400 transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmWithCryptoHash()}
+                        disabled={verifyingCryptoHash}
+                        className="px-4 py-2.5 rounded-xl font-bold text-xs bg-gradient-to-r from-amber-500 to-teal-600 hover:from-amber-400 hover:to-teal-500 disabled:opacity-50 text-white flex items-center justify-center gap-1.5 transition-all shadow-md shadow-amber-500/25 cursor-pointer shrink-0"
+                      >
+                        {verifyingCryptoHash ? (
+                          <>
+                            <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                            <span>Verifying Tx…</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>⚡ Verify TxID &amp; Claim</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {cryptoHashError && (
+                      <p className="text-xs text-[#ffb4ab] font-semibold flex items-center gap-1">
+                        <span>⚠️</span> {cryptoHashError}
+                      </p>
                     )}
-                  </button>
-                </div>
 
-                {verificationError && (
-                  <p className="text-xs text-red-400 font-semibold flex items-center gap-1">
-                    <span>⚠️</span> {verificationError}
-                  </p>
-                )}
+                    <p className="text-[11px] text-[#908fa0]">
+                      After sending coin from MetaMask, Phantom, Trust Wallet,
+                      Binance, or your exchange, copy the Transaction Hash
+                      (TxID) and paste here for instant verification.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Protection notice */}
+                  <div className="p-2.5 rounded-xl bg-[#181c24] border border-[#262a33] flex items-center gap-2 text-left">
+                    <ShieldCheck className="w-4 h-4 text-[#8083ff] shrink-0" />
+                    <span className="text-[11px] text-[#c7c4d7] leading-snug">
+                      <strong className="text-[#dfe2ee]">
+                        Protected Session:
+                      </strong>{" "}
+                      Accidental clicks or page refreshes will not lose your
+                      order or money.
+                    </span>
+                  </div>
 
-                <p className="text-[11px] text-slate-400">
-                  After completing payment in Google Pay / PhonePe / Paytm, copy the 12-digit UPI Transaction ID or Bank UTR and paste above.
-                </p>
-              </div>
+                  {/* Amount to pay */}
+                  <div>
+                    <span className="text-xs text-[#908fa0]">
+                      Amount Payable via UPI
+                    </span>
+                    <div className="text-3xl font-black text-[#dfe2ee] font-mono mt-0.5">
+                      ₹{order.payable_amount || order.amount || currentTotal}{" "}
+                      <span className="text-base text-[#908fa0] font-normal font-sans">
+                        INR
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-[#908fa0] font-mono">
+                      (~${equivalentUsd} USD)
+                    </span>
+                    {(order.quantity || activeQuantity) > 1 && (
+                      <span className="text-[11px] text-[#908fa0] font-mono block mt-0.5">
+                        ({order.quantity || activeQuantity} units @ ₹
+                        {Math.round(
+                          Number(
+                            order.payable_amount ||
+                              order.amount ||
+                              currentTotal,
+                          ) / (order.quantity || activeQuantity),
+                        )}{" "}
+                        each)
+                      </span>
+                    )}
+                  </div>
+
+                  {/* UPI QR Display or UPI link */}
+                  <div className="p-5 rounded-2xl bg-[#181c24] border border-[#262a33] flex flex-col items-center justify-center space-y-3">
+                    {order.qr_url ? (
+                      <div className="relative w-48 h-48 rounded-xl overflow-hidden shadow-md bg-white p-1">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={order.qr_url}
+                          alt="UPI QR Code"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-44 h-44 rounded-2xl bg-[#10141d] border-2 border-dashed border-[#8083ff]/40 flex flex-col items-center justify-center p-4">
+                        <QrCode className="w-16 h-16 text-[#8083ff] mb-2 animate-pulse" />
+                        <span className="text-xs font-bold text-[#dfe2ee]">
+                          Scan with any UPI App
+                        </span>
+                        <span className="text-[11px] text-[#908fa0] font-mono">
+                          {order.upi_id || "trinitymart@upi"}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Mobile Intent link */}
+                    <a
+                      href={order.upi_intent || "#"}
+                      className="w-full py-2.5 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <Smartphone className="w-4 h-4" />
+                      <span>Open in UPI App (GPay / PhonePe / Paytm)</span>
+                    </a>
+                  </div>
+
+                  {/* Bank Reference / UTR Input Section */}
+                  <div className="p-4 rounded-2xl bg-[#181c24] border border-[#262a33] space-y-3 text-left">
+                    <div className="flex items-center justify-between">
+                      <label
+                        htmlFor="utr-input"
+                        className="text-xs font-bold text-[#dfe2ee] flex items-center gap-1.5"
+                      >
+                        <span>🏦</span> Paid via UPI? Enter Bank UTR / Ref ID:
+                      </label>
+                      <span className="text-[10px] text-[#8083ff] font-semibold bg-[#8083ff]/10 px-2 py-0.5 rounded-full border border-[#8083ff]/20 font-mono">
+                        Instant Delivery
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        id="utr-input"
+                        type="text"
+                        value={utrInput}
+                        onChange={(e) => {
+                          setUtrInput(e.target.value);
+                          setVerificationError("");
+                        }}
+                        placeholder="12-digit UTR (e.g. 423456789012)"
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/50 text-xs font-mono outline-none focus:border-[#8083ff] transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmWithUtr()}
+                        disabled={verifyingPayment}
+                        className="px-4 py-2.5 rounded-xl font-bold text-xs bg-[#4edea3] hover:bg-[#3ec48e] text-[#003822] disabled:opacity-50 flex items-center justify-center gap-1.5 transition-all shadow-md shadow-[#4edea3]/20 cursor-pointer shrink-0"
+                      >
+                        {verifyingPayment ? (
+                          <>
+                            <span className="w-3.5 h-3.5 border-2 border-[#003822]/40 border-t-[#003822] rounded-full animate-spin" />
+                            <span>Verifying DB…</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>✅ Confirm &amp; Claim</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {verificationError && (
+                      <p className="text-xs text-[#ffb4ab] font-semibold flex items-center gap-1">
+                        <span>⚠️</span> {verificationError}
+                      </p>
+                    )}
+
+                    <p className="text-[11px] text-[#908fa0]">
+                      After completing payment in Google Pay / PhonePe / Paytm,
+                      copy the 12-digit UPI Transaction ID or Bank UTR and paste
+                      above.
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -759,48 +1516,74 @@ export function CheckoutModal() {
               </div>
 
               {/* Delivered Credentials Card */}
-              {((deliveredList && deliveredList.length > 0) || deliveredCreds) && (
+              {((deliveredList && deliveredList.length > 0) ||
+                deliveredCreds) && (
                 <div className="space-y-3 text-left">
-                  {(deliveredList && deliveredList.length > 0 ? deliveredList : [deliveredCreds!]).map((cred, idx) => {
-                    const itemTitle = cred.productName || (deliveredList.length > 1 ? `Unit #${idx + 1}` : currentTitle);
-                    const accountId = cred.fields?.id || cred.fields?.username || cred.fields?.login || (cred.email && cred.email !== email && !cred.email.includes("@") ? cred.email : cred.fields?.email || (cred.email !== email ? cred.email : ""));
-                    const password = cred.fields?.password || cred.password || cred.emailPassword;
-                    const token = cred.fields?.token || cred.token || cred.fields?.key;
-                    const pin = cred.fields?.pin || cred.twoFactorKey || cred.fields?.["2fa"];
+                  {(deliveredList && deliveredList.length > 0
+                    ? deliveredList
+                    : [deliveredCreds!]
+                  ).map((cred, idx) => {
+                    const itemTitle =
+                      cred.productName ||
+                      (deliveredList.length > 1
+                        ? `Unit #${idx + 1}`
+                        : currentTitle);
+                    const accountId =
+                      cred.fields?.id ||
+                      cred.fields?.username ||
+                      cred.fields?.login ||
+                      (cred.email &&
+                      cred.email !== email &&
+                      !cred.email.includes("@")
+                        ? cred.email
+                        : cred.fields?.email ||
+                          (cred.email !== email ? cred.email : ""));
+                    const password =
+                      cred.fields?.password ||
+                      cred.password ||
+                      cred.emailPassword;
+                    const token =
+                      cred.fields?.token || cred.token || cred.fields?.key;
+                    const pin =
+                      cred.fields?.pin ||
+                      cred.twoFactorKey ||
+                      cred.fields?.["2fa"];
 
                     return (
                       <div
                         key={cred.id || idx}
-                        className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-emerald-500/30 space-y-2.5"
+                        className="p-4 rounded-2xl bg-[#181c24] border border-[#262a33] space-y-2.5"
                       >
-                        <div className="flex items-center justify-between text-xs font-bold text-emerald-600 dark:text-emerald-400 pb-1.5 border-b border-slate-200 dark:border-white/10">
+                        <div className="flex items-center justify-between text-xs font-bold text-[#4edea3] pb-1.5 border-b border-[#262a33]">
                           <span className="flex items-center gap-1.5">
                             <Zap className="w-3.5 h-3.5" />
                             {itemTitle}
                           </span>
-                          <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-semibold">
+                          <span className="text-[10px] bg-[#005236]/30 text-[#4edea3] border border-[#4edea3]/30 px-2 py-0.5 rounded-full font-semibold">
                             Active Warranty
                           </span>
                         </div>
 
                         {/* Account ID / Username */}
                         {accountId && (
-                          <div className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10">
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-[#10141d] border border-[#262a33]">
                             <div className="text-xs">
-                              <span className="text-slate-400 block text-[10px] font-bold">
+                              <span className="text-[#908fa0] block text-[10px] font-bold">
                                 ACCOUNT ID / USERNAME
                               </span>
-                              <span className="font-mono font-bold text-slate-900 dark:text-white">
+                              <span className="font-mono font-bold text-[#dfe2ee]">
                                 {accountId}
                               </span>
                             </div>
                             <button
-                              onClick={() => copyToClipboard(accountId, `id-${idx}`)}
-                              className="p-1.5 text-slate-400 hover:text-cyan-500 cursor-pointer"
+                              onClick={() =>
+                                copyToClipboard(accountId, `id-${idx}`)
+                              }
+                              className="p-1.5 text-[#908fa0] hover:text-[#8083ff] cursor-pointer"
                               title="Copy ID"
                             >
                               {copiedField === `id-${idx}` ? (
-                                <Check className="w-4 h-4 text-emerald-500" />
+                                <Check className="w-4 h-4 text-[#4edea3]" />
                               ) : (
                                 <Copy className="w-4 h-4" />
                               )}
@@ -810,22 +1593,24 @@ export function CheckoutModal() {
 
                         {/* Password */}
                         {password && (
-                          <div className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10">
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-[#10141d] border border-[#262a33]">
                             <div className="text-xs">
-                              <span className="text-slate-400 block text-[10px] font-bold">
+                              <span className="text-[#908fa0] block text-[10px] font-bold">
                                 PASSWORD / ACCESS
                               </span>
-                              <span className="font-mono font-bold text-slate-900 dark:text-white">
+                              <span className="font-mono font-bold text-[#dfe2ee]">
                                 {password}
                               </span>
                             </div>
                             <button
-                              onClick={() => copyToClipboard(password, `pass-${idx}`)}
-                              className="p-1.5 text-slate-400 hover:text-cyan-500 cursor-pointer"
+                              onClick={() =>
+                                copyToClipboard(password, `pass-${idx}`)
+                              }
+                              className="p-1.5 text-[#908fa0] hover:text-[#8083ff] cursor-pointer"
                               title="Copy Password"
                             >
                               {copiedField === `pass-${idx}` ? (
-                                <Check className="w-4 h-4 text-emerald-500" />
+                                <Check className="w-4 h-4 text-[#4edea3]" />
                               ) : (
                                 <Copy className="w-4 h-4" />
                               )}
@@ -835,22 +1620,24 @@ export function CheckoutModal() {
 
                         {/* License Key / Token */}
                         {token && (
-                          <div className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10">
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-[#10141d] border border-[#262a33]">
                             <div className="text-xs">
-                              <span className="text-slate-400 block text-[10px] font-bold">
+                              <span className="text-[#908fa0] block text-[10px] font-bold">
                                 LICENSE KEY / CODE
                               </span>
-                              <span className="font-mono font-bold text-slate-900 dark:text-white break-all">
+                              <span className="font-mono font-bold text-[#dfe2ee] break-all">
                                 {token}
                               </span>
                             </div>
                             <button
-                              onClick={() => copyToClipboard(token, `token-${idx}`)}
-                              className="p-1.5 text-slate-400 hover:text-cyan-500 cursor-pointer"
+                              onClick={() =>
+                                copyToClipboard(token, `token-${idx}`)
+                              }
+                              className="p-1.5 text-[#908fa0] hover:text-[#8083ff] cursor-pointer"
                               title="Copy Key"
                             >
                               {copiedField === `token-${idx}` ? (
-                                <Check className="w-4 h-4 text-emerald-500" />
+                                <Check className="w-4 h-4 text-[#4edea3]" />
                               ) : (
                                 <Copy className="w-4 h-4" />
                               )}
@@ -860,22 +1647,22 @@ export function CheckoutModal() {
 
                         {/* 2FA / PIN */}
                         {pin && (
-                          <div className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10">
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-[#10141d] border border-[#262a33]">
                             <div className="text-xs">
-                              <span className="text-slate-400 block text-[10px] font-bold">
+                              <span className="text-[#908fa0] block text-[10px] font-bold">
                                 2FA / PIN CODE
                               </span>
-                              <span className="font-mono font-bold text-slate-900 dark:text-white">
+                              <span className="font-mono font-bold text-[#dfe2ee]">
                                 {pin}
                               </span>
                             </div>
                             <button
                               onClick={() => copyToClipboard(pin, `pin-${idx}`)}
-                              className="p-1.5 text-slate-400 hover:text-cyan-500 cursor-pointer"
+                              className="p-1.5 text-[#908fa0] hover:text-[#8083ff] cursor-pointer"
                               title="Copy PIN"
                             >
                               {copiedField === `pin-${idx}` ? (
-                                <Check className="w-4 h-4 text-emerald-500" />
+                                <Check className="w-4 h-4 text-[#4edea3]" />
                               ) : (
                                 <Copy className="w-4 h-4" />
                               )}
@@ -916,23 +1703,25 @@ export function CheckoutModal() {
                             return (
                               <div
                                 key={k}
-                                className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10"
+                                className="flex items-center justify-between p-2 rounded-lg bg-[#10141d] border border-[#262a33]"
                               >
                                 <div className="text-xs min-w-0 pr-2">
-                                  <span className="text-slate-400 block text-[10px] font-bold uppercase truncate">
+                                  <span className="text-[#908fa0] block text-[10px] font-bold uppercase truncate">
                                     {k}
                                   </span>
-                                  <span className="font-mono font-bold text-slate-900 dark:text-white break-all">
+                                  <span className="font-mono font-bold text-[#dfe2ee] break-all">
                                     {valStr}
                                   </span>
                                 </div>
                                 <button
-                                  onClick={() => copyToClipboard(valStr, copyKey)}
-                                  className="p-1.5 text-slate-400 hover:text-cyan-500 cursor-pointer shrink-0"
+                                  onClick={() =>
+                                    copyToClipboard(valStr, copyKey)
+                                  }
+                                  className="p-1.5 text-[#908fa0] hover:text-[#8083ff] cursor-pointer shrink-0"
                                   title={`Copy ${k}`}
                                 >
                                   {copiedField === copyKey ? (
-                                    <Check className="w-4 h-4 text-emerald-500" />
+                                    <Check className="w-4 h-4 text-[#4edea3]" />
                                   ) : (
                                     <Copy className="w-4 h-4" />
                                   )}
@@ -961,7 +1750,7 @@ export function CheckoutModal() {
 
                 <button
                   onClick={handleClose}
-                  className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10 text-xs font-semibold transition-all"
+                  className="w-full py-2.5 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#dfe2ee] text-xs font-bold transition-all cursor-pointer"
                 >
                   Done &amp; Continue Shopping
                 </button>
@@ -972,20 +1761,20 @@ export function CheckoutModal() {
           {/* Failed State */}
           {paymentStatus === "failed" && (
             <div className="space-y-4 text-center">
-              <div className="w-14 h-14 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto">
+              <div className="w-14 h-14 rounded-full bg-[#93000a]/20 text-[#ffb4ab] border border-[#ffb4ab]/30 flex items-center justify-center mx-auto">
                 <AlertCircle className="w-8 h-8" />
               </div>
-              <h4 className="text-lg font-bold text-slate-900 dark:text-white">
+              <h4 className="text-lg font-bold text-[#dfe2ee]">
                 Payment Not Completed
               </h4>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              <p className="text-xs text-[#908fa0] max-w-sm mx-auto">
                 {failReason ||
                   "The payment session expired or was interrupted. No charges were made."}
               </p>
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={() => setPaymentStatus("idle")}
-                  className="flex-1 py-3 rounded-xl bg-cyan-500 text-white text-xs font-bold"
+                  className="flex-1 py-3 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white text-xs font-bold cursor-pointer"
                 >
                   Try Again
                 </button>
@@ -993,7 +1782,7 @@ export function CheckoutModal() {
                   href={APP_CONFIG.discordLink || "/discord"}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center justify-center gap-1.5"
+                  className="flex-1 py-3 rounded-xl bg-[#181c24] border border-[#262a33] text-[#dfe2ee] hover:bg-[#262a33] text-xs font-bold flex items-center justify-center gap-1.5"
                 >
                   <Headset className="w-3.5 h-3.5" />
                   <span>Get Help on Discord</span>

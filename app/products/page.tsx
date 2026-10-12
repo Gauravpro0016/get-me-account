@@ -87,24 +87,24 @@ function ProductsContent() {
   }, [filtered, sortBy]);
 
   return (
-    <div className="min-h-screen bg-[#050811] dark:bg-[#050811] light:bg-[#f1f5f9] text-white dark:text-white light:text-slate-900 py-8 transition-colors duration-300">
+    <div className="min-h-screen bg-[#0f131c] text-[#dfe2ee] py-8 transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
         {/* Header Banner */}
         <div className="text-center max-w-2xl mx-auto space-y-3 pt-4">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 text-xs font-black shadow-md">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#1c2028] text-[#8083ff] border border-[#262a33] font-mono text-xs font-bold shadow-md">
             <Sparkles className="w-3.5 h-3.5" />
             <span>GENUINE DIGITAL LICENSES &amp; ACCOUNTS</span>
           </div>
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-white dark:text-white light:text-slate-900 font-sans">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-[#dfe2ee]">
             Digital Keys &amp; Accounts Store
           </h1>
-          <p className="text-xs sm:text-sm text-slate-300 dark:text-slate-300 light:text-slate-600 font-medium">
-            Browse our full catalog of Netflix keys, Steam accounts, Discord Nitro, Xbox Game Pass, and software keys with instant automated UPI delivery.
+          <p className="text-xs sm:text-sm text-[#c7c4d7] font-medium">
+            Browse our full catalog of Netflix keys, Steam accounts, Discord Nitro, Xbox Game Pass, and software keys with instant automated delivery.
           </p>
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-4 rounded-3xl bg-[#0a1120] border border-cyan-500/20 shadow-lg shadow-black/40">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-4 rounded-2xl bg-[#181c24] border border-[#262a33] shadow-xl">
           <SearchBar
             className="flex-1 max-w-xl"
             products={allProducts}
@@ -116,34 +116,34 @@ function ProductsContent() {
 
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-between md:justify-end">
             {/* In stock toggle */}
-            <label className="flex items-center gap-2 text-xs font-bold text-slate-200 cursor-pointer select-none">
+            <label className="flex items-center gap-2 font-mono text-xs font-semibold text-[#dfe2ee] cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={inStockOnly}
                 onChange={(e) => setInStockOnly(e.target.checked)}
-                className="w-4 h-4 rounded text-cyan-500 focus:ring-cyan-400"
+                className="w-4 h-4 rounded text-[#8083ff] focus:ring-[#8083ff] accent-[#8083ff]"
               />
               <span>In Stock Only</span>
             </label>
 
             {/* Sort Dropdown */}
-            <div className="flex items-center gap-1.5">
-              <ArrowUpDown className="w-3.5 h-3.5 text-cyan-400" />
+            <div className="flex items-center gap-1.5 font-mono text-xs">
+              <ArrowUpDown className="w-3.5 h-3.5 text-[#8083ff]" />
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="px-3 py-2 rounded-xl bg-[#050811] border border-cyan-500/30 text-xs font-bold text-white focus:outline-none focus:border-cyan-400 cursor-pointer"
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="px-3 py-2 rounded-xl bg-[#0a0e16] border border-[#262a33] text-xs font-bold text-[#dfe2ee] focus:outline-none focus:border-[#8083ff] cursor-pointer"
               >
-                <option value="featured" className="bg-[#050811] text-white">
+                <option value="featured" className="bg-[#0f131c] text-[#dfe2ee]">
                   Popular &amp; Best Selling
                 </option>
-                <option value="price-low" className="bg-[#050811] text-white">
+                <option value="price-low" className="bg-[#0f131c] text-[#dfe2ee]">
                   Price: Low to High
                 </option>
-                <option value="price-high" className="bg-[#050811] text-white">
+                <option value="price-high" className="bg-[#0f131c] text-[#dfe2ee]">
                   Price: High to Low
                 </option>
-                <option value="rating" className="bg-[#050811] text-white">
+                <option value="rating" className="bg-[#0f131c] text-[#dfe2ee]">
                   Highest Rated
                 </option>
               </select>
@@ -157,10 +157,10 @@ function ProductsContent() {
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              className={`px-4 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all cursor-pointer ${
+              className={`px-4 py-2 rounded-xl font-mono text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                 selectedCategory === cat
-                  ? "bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-white shadow-lg shadow-cyan-500/30 border border-cyan-400/40"
-                  : "bg-[#0a1120] border border-cyan-500/20 text-slate-300 hover:bg-[#111c33] hover:text-white"
+                  ? "bg-[#8083ff] text-[#0d0096] shadow-sm"
+                  : "bg-[#181c24] text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33] border border-[#262a33]"
               }`}
             >
               {cat}

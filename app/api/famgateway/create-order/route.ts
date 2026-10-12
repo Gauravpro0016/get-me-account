@@ -92,6 +92,8 @@ export async function POST(req: NextRequest) {
     const productId = typeof body.productId === "string" ? body.productId.trim() : undefined;
     const productName = typeof body.productName === "string" ? body.productName.trim() : undefined;
     const cartItems = Array.isArray(body.cartItems) ? body.cartItems : undefined;
+    const couponCode = typeof body.couponCode === "string" ? body.couponCode.trim().toUpperCase() : undefined;
+    const discountAmount = Number(body.discountAmount) || 0;
 
     // Persist order in Redis and global orders history
     await recordNewOrder({
@@ -102,6 +104,8 @@ export async function POST(req: NextRequest) {
       productId,
       productName,
       cartItems,
+      couponCode,
+      discountAmount,
     });
 
     return NextResponse.json({

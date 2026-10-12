@@ -57,16 +57,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Malformed JSON payload" }, { status: 400 });
     }
 
-    console.log("FamGateway webhook payload:", payload);
+    console.log("Unified webhook payload received:", payload);
 
     const eventName = (payload.event as string) || "";
     const status = (payload.status as string) || "";
-    const orderId = ((payload.order_id || payload.orderId) as string)?.trim();
-    const utr = ((payload.utr || payload.bank_utr) as string)?.trim();
-    const senderName = (payload.sender_name as string) || undefined;
-    const amount = (payload.amount as number) || 25;
-    // Check if this is a successful payment event
-    if (eventName === "payment.success" || status === "success") {
+    const atlosStatus = payload.Status !== undefined ? payload.Status : undefined;
+    const orderId = ((payload.order_id || payload.orderId || payload.OrderId) as string)?.trim();
+    const utr = ((payload.utr || payload.bank_utr || payload.BlockchainHash || payload.Txid || payload.txid) as string)?.trim();
+    const senderName = (payload.sender_name || payload.senderName) as string | undefined;
+    const amount = Number(payload.amount || payload.PaidAmount || payload.OrderAmount) || APP_CONFIG.price;
+
+    // Check if this is a successful payment event (FamGateway or Atlos)
+    const isSuccess =
+      eventName === "payment.success" ||
+      status === "success" ||
+      atlosStatus === 100 ||
+      String(atlosStatus) === "100";
+
+    if (isSuccess) {
       if (!orderId) {
         console.warn("Missing order_id in webhook payload:", payload);
         return NextResponse.json({ error: "Missing order_id" }, { status: 400 });
@@ -93,7 +101,11 @@ export async function POST(req: NextRequest) {
         email,
         utr,
         senderName,
-        amount,
+        amount: orderData?.amount || (payload.amount ? Number(payload.amount) : APP_CONFIG.price),
+        quantity: orderData?.quantity || 1,
+        productId: orderData?.productId,
+        productName: orderData?.productName,
+        cartItems: orderData?.cartItems,
       });
 
       console.log(`Webhook fulfillment result for ${orderId}:`, result);

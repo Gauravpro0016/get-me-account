@@ -148,20 +148,19 @@ export async function GET(req: NextRequest) {
       const activeInventory = inv.filter((item) => !item.claimedAt);
       p.inventory = activeInventory;
 
-      // Available stock count strictly matches active account credentials in database!
-      if (activeInventory.length > 0) {
+      // Live available stock count strictly matches active account credentials in database!
+      if (inv.length > 0) {
         p.stockCount = activeInventory.length;
         p.inStock = activeInventory.length > 0;
-      } else {
-        const dbStock =
-          override?.stockCount !== undefined
-            ? override.stockCount
-            : p.stockCount ?? 0;
-        p.stockCount = Math.max(0, Number(dbStock));
+      } else if (override?.manualStock === true && typeof override?.stockCount === "number") {
+        p.stockCount = Math.max(0, Number(override.stockCount));
         p.inStock =
           override?.inStock !== undefined
             ? Boolean(override.inStock)
             : p.stockCount > 0;
+      } else {
+        p.stockCount = 0;
+        p.inStock = false;
       }
 
       // Real reviews from database

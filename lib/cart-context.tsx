@@ -20,6 +20,8 @@ interface CartContextType {
   setIsCheckoutOpen: (open: boolean) => void;
   checkoutProduct: Product | null;
   setCheckoutProduct: (product: Product | null) => void;
+  checkoutQuantity: number;
+  setCheckoutQuantity: (qty: number) => void;
   totalItems: number;
   subtotal: number;
   discount: number;
@@ -28,7 +30,7 @@ interface CartContextType {
   applyPromo: (code: string) => boolean;
   removePromo: () => void;
   notification: string | null;
-  openCheckoutWithProduct: (product: Product) => void;
+  openCheckoutWithProduct: (product: Product, quantity?: number) => void;
   openCheckoutWithCart: () => void;
 }
 
@@ -39,6 +41,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutProduct, setCheckoutProduct] = useState<Product | null>(null);
+  const [checkoutQuantity, setCheckoutQuantity] = useState(1);
   const [promoCode, setPromoCode] = useState("");
   const [discountPercent, setDiscountPercent] = useState(0);
   const [promoError, setPromoError] = useState("");
@@ -140,22 +143,41 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems([]);
   };
 
-  const applyPromo = (code: string) => {
+  const applyPromo = async (code: string): Promise<boolean> => {
     const clean = code.trim().toUpperCase();
-    if (clean === "TRINITY10" || clean === "DISCORD10") {
-      setPromoCode(clean);
-      setDiscountPercent(10);
+    if (!clean) {
+      setPromoError("Please enter a coupon code");
+      return false;
+    }
+    if (clean === "TRINITY10") {
+      setPromoError("Coupon TRINITY10 has been retired. Try WELCOME10 or TRINITY5.");
+      return false;
+    }
+    try {
+      const res = await fetch("/api/coupons/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: clean,
+          amount: Math.max(1, rawSubtotal),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.valid) {
+        setPromoError(data.error || "Invalid coupon code");
+        return false;
+      }
+      setPromoCode(data.code);
+      setDiscountPercent(
+        data.discountType === "percentage"
+          ? data.discountValue
+          : Math.min(100, Math.round((data.discountAmount / Math.max(1, rawSubtotal)) * 100))
+      );
       setPromoError("");
-      showNotification("10% discount applied!");
+      showNotification(data.message || `Coupon "${data.code}" applied!`);
       return true;
-    } else if (clean === "TRINITY20") {
-      setPromoCode(clean);
-      setDiscountPercent(20);
-      setPromoError("");
-      showNotification("20% VIP discount applied!");
-      return true;
-    } else {
-      setPromoError("Invalid coupon code. Try TRINITY10");
+    } catch {
+      setPromoError("Could not validate coupon. Please try again.");
       return false;
     }
   };
@@ -166,7 +188,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setPromoError("");
   };
 
-  const openCheckoutWithProduct = (product: Product) => {
+  const openCheckoutWithProduct = (product: Product, quantity: number = 1) => {
     const isOutOfStock =
       !product.inStock ||
       (product.stockCount !== undefined && product.stockCount <= 0);
@@ -174,7 +196,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       showNotification(`"${product.name.slice(0, 24)}" is out of stock.`);
       return;
     }
+    const cleanQty = Math.max(1, Number.isInteger(quantity) && quantity > 0 ? quantity : 1);
+    const maxQty =
+      product.stockCount !== undefined && product.stockCount > 0
+        ? Math.min(product.stockCount, cleanQty)
+        : cleanQty;
+
     setCheckoutProduct(product);
+    setCheckoutQuantity(maxQty);
     setIsCartOpen(false);
     setIsCheckoutOpen(true);
   };
@@ -218,6 +247,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setIsCheckoutOpen,
         checkoutProduct,
         setCheckoutProduct,
+        checkoutQuantity,
+        setCheckoutQuantity,
         totalItems,
         subtotal,
         discount,

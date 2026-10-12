@@ -1,81 +1,133 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where(.dark, .dark *));
+@theme {
+  --color-surface-dim: #0f131c;
+  --color-surface: #0f131c;
+  --color-surface-bright: #353942;
+  --color-surface-container-lowest: #0a0e16;
+  --color-surface-container-low: #181c24;
+  --color-surface-container: #1c2028;
+  --color-surface-container-high: #262a33;
+  --color-surface-container-highest: #31353e;
+
+  --color-on-surface: #dfe2ee;
+  --color-on-surface-variant: #c7c4d7;
+  --color-outline: #908fa0;
+  --color-outline-variant: #464554;
+
+  --color-primary: #8083ff;
+  --color-primary-dim: #c0c1ff;
+  --color-primary-container: #6366f1;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #0d0096;
+
+  --color-secondary: #4edea3;
+  --color-secondary-dim: #4edea3;
+  --color-secondary-container: #00a572;
+  --color-on-secondary: #003824;
+  --color-on-secondary-container: #00311f;
+
+  --color-tertiary: #d0bcff;
+  --color-tertiary-container: #8b5cf6;
+  --color-on-tertiary: #3c0091;
+
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+  --color-on-error: #690005;
+
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-mono), "JetBrains Mono", monospace;
+}
 
 @layer base {
   :root {
-    --bg-main: #f0f4f9;
-    --card-main: #ffffff;
-    --text-main: #090e1a;
-    --border-main: rgba(203, 213, 225, 0.8);
-    color-scheme: light;
-  }
-
-  .dark, [data-theme="dark"] {
-    --bg-main: #050811;
-    --card-main: #0a1120;
-    --text-main: #ffffff;
-    --border-main: rgba(56, 189, 248, 0.18);
+    --bg-main: #0f131c;
+    --card-main: #181c24;
+    --text-main: #dfe2ee;
+    --border-main: #262a33;
     color-scheme: dark;
   }
 
   html {
     scroll-behavior: smooth;
+    background-color: #0f131c;
+    color: #dfe2ee;
   }
 
   body {
-    background-color: var(--bg-main);
-    color: var(--text-main);
-    font-feature-settings: "rlig" 1, "calt" 1;
-    overflow-x: hidden;
+    background-color: #0f131c;
+    color: #dfe2ee;
+    font-family: var(--font-inter), system-ui, sans-serif;
     min-height: 100vh;
+    overflow-x: hidden;
   }
 }
 
-/* Custom Scrollbar - Bluish Black Glow */
+/* Custom Scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #050811;
-}
-
-.light ::-webkit-scrollbar-track {
-  background: #e2e8f0;
+  background: #0a0e16;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #0284c7, #38bdf8, #6366f1);
+  background: #262a33;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, #38bdf8, #00f2fe);
+  background: #6366f1;
 }
 
-/* Horizontal Product List Scrollbar */
-.scrollbar-custom::-webkit-scrollbar {
-  height: 7px;
-}
-
-.scrollbar-custom::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.6);
-  border-radius: 9999px;
-}
-
-.scrollbar-custom::-webkit-scrollbar-thumb {
-  background: linear-gradient(90deg, #00f2fe, #38bdf8, #6366f1);
-  border-radius: 9999px;
-  box-shadow: 0 0 10px rgba(0, 242, 254, 0.4);
-}
-
-/* Hide scrollbar utility */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Right-to-Left Continuous Scrolling Animation */
+@keyframes marquee-rtl {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee-rtl {
+  display: flex;
+  width: max-content;
+  animation: marquee-rtl 38s linear infinite;
+  will-change: transform;
+}
+
+.animate-marquee-rtl:hover {
+  animation-play-state: paused;
+}
+
+/* Reverse RTL for layered background visual effect */
+@keyframes marquee-rtl-fast {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee-rtl-fast {
+  display: flex;
+  width: max-content;
+  animation: marquee-rtl-fast 28s linear infinite;
+  will-change: transform;
+}
+
+.animate-marquee-rtl-fast:hover {
+  animation-play-state: paused;
 }

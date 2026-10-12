@@ -14,6 +14,7 @@ import {
   Headset,
 } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
+import { useCurrency } from "@/lib/currency-context";
 import { ProductIcon } from "./ProductIcons";
 import { APP_CONFIG } from "@/lib/config";
 import Link from "next/link";
@@ -25,7 +26,6 @@ export function CartDrawer() {
     setIsCartOpen,
     removeFromCart,
     updateQuantity,
-    clearCart,
     totalItems,
     subtotal,
     discount,
@@ -35,6 +35,7 @@ export function CartDrawer() {
     removePromo,
     openCheckoutWithCart,
   } = useCart();
+  const { currency, formatPrice } = useCurrency();
 
   const [inputCode, setInputCode] = useState("");
 
@@ -51,17 +52,16 @@ export function CartDrawer() {
       (item.product.stockCount !== undefined && item.product.stockCount <= 0)
   );
 
-  const handleApplyPromo = (e: React.FormEvent) => {
+  const [isApplyingPromo, setIsApplyingPromo] = useState(false);
+
+  const handleApplyPromo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (inputCode.trim()) {
-      applyPromo(inputCode);
+      setIsApplyingPromo(true);
+      await applyPromo(inputCode);
+      setIsApplyingPromo(false);
       setInputCode("");
     }
-  };
-
-  const handleSupportRedirect = () => {
-    const link = APP_CONFIG.discordLink || "/discord";
-    window.open(link, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -73,25 +73,25 @@ export function CartDrawer() {
       />
 
       <div className="fixed inset-y-0 right-0 max-w-full flex pl-6 sm:pl-10">
-        <div className="w-screen max-w-md bg-[#070c18] dark:bg-[#070c18] light:bg-white shadow-2xl flex flex-col border-l border-cyan-500/30 transition-transform duration-300 animate-in slide-in-from-right text-white dark:text-white light:text-slate-900">
+        <div className="w-screen max-w-md bg-[#0f131c] shadow-2xl flex flex-col border-l border-[#262a33] transition-transform duration-300 animate-in slide-in-from-right text-[#dfe2ee]">
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-5 border-b border-cyan-500/20 bg-[#050811]/90">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2.5 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+          <div className="flex items-center justify-between px-6 py-5 border-b border-[#262a33] bg-[#0a0e16]/95">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-[#262a33] text-[#8083ff] border border-[#31353e]">
                 <ShoppingCart className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-lg font-black tracking-tight text-white dark:text-white light:text-slate-900">
-                  Your Shopping Cart
+                <h2 className="text-base font-bold tracking-tight text-[#dfe2ee]">
+                  Your Virtual Cart
                 </h2>
-                <p className="text-xs text-cyan-300/80 font-medium">
-                  {totalItems} {totalItems === 1 ? "item" : "items"} selected
+                <p className="font-mono text-xs text-[#4edea3]">
+                  {totalItems} {totalItems === 1 ? "item" : "items"} reserved
                 </p>
               </div>
             </div>
             <button
               onClick={() => setIsCartOpen(false)}
-              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+              className="p-2 rounded-xl text-[#908fa0] hover:text-white hover:bg-[#1c2028] transition-all cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -101,77 +101,75 @@ export function CartDrawer() {
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
             {items.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-16 space-y-4">
-                <div className="w-20 h-20 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                <div className="w-20 h-20 rounded-full bg-[#1c2028] border border-[#262a33] flex items-center justify-center text-[#908fa0]">
                   <ShoppingCart className="w-10 h-10 stroke-1" />
                 </div>
                 <div>
-                  <h3 className="text-base font-extrabold text-white dark:text-white light:text-slate-900">
+                  <h3 className="text-base font-bold text-[#dfe2ee]">
                     Your cart is empty
                   </h3>
-                  <p className="text-xs text-slate-400 mt-1 max-w-[260px] leading-relaxed">
-                    Add Netflix keys, Steam accounts, Discord Nitro, or game keys to get started.
+                  <p className="text-xs text-[#908fa0] mt-1 max-w-[260px] leading-relaxed">
+                    Select any virtual assets, subscriptions, or gaming keys to initiate instant dispatch.
                   </p>
                 </div>
                 <button
                   onClick={() => setIsCartOpen(false)}
-                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black text-xs shadow-lg shadow-cyan-500/30 hover:scale-105 transition-all cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl bg-[#8083ff] text-[#0d0096] font-bold text-xs hover:bg-[#6366f1] hover:text-white transition-all cursor-pointer"
                 >
-                  Explore Products
+                  Explore Storefront
                 </button>
               </div>
             ) : (
               items.map(({ product, quantity }) => (
                 <div
                   key={product.id}
-                  className="flex items-center gap-3.5 p-3.5 rounded-2xl bg-[#0b1222] dark:bg-[#0b1222] light:bg-slate-50 border border-cyan-500/20 hover:border-cyan-400/50 transition-all group"
+                  className="flex items-center gap-3.5 p-3.5 rounded-xl bg-[#181c24] border border-[#262a33] hover:border-[#8083ff]/40 transition-all group"
                 >
                   <ProductIcon
                     type={product.iconType}
                     customLogoUrl={product.customLogoUrl}
                     logoSize={product.logoSize}
-                    className="w-14 h-14 shrink-0"
+                    className="w-12 h-12 shrink-0"
                     size={22}
                   />
                   <div className="flex-1 min-w-0">
                     <Link
                       href={`/product/${product.id}`}
                       onClick={() => setIsCartOpen(false)}
-                      className="text-sm font-extrabold text-white dark:text-white light:text-slate-900 hover:text-cyan-400 truncate block transition-colors"
+                      className="text-sm font-bold text-[#dfe2ee] hover:text-[#8083ff] truncate block transition-colors"
                     >
                       {product.name}
                     </Link>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-sm font-black text-cyan-400">
-                        {APP_CONFIG.currencySymbol}
-                        {product.price}
+                      <span className="font-mono text-sm font-bold text-[#dfe2ee]">
+                        {formatPrice(product.price)}
                       </span>
                       {product.originalPrice > product.price && (
-                        <span className="text-xs text-slate-400 line-through">
-                          {APP_CONFIG.currencySymbol}
-                          {product.originalPrice}
+                        <span className="font-mono text-xs text-[#908fa0] line-through">
+                          {formatPrice(product.originalPrice)}
                         </span>
                       )}
-                      {(!product.inStock || (product.stockCount !== undefined && product.stockCount <= 0)) ? (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-bold border border-rose-500/30">
+                      {!product.inStock || (product.stockCount !== undefined && product.stockCount <= 0) ? (
+                        <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-[#93000a]/20 text-[#ffb4ab] border border-[#ffb4ab]/30">
                           Out of Stock
                         </span>
                       ) : (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
-                          Instant Delivery
+                        <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-[#00a572]/20 text-[#4edea3] border border-[#00a572]/30">
+                          Instant Auto-Dispatch
                         </span>
                       )}
                     </div>
 
                     {/* Quantity controls */}
                     <div className="flex items-center gap-3 mt-2.5">
-                      <div className="flex items-center rounded-lg border border-cyan-500/30 bg-[#050811] overflow-hidden">
+                      <div className="flex items-center rounded-lg border border-[#262a33] bg-[#0a0e16] overflow-hidden">
                         <button
                           onClick={() => updateQuantity(product.id, quantity - 1)}
-                          className="px-2.5 py-1 text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                          className="px-2 py-1 text-[#c7c4d7] hover:text-white hover:bg-[#1c2028] transition-colors cursor-pointer"
                         >
                           <Minus className="w-3 h-3" />
                         </button>
-                        <span className="px-2.5 text-xs font-black text-white">
+                        <span className="px-2.5 font-mono text-xs font-bold text-white">
                           {quantity}
                         </span>
                         <button
@@ -180,7 +178,7 @@ export function CartDrawer() {
                             quantity >= product.stockCount
                           }
                           onClick={() => updateQuantity(product.id, quantity + 1)}
-                          className="px-2.5 py-1 text-slate-300 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="px-2 py-1 text-[#c7c4d7] hover:text-white hover:bg-[#1c2028] transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                         >
                           <Plus className="w-3 h-3" />
                         </button>
@@ -188,8 +186,7 @@ export function CartDrawer() {
 
                       <button
                         onClick={() => removeFromCart(product.id)}
-                        className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 px-2 py-1 rounded-lg transition-colors cursor-pointer"
-                        title="Remove from cart"
+                        className="flex items-center gap-1 text-[11px] font-mono text-[#908fa0] hover:text-[#ffb4ab] px-2 py-1 rounded-lg transition-colors cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         <span>Remove</span>
@@ -203,37 +200,38 @@ export function CartDrawer() {
 
           {/* Footer & Checkout Area */}
           {items.length > 0 && (
-            <div className="p-6 border-t border-cyan-500/20 bg-[#050811]/95 space-y-4">
+            <div className="p-6 border-t border-[#262a33] bg-[#0a0e16]/95 space-y-4">
               {/* Promo code field */}
               <form onSubmit={handleApplyPromo} className="flex gap-2">
                 <div className="relative flex-1">
-                  <Tag className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Tag className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#908fa0]" />
                   <input
                     type="text"
-                    placeholder="Coupon (e.g. TRINITY10)"
+                    placeholder="PROMO / COUPON CODE"
                     value={inputCode}
                     onChange={(e) => setInputCode(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2.5 text-xs rounded-xl bg-[#0b1222] border border-cyan-500/30 text-white placeholder:text-slate-400 focus:outline-none focus:border-cyan-400 uppercase font-bold"
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-[#181c24] border border-[#262a33] text-[#dfe2ee] placeholder:text-[#908fa0] focus:outline-none focus:border-[#8083ff] uppercase font-mono font-bold"
                   />
                 </div>
                 <button
                   type="submit"
-                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-black transition-all cursor-pointer shadow-md shadow-cyan-500/20"
+                  disabled={isApplyingPromo || !inputCode.trim()}
+                  className="px-4 py-2 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] font-mono text-xs font-bold transition-all cursor-pointer border border-[#31353e] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Apply
+                  {isApplyingPromo ? "Checking..." : "Apply"}
                 </button>
               </form>
 
               {promoError && (
-                <p className="text-xs text-rose-400 font-bold">{promoError}</p>
+                <p className="font-mono text-xs text-[#ffb4ab]">{promoError}</p>
               )}
 
               {promoCode && (
-                <div className="flex items-center justify-between text-xs py-1.5 px-3 rounded-lg bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
-                  <span>Coupon &apos;{promoCode}&apos; Applied!</span>
+                <div className="flex items-center justify-between font-mono text-xs py-1 px-2.5 rounded bg-[#00a572]/20 text-[#4edea3] border border-[#00a572]/30">
+                  <span>PROMO &apos;{promoCode}&apos; APPLIED!</span>
                   <button
                     onClick={removePromo}
-                    className="underline text-slate-400 hover:text-rose-400"
+                    className="underline text-[#908fa0] hover:text-[#ffb4ab] cursor-pointer"
                   >
                     Remove
                   </button>
@@ -241,35 +239,27 @@ export function CartDrawer() {
               )}
 
               {/* Subtotal calculation */}
-              <div className="space-y-1.5 text-xs text-slate-300">
+              <div className="space-y-1.5 font-mono text-xs text-[#c7c4d7]">
                 <div className="flex justify-between">
                   <span>Subtotal</span>
-                  <span className="font-extrabold text-white">
-                    {APP_CONFIG.currencySymbol}
-                    {rawSubtotal}
+                  <span className="font-bold text-[#dfe2ee]">
+                    {formatPrice(rawSubtotal)}
                   </span>
                 </div>
                 {discount > 0 && (
-                  <div className="flex justify-between text-emerald-400">
+                  <div className="flex justify-between text-[#4edea3]">
                     <span>Discount</span>
-                    <span className="font-extrabold">
-                      -{APP_CONFIG.currencySymbol}
-                      {discount}
-                    </span>
+                    <span className="font-bold">-{formatPrice(discount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span>Delivery</span>
-                  <span className="text-emerald-400 font-bold flex items-center gap-1">
-                    <Zap className="w-3.5 h-3.5" />
-                    Instant Automated (Free)
-                  </span>
+                  <span>Dispatch Fee</span>
+                  <span className="text-[#4edea3] font-semibold">FREE</span>
                 </div>
-                <div className="flex justify-between text-base font-black text-white pt-2 border-t border-cyan-500/20">
-                  <span>Total Amount</span>
-                  <span className="text-cyan-400">
-                    {APP_CONFIG.currencySymbol}
-                    {subtotal}
+                <div className="flex justify-between text-sm font-bold text-[#dfe2ee] pt-2 border-t border-[#262a33]">
+                  <span>Total Payable</span>
+                  <span className="text-[#8083ff] text-base">
+                    {formatPrice(subtotal)}
                   </span>
                 </div>
               </div>
@@ -279,14 +269,14 @@ export function CartDrawer() {
                 <button
                   disabled={hasOutOfStockItems}
                   onClick={openCheckoutWithCart}
-                  className={`w-full flex items-center justify-center gap-2 py-4 rounded-xl font-black text-sm shadow-xl transition-all ${
+                  className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${
                     hasOutOfStockItems
-                      ? "bg-slate-900/90 text-rose-400 border border-rose-500/40 cursor-not-allowed opacity-85"
-                      : "bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-600 hover:from-cyan-300 hover:to-indigo-500 text-black shadow-cyan-500/30 hover:shadow-cyan-400/50 hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                      ? "bg-[#262a33] text-[#ffb4ab] border border-[#ffb4ab]/30 cursor-not-allowed opacity-80"
+                      : "bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white shadow-lg hover:shadow-[0_0_16px_rgba(128,131,255,0.4)]"
                   }`}
                 >
                   {hasOutOfStockItems ? (
-                    <span>Remove Out-of-Stock Items to Checkout</span>
+                    <span>Remove Out-of-Stock Items</span>
                   ) : (
                     <>
                       <span>Proceed to Instant Checkout</span>
@@ -295,19 +285,19 @@ export function CartDrawer() {
                   )}
                 </button>
 
-                <div className="flex items-center justify-between text-[11px] text-slate-400 px-1 pt-1">
+                <div className="flex items-center justify-between font-mono text-[10px] text-[#908fa0] px-1 pt-1">
                   <div className="flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#4edea3]" />
                     <span>256-Bit SSL Encrypted</span>
                   </div>
                   <a
                     href={APP_CONFIG.discordLink || "/discord"}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-cyan-400 hover:underline"
+                    className="flex items-center gap-1 text-[#8083ff] hover:underline"
                   >
                     <Headset className="w-3.5 h-3.5" />
-                    <span>24/7 Discord Support</span>
+                    <span>Discord Support</span>
                   </a>
                 </div>
               </div>

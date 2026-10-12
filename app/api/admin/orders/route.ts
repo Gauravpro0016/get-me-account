@@ -3,7 +3,7 @@ import { getAllOrders } from "@/lib/fulfillment";
 
 function checkAdmin(req: NextRequest): boolean {
   const adminPassword = process.env.ADMIN_PASSWORD;
-  const provided = req.headers.get("x-admin-password");
+  const provided = req.headers.get("x-admin-password") || req.nextUrl.searchParams.get("password");
   return !!adminPassword && provided === adminPassword;
 }
 

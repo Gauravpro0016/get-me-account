@@ -1,6 +1,7 @@
 import nodemailer, { type SentMessageInfo } from "nodemailer";
 import { Redis } from "@upstash/redis";
 import { APP_CONFIG } from "@/lib/config";
+import { incrementCouponUsage } from "@/lib/coupons";
 
 export type Credential = {
   id: string;
@@ -34,6 +35,8 @@ export type OrderData = {
   productId?: string;
   productName?: string;
   cartItems?: CartOrderItem[];
+  couponCode?: string;
+  discountAmount?: number;
 };
 
 export const redis = new Redis({
@@ -928,6 +931,16 @@ export async function fulfillOrder({
     } catch {}
   }
 
+  const rawPassedAmount = Number(amount);
+  const resolvedAmount =
+    (orderData?.amount && orderData.amount > 0)
+      ? orderData.amount
+      : (orderMeta?.amountInr && Number(orderMeta.amountInr) > 0)
+        ? Number(orderMeta.amountInr)
+        : (Number.isFinite(rawPassedAmount) && rawPassedAmount > 20)
+          ? rawPassedAmount
+          : APP_CONFIG.price;
+
   const claimedList: Credential[] = [];
 
   // If order was a multi-product cart checkout, claim real credentials for each product
@@ -1000,7 +1013,7 @@ export async function fulfillOrder({
       credentials: claimedList,
       utr,
       senderName,
-      amount,
+      amount: resolvedAmount,
       productName: resolvedProductName,
     });
     console.log(`${claimedList.length} credentials delivered to ${email} for orderId=${orderId}`);
@@ -1019,7 +1032,7 @@ export async function fulfillOrder({
     await sendMerchantSaleNotification({
       orderId,
       customerEmail: email,
-      amount,
+      amount: resolvedAmount,
       utr,
       senderName,
       productName: resolvedProductName,
@@ -1027,6 +1040,16 @@ export async function fulfillOrder({
     });
   } catch (err) {
     console.warn("Failed to send merchant sale alert:", err);
+  }
+
+  // Increment coupon usage count if coupon was used
+  const usedCoupon = orderData?.couponCode || orderMeta?.couponCode;
+  if (usedCoupon) {
+    try {
+      await incrementCouponUsage(usedCoupon);
+    } catch (e) {
+      console.warn("Could not increment coupon usage:", e);
+    }
   }
 
   return { success: true, credential: claimedList[0], credentials: claimedList };
@@ -1042,6 +1065,8 @@ export type StoredOrder = {
   productId?: string;
   productName?: string;
   cartItems?: CartOrderItem[];
+  couponCode?: string;
+  discountAmount?: number;
   status: "pending" | "confirmed" | "failed" | "expired";
   createdAt: string;
   confirmedAt?: string;
@@ -1090,6 +1115,8 @@ export async function recordNewOrder(data: {
   productId?: string;
   productName?: string;
   cartItems?: CartOrderItem[];
+  couponCode?: string;
+  discountAmount?: number;
 }): Promise<void> {
   const quantity = Math.max(1, data.quantity || 1);
   const newOrder: StoredOrder = {
@@ -1100,6 +1127,8 @@ export async function recordNewOrder(data: {
     productId: data.productId,
     productName: data.productName,
     cartItems: data.cartItems,
+    couponCode: data.couponCode,
+    discountAmount: data.discountAmount,
     status: "pending",
     createdAt: new Date().toISOString(),
     emailStatus: "pending",
@@ -1113,6 +1142,8 @@ export async function recordNewOrder(data: {
     productId: data.productId,
     productName: data.productName,
     cartItems: data.cartItems,
+    couponCode: data.couponCode,
+    discountAmount: data.discountAmount,
     createdAt: Date.now(),
   });
 
@@ -1126,6 +1157,8 @@ export async function recordNewOrder(data: {
       productId: data.productId || "",
       productName: data.productName || "Trinitymart Digital Asset",
       cartItems: JSON.stringify(data.cartItems || []),
+      couponCode: data.couponCode || "",
+      discountAmount: String(data.discountAmount || 0),
       createdAt: new Date().toISOString(),
     });
   } catch (err) {

@@ -122,20 +122,19 @@ export async function GET() {
       const inv = inventories[idx] || [];
       const activeInventory = inv.filter((item) => !item.claimedAt);
 
-      // Stock units: if credentials exist in DB, stockCount is strictly the number of active credentials!
+      // Live inventory is strictly bound to database available inventory!
       if (inv.length > 0) {
         p.stockCount = activeInventory.length;
         p.inStock = activeInventory.length > 0;
-      } else {
-        const dbStock =
-          override?.stockCount !== undefined
-            ? override.stockCount
-            : p.stockCount ?? 0;
-        p.stockCount = Math.max(0, Number(dbStock));
+      } else if (override?.manualStock === true && typeof override?.stockCount === "number") {
+        p.stockCount = Math.max(0, Number(override.stockCount));
         p.inStock =
           override?.inStock !== undefined
             ? Boolean(override.inStock)
             : p.stockCount > 0;
+      } else {
+        p.stockCount = 0;
+        p.inStock = false;
       }
 
       // Security: Strip raw credentials before sending to public buyers

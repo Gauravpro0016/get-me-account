@@ -13,6 +13,7 @@ export const APP_CONFIG = {
 
   // Discord 24/7 Support Server Link
   discordLink:
+    process.env.DISCORD_LINK ||
     process.env.NEXT_PUBLIC_DISCORD_LINK ||
     (typeof window === "undefined" ? process.env.DISCORD_LINK : "") ||
     "/discord",
@@ -22,5 +23,16 @@ export const APP_CONFIG = {
     process.env.APP_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : ""),
+
+  // Atlos Crypto Gateway Configuration
+  atlosMerchantId:
+    process.env.ATLOS_MERCHANT_ID ||
+    process.env.ATLOS_MERCHANT_ID ||
+    "ADK7QABYR0",
+  inrToUsdRate: Number(
+    process.env.INR_TO_USD_RATE ||
+    process.env.NEXT_PUBLIC_INR_TO_USD_RATE ||
+    0.0118
+  ),
 };
 

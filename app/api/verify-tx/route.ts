@@ -101,12 +101,17 @@ export async function POST(req: NextRequest) {
     }
 
     if (verified) {
+      const orderData = await getOrder(queryId);
       const result = await fulfillOrder({
         orderId: queryId,
         email,
         utr: finalUtr,
         senderName,
-        amount: 25,
+        amount: orderData?.amount || APP_CONFIG.price,
+        quantity: orderData?.quantity || 1,
+        productId: orderData?.productId,
+        productName: orderData?.productName,
+        cartItems: orderData?.cartItems,
       });
 
       return NextResponse.json({

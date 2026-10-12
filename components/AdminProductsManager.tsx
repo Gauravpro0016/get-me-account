@@ -878,29 +878,29 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-[#dfe2ee]">
       {/* Top Banner and Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl bg-slate-900/60 border border-cyan-500/20 backdrop-blur-xl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 sm:p-6 rounded-2xl bg-[#181c24] border border-[#262a33] shadow-lg">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="p-1 rounded-md bg-cyan-500/10 text-cyan-400">
-              <Package className="w-4 h-4" />
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="p-1 rounded bg-[#262a33] text-[#8083ff] border border-[#31353e]">
+              <Package className="w-3.5 h-3.5" />
             </span>
-            <span className="text-xs uppercase font-extrabold tracking-widest text-cyan-400">
-              Product Catalog Engine
+            <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-[#8083ff]">
+              Trinitymart Product Operations
             </span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-black text-white">
-            Manage Store Products &amp; Custom Options
+          <h2 className="text-xl sm:text-2xl font-black text-[#dfe2ee] tracking-tight">
+            Inventory &amp; Stock Catalog
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Add new products with custom IDs/passes, restock existing products, or remove products anytime.
+          <p className="font-mono text-xs text-[#908fa0] mt-1">
+            Publish accounts, restock credentials, configure custom fields, or hide products.
           </p>
         </div>
 
         <button
           onClick={() => setIsAddModalOpen(true)}
-          className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-white font-extrabold text-xs sm:text-sm shadow-xl shadow-cyan-500/30 hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0"
+          className="flex items-center gap-2 px-5 py-3 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white font-mono font-bold text-xs sm:text-sm shadow-lg shadow-[#8083ff]/20 active:scale-95 transition-all cursor-pointer shrink-0"
         >
           <Plus className="w-4 h-4" />
           <span>Add New Product</span>
@@ -909,14 +909,14 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
       {statusMsg && (
         <div
-          className={`p-4 rounded-2xl border flex items-center justify-between text-xs font-bold ${
+          className={`p-4 rounded-xl border flex items-center justify-between text-xs font-mono font-bold ${
             statusMsg.type === "success"
-              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-              : "bg-rose-500/10 border-rose-500/30 text-rose-300"
+              ? "bg-[#00a572]/15 border-[#00a572]/30 text-[#4edea3]"
+              : "bg-[#93000a]/20 border-[#ffb4ab]/30 text-[#ffb4ab]"
           }`}
         >
           <span>{statusMsg.text}</span>
-          <button onClick={() => setStatusMsg(null)} className="underline text-slate-400">
+          <button onClick={() => setStatusMsg(null)} className="underline text-[#908fa0] hover:text-[#dfe2ee]">
             Dismiss
           </button>
         </div>
@@ -924,57 +924,57 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
       {/* View Mode Tabs (Active vs Removed) */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-2 p-1 rounded-2xl bg-slate-900/80 border border-cyan-500/20">
+        <div className="flex items-center gap-2 p-1 rounded-xl bg-[#181c24] border border-[#262a33]">
           <button
             onClick={() => setViewMode("active")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
               viewMode === "active"
-                ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/25"
-                : "text-slate-400 hover:text-white"
+                ? "bg-[#8083ff] text-[#0d0096] shadow-md"
+                : "text-[#c7c4d7] hover:text-[#dfe2ee]"
             }`}
           >
             <span>Active Products</span>
-            <span className="bg-black/30 px-2 py-0.5 rounded-full text-[10px]">
+            <span className="bg-[#0f131c] px-2 py-0.5 rounded-full text-[10px] text-[#dfe2ee]">
               {activeProducts.length}
             </span>
           </button>
 
           <button
             onClick={() => setViewMode("removed")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
               viewMode === "removed"
-                ? "bg-rose-500 text-white shadow-md shadow-rose-500/25"
-                : "text-slate-400 hover:text-white"
+                ? "bg-[#93000a]/40 text-[#ffb4ab] border border-[#ffb4ab]/30 shadow-md"
+                : "text-[#c7c4d7] hover:text-[#dfe2ee]"
             }`}
           >
             <span>Removed / Unlisted</span>
-            <span className="bg-black/30 px-2 py-0.5 rounded-full text-[10px]">
+            <span className="bg-[#0f131c] px-2 py-0.5 rounded-full text-[10px] text-[#dfe2ee]">
               {removedProducts.length}
             </span>
           </button>
         </div>
 
-        <div className="text-xs text-slate-400">
+        <div className="font-mono text-xs text-[#908fa0]">
           {viewMode === "active" ? (
-            <span>Showing products currently active on the store.</span>
+            <span>Live products displayed on storefront catalog.</span>
           ) : (
-            <span className="text-rose-400 font-semibold">
-              These products are hidden and unlisted from all buyer pages.
+            <span className="text-[#ffb4ab]">
+              These products are unlisted and hidden from buyer views.
             </span>
           )}
         </div>
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/40 border border-cyan-500/15">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-xl bg-[#181c24] border border-[#262a33]">
         <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-[#908fa0] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Search products by title or category..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-black/40 border border-cyan-500/20 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400"
+            className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 font-mono focus:outline-none focus:border-[#8083ff]"
           />
         </div>
 
@@ -983,10 +983,10 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
             <button
               key={cat}
               onClick={() => setCategoryFilter(cat)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold whitespace-nowrap transition-all ${
                 categoryFilter === cat
-                  ? "bg-cyan-500 text-black shadow-md shadow-cyan-500/30"
-                  : "bg-white/5 text-slate-400 hover:text-white"
+                  ? "bg-[#8083ff] text-[#0d0096]"
+                  : "bg-[#0f131c] text-[#c7c4d7] hover:text-[#dfe2ee] border border-[#262a33]"
               }`}
             >
               {cat}
@@ -997,8 +997,8 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
       {/* Products Grid */}
       {filteredProducts.length === 0 ? (
-        <div className="text-center py-16 p-8 rounded-3xl bg-[#0a1120] border border-cyan-500/20 space-y-3">
-          <p className="text-sm font-bold text-slate-300">
+        <div className="text-center py-16 p-8 rounded-2xl bg-[#181c24] border border-[#262a33] space-y-3">
+          <p className="font-mono text-sm font-bold text-[#908fa0]">
             {viewMode === "active"
               ? "No active products found matching filters."
               : "No removed or unlisted products."}
@@ -1009,11 +1009,11 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
           {filteredProducts.map((prod) => (
             <div
               key={prod.id}
-              className="p-5 rounded-3xl bg-[#0a1120] border border-cyan-500/20 hover:border-cyan-400/50 transition-all space-y-4 shadow-xl relative overflow-hidden"
+              className="p-5 rounded-2xl bg-[#181c24] border border-[#262a33] hover:border-[#8083ff]/40 transition-all space-y-4 shadow-xl relative overflow-hidden group"
               style={
                 prod.customBgUrl
                   ? {
-                      backgroundImage: `linear-gradient(to bottom, rgba(10, 17, 32, 0.85), rgba(10, 17, 32, 0.98)), url(${prod.customBgUrl})`,
+                      backgroundImage: `linear-gradient(to bottom, rgba(24, 28, 36, 0.90), rgba(15, 19, 28, 0.98)), url(${prod.customBgUrl})`,
                       backgroundSize: prod.bgSize || "cover",
                       backgroundPosition: "center",
                       backgroundRepeat: "no-repeat",
@@ -1027,18 +1027,21 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                     type={prod.iconType}
                     customLogoUrl={prod.customLogoUrl}
                     logoSize={prod.logoSize}
-                    className="w-12 h-12 shrink-0"
+                    className="w-12 h-12 shrink-0 rounded-xl bg-[#0f131c] border border-[#262a33] p-1.5"
                     size={22}
                   />
                   <div className="min-w-0">
-                    <h3 className="text-sm font-black text-white truncate" title={prod.name}>
+                    <h3 className="text-sm font-black text-[#dfe2ee] truncate" title={prod.name}>
                       {prod.name}
                     </h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs font-bold text-cyan-400">
-                        {APP_CONFIG.currencySymbol}{prod.price}
+                    <div className="flex items-baseline gap-2 mt-1 font-mono">
+                      <span className="text-sm font-black text-[#8083ff]">
+                        ₹{prod.price}
                       </span>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 bg-white/5 px-2 py-0.5 rounded">
+                      <span className="text-[11px] text-[#908fa0]">
+                        (~${(prod.price * (APP_CONFIG.inrToUsdRate || 0.0118)).toFixed(2)} USD)
+                      </span>
+                      <span className="text-[9px] uppercase font-bold text-[#c7c4d7] bg-[#262a33] px-1.5 py-0.5 rounded">
                         {prod.category}
                       </span>
                     </div>
@@ -1049,7 +1052,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 {viewMode === "active" ? (
                   <button
                     onClick={() => handleRemoveProduct(prod.id, prod.name)}
-                    className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-all cursor-pointer"
+                    className="p-2 text-[#908fa0] hover:text-[#ffb4ab] hover:bg-[#93000a]/20 rounded-xl transition-all cursor-pointer"
                     title="Remove product from store"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -1057,7 +1060,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 ) : (
                   <button
                     onClick={() => handleRestoreProduct(prod.id, prod.name)}
-                    className="p-2 text-emerald-400 hover:bg-emerald-500/10 rounded-xl transition-all cursor-pointer"
+                    className="p-2 text-[#4edea3] hover:bg-[#00a572]/20 rounded-xl transition-all cursor-pointer"
                     title="Restore product to store"
                   >
                     <RotateCcw className="w-4 h-4" />
@@ -1069,18 +1072,18 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
               {(() => {
                 const activeUnits = (prod.inventory ? prod.inventory.filter((i: any) => !i.claimedAt).length : prod.stockCount) ?? 0;
                 return (
-                  <div className="p-3 rounded-2xl bg-black/40 border border-white/5 space-y-1.5 text-xs">
-                    <div className="flex justify-between text-slate-400">
+                  <div className="p-3 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-1.5 text-xs font-mono">
+                    <div className="flex justify-between text-[#908fa0]">
                       <span>Delivery:</span>
-                      <span className="font-semibold text-emerald-400">{prod.deliveryType}</span>
+                      <span className="font-semibold text-[#4edea3]">{prod.deliveryType}</span>
                     </div>
-                    <div className="flex justify-between items-center text-slate-400">
-                      <span>Available in DB:</span>
+                    <div className="flex justify-between items-center text-[#908fa0]">
+                      <span>Database Stock:</span>
                       <span
                         className={`font-black text-[11px] px-2 py-0.5 rounded-md border flex items-center gap-1 ${
                           activeUnits > 0
-                            ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/30"
-                            : "text-rose-400 bg-rose-500/10 border-rose-500/30"
+                            ? "text-[#4edea3] bg-[#00a572]/15 border-[#00a572]/30"
+                            : "text-[#ffb4ab] bg-[#93000a]/20 border-[#ffb4ab]/30"
                         }`}
                       >
                         <span>📦</span>
@@ -1088,9 +1091,9 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                       </span>
                     </div>
                     {prod.customFields && prod.customFields.length > 0 && (
-                      <div className="pt-1 border-t border-white/5 flex flex-wrap gap-1">
+                      <div className="pt-1 border-t border-[#262a33] flex flex-wrap gap-1">
                         {prod.customFields.map((f: any, i: number) => (
-                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-[#262a33] text-[#c7c4d7] border border-[#31353e]">
                             {f.name}
                           </span>
                         ))}
@@ -1104,21 +1107,21 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
               {(() => {
                 const activeUnits = (prod.inventory ? prod.inventory.filter((i: any) => !i.claimedAt).length : prod.stockCount) ?? 0;
                 return (
-                  <div className="pt-2 flex items-center gap-2">
+                  <div className="pt-2 flex items-center gap-2 font-mono">
                     {viewMode === "active" ? (
                       <>
                         <button
                           onClick={() => openEditModal(prod)}
-                          className="flex-1 py-2 px-2.5 rounded-xl bg-indigo-500/20 hover:bg-indigo-500 text-indigo-300 hover:text-white font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-indigo-500/40"
+                          className="flex-1 py-2 px-2.5 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#dfe2ee] font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#31353e]"
                           title="Edit product details"
                         >
-                          <Pencil className="w-3.5 h-3.5" />
+                          <Pencil className="w-3.5 h-3.5 text-[#8083ff]" />
                           <span>Edit</span>
                         </button>
 
                         <button
                           onClick={() => openStockModal(prod)}
-                          className="flex-1 py-2 px-2.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-black font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-cyan-500/40"
+                          className="flex-1 py-2 px-2.5 rounded-lg bg-[#00a572]/15 hover:bg-[#00a572]/25 text-[#4edea3] font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#00a572]/30"
                           title="View and manage available accounts & credentials in database"
                         >
                           <Layers className="w-3.5 h-3.5" />
@@ -1127,7 +1130,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                         <button
                           onClick={() => handleRemoveProduct(prod.id, prod.name)}
-                          className="py-2 px-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-300 hover:text-white font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-rose-500/30"
+                          className="py-2 px-2.5 rounded-lg bg-[#93000a]/20 hover:bg-[#93000a]/40 text-[#ffb4ab] font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#ffb4ab]/30"
                           title="Remove product from store"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1137,7 +1140,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                     ) : (
                       <button
                         onClick={() => handleRestoreProduct(prod.id, prod.name)}
-                        className="w-full py-2.5 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-black font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-emerald-500/40"
+                        className="w-full py-2.5 px-3 rounded-lg bg-[#00a572]/20 hover:bg-[#00a572]/40 text-[#4edea3] font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#00a572]/40"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                         <span>Restore Product to Store</span>
@@ -1156,22 +1159,22 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
           <div onClick={() => setIsAddModalOpen(false)} className="fixed inset-0 bg-black/85 backdrop-blur-md" />
 
-          <div className="relative w-full max-w-2xl bg-[#090f1d] rounded-3xl p-6 sm:p-8 shadow-2xl border border-cyan-500/30 z-10 max-h-[90vh] overflow-y-auto space-y-6 text-white">
-            <div className="flex items-center justify-between pb-4 border-b border-cyan-500/20">
+          <div className="relative w-full max-w-2xl bg-[#181c24] rounded-2xl p-6 sm:p-8 shadow-2xl border border-[#262a33] z-10 max-h-[90vh] overflow-y-auto space-y-6 text-[#dfe2ee]">
+            <div className="flex items-center justify-between pb-4 border-b border-[#262a33]">
               <div className="flex items-center gap-2.5">
                 <ProductIcon
                   type={iconType}
                   customLogoUrl={customLogoUrl}
                   logoSize={logoSize}
-                  className="w-10 h-10 shrink-0"
+                  className="w-10 h-10 shrink-0 rounded-xl bg-[#0f131c] border border-[#262a33] p-1"
                   size={20}
                 />
                 <div>
-                  <h3 className="text-lg font-black text-white">Create New Store Product</h3>
-                  <p className="text-xs text-slate-400">Configure product details and custom ID/Password fields.</p>
+                  <h3 className="text-lg font-black text-[#dfe2ee]">Create New Store Product</h3>
+                  <p className="font-mono text-xs text-[#908fa0]">Configure product details, pricing, and custom ID/Password fields.</p>
                 </div>
               </div>
-              <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsAddModalOpen(false)} className="text-[#908fa0] hover:text-[#dfe2ee]">
                 ✕
               </button>
             </div>
@@ -1179,25 +1182,25 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
             <form onSubmit={handleCreateProduct} className="space-y-4">
               {/* Product Name */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Product Title</label>
+                <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Product Title</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Netflix 4K Key (Private Profile) or Steam CS2 Prime ID"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-cyan-500/30 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 font-bold"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-sm text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-bold"
                 />
               </div>
 
               {/* Category & Badge */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Category</label>
+                  <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Category</label>
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-cyan-500/30 text-sm text-white focus:outline-none cursor-pointer"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-sm text-[#dfe2ee] focus:outline-none cursor-pointer"
                   >
                     <option value="Streaming">Streaming</option>
                     <option value="Gaming">Gaming</option>
@@ -1208,11 +1211,11 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Badge</label>
+                  <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Badge</label>
                   <select
                     value={badge}
                     onChange={(e) => setBadge(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-cyan-500/30 text-sm text-white focus:outline-none cursor-pointer"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-sm text-[#dfe2ee] focus:outline-none cursor-pointer"
                   >
                     <option value="Instant Key">Instant Key</option>
                     <option value="Best Seller">Best Seller</option>
@@ -1223,10 +1226,17 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 </div>
               </div>
 
-              {/* Price & Original Price */}
+              {/* Price & Original Price (Dual Currency Live Converter) */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Sale Price (₹ INR)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-mono text-xs font-bold text-[#c7c4d7]">Sale Price (₹ INR)</label>
+                    {Number(price) > 0 && (
+                      <span className="font-mono text-[11px] text-[#4edea3]">
+                        ~${(Number(price) * (APP_CONFIG.inrToUsdRate || 0.0118)).toFixed(2)} USD
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="number"
                     required
@@ -1234,29 +1244,36 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                     placeholder="e.g. 199"
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-cyan-500/30 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 font-bold"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-sm text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-bold font-mono"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Original Price (₹ INR)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-mono text-xs font-bold text-[#c7c4d7]">Original Price (₹ INR)</label>
+                    {Number(originalPrice) > 0 && (
+                      <span className="font-mono text-[11px] text-[#908fa0]">
+                        ~${(Number(originalPrice) * (APP_CONFIG.inrToUsdRate || 0.0118)).toFixed(2)} USD
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="number"
                     placeholder="e.g. 649 (for discount display)"
                     value={originalPrice}
                     onChange={(e) => setOriginalPrice(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-cyan-500/30 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 font-bold"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-sm text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-bold font-mono"
                   />
                 </div>
               </div>
 
               {/* Delivery Type */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Delivery Method</label>
+                <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Delivery Method</label>
                 <select
                   value={deliveryType}
                   onChange={(e) => setDeliveryType(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-cyan-500/30 text-sm text-white focus:outline-none cursor-pointer"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-sm text-[#dfe2ee] focus:outline-none focus:border-[#8083ff] cursor-pointer"
                 >
                   <option value="Instant Account ID + Pass">Instant Account ID + Pass (Steam / Netflix)</option>
                   <option value="Instant Activation Key">Instant Activation Key / Code (Steam Code / Windows)</option>
@@ -1265,29 +1282,29 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
               </div>
 
               {/* Product Visuals: Custom Logo & Background */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-black/40 border border-cyan-500/25 space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#10141d] border border-[#262a33] space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-[#262a33]">
                   <div className="flex items-center gap-2">
-                    <Palette className="w-4 h-4 text-cyan-400" />
-                    <span className="text-xs font-black text-cyan-300 uppercase tracking-wider">
+                    <Palette className="w-4 h-4 text-[#8083ff]" />
+                    <span className="text-xs font-black text-[#dfe2ee] uppercase tracking-wider">
                       Product Visuals: Custom Logo & Background
                     </span>
                   </div>
-                  <span className="text-[11px] text-slate-400">Custom styling &amp; live preview</span>
+                  <span className="text-[11px] text-[#908fa0] font-mono">Custom styling &amp; live preview</span>
                 </div>
 
                 {/* 1. Custom Logo & Brand Icon */}
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
+                    <label className="text-xs font-bold text-[#c7c4d7] flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-[#8083ff]" />
                       <span>Custom Product Logo / Brand Icon</span>
                     </label>
                     {customLogoUrl && (
                       <button
                         type="button"
                         onClick={() => setCustomLogoUrl("")}
-                        className="text-[11px] text-rose-400 hover:text-rose-300 underline font-semibold cursor-pointer"
+                        className="text-[11px] text-[#ffb4ab] hover:underline font-semibold cursor-pointer"
                       >
                         Reset to default icon
                       </button>
@@ -1300,9 +1317,9 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                       placeholder="Paste Image URL (https://...) or upload image file below"
                       value={customLogoUrl}
                       onChange={(e) => setCustomLogoUrl(e.target.value)}
-                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-mono"
                     />
-                    <label className="px-3 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shrink-0">
+                    <label className="px-3 py-2 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] border border-[#31353e] text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shrink-0">
                       <Upload className="w-3.5 h-3.5" />
                       <span>Upload File</span>
                       <input
@@ -1320,10 +1337,10 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                   {/* Built-in Brand Icons */}
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1.5">
+                    <label className="block text-[11px] text-[#908fa0] mb-1.5">
                       Or select from built-in brand icons:
                     </label>
-                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1 bg-black/30 rounded-xl border border-white/5">
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1.5 bg-[#0f131c] rounded-xl border border-[#262a33]">
                       {BUILTIN_ICONS.map((icon) => (
                         <button
                           key={icon}
@@ -1334,8 +1351,8 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                           }}
                           className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
                             iconType === icon && !customLogoUrl
-                              ? "bg-cyan-500 text-black font-black shadow-md shadow-cyan-500/30"
-                              : "bg-white/5 hover:bg-white/15 text-slate-300 border border-white/10"
+                              ? "bg-[#8083ff] text-[#0d0096] font-black shadow-md shadow-[#8083ff]/20"
+                              : "bg-[#181c24] hover:bg-[#262a33] text-[#dfe2ee] border border-[#262a33]"
                           }`}
                         >
                           {icon}
@@ -1346,7 +1363,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                   {/* Logo Size Selection */}
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1.5">
+                    <label className="block text-[11px] text-[#908fa0] mb-1.5">
                       Logo / Icon Size:
                     </label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
@@ -1357,12 +1374,12 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                           onClick={() => setLogoSize(sz.id)}
                           className={`p-2 rounded-xl text-left border transition-all cursor-pointer ${
                             logoSize === sz.id
-                              ? "bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-md shadow-cyan-500/20"
-                              : "bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10"
+                              ? "bg-[#8083ff]/15 border-[#8083ff] text-[#8083ff] shadow-md shadow-[#8083ff]/10"
+                              : "bg-[#0f131c] border-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
                           }`}
                         >
                           <div className="text-xs font-bold">{sz.label}</div>
-                          <div className="text-[10px] text-slate-400">{sz.desc}</div>
+                          <div className="text-[10px] text-[#908fa0]">{sz.desc}</div>
                         </button>
                       ))}
                     </div>
@@ -1370,17 +1387,17 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 </div>
 
                 {/* 2. Custom Background & Styling */}
-                <div className="space-y-2.5 pt-2 border-t border-white/10">
+                <div className="space-y-2.5 pt-2 border-t border-[#262a33]">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                    <label className="text-xs font-bold text-[#c7c4d7] flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-[#8083ff]" />
                       <span>Card Background: Custom Image or Gradient Theme</span>
                     </label>
                     {customBgUrl && (
                       <button
                         type="button"
                         onClick={() => setCustomBgUrl("")}
-                        className="text-[11px] text-rose-400 hover:text-rose-300 underline font-semibold cursor-pointer"
+                        className="text-[11px] text-[#ffb4ab] hover:underline font-semibold cursor-pointer"
                       >
                         Reset to theme gradient
                       </button>
@@ -1389,7 +1406,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                   {/* Gradient presets */}
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1.5">
+                    <label className="block text-[11px] text-[#908fa0] mb-1.5">
                       Curated Gradient Themes:
                     </label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
@@ -1404,7 +1421,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                           className={`flex items-center gap-2 p-2 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
                             bannerGradient === gp.value && !customBgUrl
                               ? `bg-white/15 ${gp.border} text-white shadow-md`
-                              : "bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10"
+                              : "bg-[#0f131c] border-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
                           }`}
                         >
                           <span
@@ -1423,9 +1440,9 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                       placeholder="Paste Custom Background Image URL (https://...) or upload below"
                       value={customBgUrl}
                       onChange={(e) => setCustomBgUrl(e.target.value)}
-                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-mono"
                     />
-                    <label className="px-3 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shrink-0">
+                    <label className="px-3 py-2 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] border border-[#31353e] text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shrink-0">
                       <Upload className="w-3.5 h-3.5" />
                       <span>Upload BG</span>
                       <input
@@ -1443,7 +1460,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                   {/* Background Size Selection */}
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1.5">
+                    <label className="block text-[11px] text-[#908fa0] mb-1.5">
                       Background Image Size (Scaling Mode):
                     </label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
@@ -1454,12 +1471,12 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                           onClick={() => setBgSize(bs.id)}
                           className={`p-2 rounded-xl text-left border transition-all cursor-pointer ${
                             bgSize === bs.id
-                              ? "bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-md shadow-cyan-500/20"
-                              : "bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10"
+                              ? "bg-[#8083ff]/15 border-[#8083ff] text-[#8083ff] shadow-md shadow-[#8083ff]/10"
+                              : "bg-[#0f131c] border-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
                           }`}
                         >
                           <div className="text-xs font-bold">{bs.label}</div>
-                          <div className="text-[10px] text-slate-400">{bs.desc}</div>
+                          <div className="text-[10px] text-[#908fa0]">{bs.desc}</div>
                         </button>
                       ))}
                     </div>
@@ -1467,15 +1484,15 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 </div>
 
                 {/* 3. Live Real-Time Card Preview */}
-                <div className="pt-2 border-t border-white/10">
-                  <label className="block text-[11px] font-bold text-cyan-300 mb-2 flex items-center gap-1.5">
-                    <Maximize2 className="w-3.5 h-3.5" />
+                <div className="pt-2 border-t border-[#262a33]">
+                  <label className="block text-[11px] font-bold text-[#dfe2ee] mb-2 flex items-center gap-1.5">
+                    <Maximize2 className="w-3.5 h-3.5 text-[#8083ff]" />
                     <span>Live Storefront Card Preview</span>
                   </label>
-                  <div className="w-full max-w-xs mx-auto rounded-3xl bg-[#0a1120] border border-cyan-500/30 overflow-hidden shadow-xl">
+                  <div className="w-full max-w-xs mx-auto rounded-2xl bg-[#181c24] border border-[#262a33] overflow-hidden shadow-xl">
                     <div
                       className={`relative h-36 w-full p-4 flex flex-col justify-between overflow-hidden ${
-                        !customBgUrl ? `bg-gradient-to-br ${bannerGradient}` : "bg-slate-900"
+                        !customBgUrl ? `bg-gradient-to-br ${bannerGradient}` : "bg-[#0f131c]"
                       }`}
                       style={
                         customBgUrl
@@ -1489,14 +1506,14 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                       }
                     >
                       {customBgUrl && (
-                        <div className="absolute inset-0 bg-gradient-to-t from-[#0a1120] via-black/40 to-black/30 pointer-events-none" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#0f131c] via-black/40 to-black/30 pointer-events-none" />
                       )}
                       <div className="relative z-10 flex items-center justify-between">
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#050811]/70 text-cyan-300 backdrop-blur-md border border-cyan-500/30">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#0f131c]/80 text-[#8083ff] backdrop-blur-md border border-[#262a33]">
                           {category}
                         </span>
                         {badge && badge !== "None" && (
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-cyan-400 text-black shadow-cyan-400/40">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#8083ff] text-[#0d0096]">
                             {badge}
                           </span>
                         )}
@@ -1507,25 +1524,28 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                           type={iconType}
                           customLogoUrl={customLogoUrl}
                           logoSize={logoSize}
-                          className="w-12 h-12"
+                          className="w-12 h-12 rounded-xl bg-[#0f131c] border border-[#262a33] p-1"
                           size={24}
                         />
-                        <div className="px-2 py-0.5 rounded-lg bg-[#050811]/80 backdrop-blur-md border border-cyan-500/30 text-cyan-300 text-[10px] font-bold">
+                        <div className="px-2 py-0.5 rounded-lg bg-[#0f131c]/80 backdrop-blur-md border border-[#262a33] text-[#4edea3] text-[10px] font-bold">
                           ⚡ Instant
                         </div>
                       </div>
                     </div>
 
-                    <div className="p-3 bg-[#0a1120] border-t border-white/5 space-y-1">
-                      <div className="text-xs font-black text-white truncate">
+                    <div className="p-3 bg-[#181c24] border-t border-[#262a33] space-y-1">
+                      <div className="text-xs font-black text-[#dfe2ee] truncate">
                         {name.trim() || "Product Title Example"}
                       </div>
                       <div className="flex items-baseline gap-2">
-                        <span className="text-sm font-black text-white">
+                        <span className="text-sm font-black text-[#8083ff] font-mono">
                           ₹{price || "199"}
                         </span>
+                        <span className="text-[11px] text-[#908fa0] font-mono">
+                          ~${(Number(price || 199) * (APP_CONFIG.inrToUsdRate || 0.0118)).toFixed(2)} USD
+                        </span>
                         {originalPrice && (
-                          <span className="text-[10px] text-slate-500 line-through">
+                          <span className="text-[10px] text-[#908fa0] line-through font-mono">
                             ₹{originalPrice}
                           </span>
                         )}
@@ -1536,61 +1556,61 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
               </div>
 
               {/* Custom Options / Credentials Selection */}
-              <div className="p-4 rounded-2xl bg-black/40 border border-cyan-500/25 space-y-3">
+              <div className="p-4 rounded-2xl bg-[#10141d] border border-[#262a33] space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-black text-cyan-300 uppercase tracking-wider">
+                  <label className="block text-xs font-black text-[#dfe2ee] uppercase tracking-wider">
                     Select Custom Options / Credential Fields to Deliver
                   </label>
-                  <span className="text-[11px] text-slate-400">
+                  <span className="text-[11px] text-[#908fa0] font-mono">
                     Define what buyer receives
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-[#0f131c] border border-[#262a33] cursor-pointer hover:bg-[#181c24] text-[#dfe2ee] transition-colors">
                     <input
                       type="checkbox"
                       checked={fieldOptions.includeId}
                       onChange={(e) => setFieldOptions({ ...fieldOptions, includeId: e.target.checked })}
-                      className="rounded text-cyan-400"
+                      className="rounded accent-[#8083ff]"
                     />
                     <span>Account ID / Login</span>
                   </label>
 
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-[#0f131c] border border-[#262a33] cursor-pointer hover:bg-[#181c24] text-[#dfe2ee] transition-colors">
                     <input
                       type="checkbox"
                       checked={fieldOptions.includePassword}
                       onChange={(e) => setFieldOptions({ ...fieldOptions, includePassword: e.target.checked })}
-                      className="rounded text-cyan-400"
+                      className="rounded accent-[#8083ff]"
                     />
                     <span>Password</span>
                   </label>
 
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-[#0f131c] border border-[#262a33] cursor-pointer hover:bg-[#181c24] text-[#dfe2ee] transition-colors">
                     <input
                       type="checkbox"
                       checked={fieldOptions.includeKey}
                       onChange={(e) => setFieldOptions({ ...fieldOptions, includeKey: e.target.checked })}
-                      className="rounded text-cyan-400"
+                      className="rounded accent-[#8083ff]"
                     />
                     <span>License Key</span>
                   </label>
 
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-[#0f131c] border border-[#262a33] cursor-pointer hover:bg-[#181c24] text-[#dfe2ee] transition-colors">
                     <input
                       type="checkbox"
                       checked={fieldOptions.includePin}
                       onChange={(e) => setFieldOptions({ ...fieldOptions, includePin: e.target.checked })}
-                      className="rounded text-cyan-400"
+                      className="rounded accent-[#8083ff]"
                     />
                     <span>PIN / 2FA</span>
                   </label>
                 </div>
 
                 {/* Additional Custom Options (e.g. Profile PIN, Server, Region, Access URL) */}
-                <div className="space-y-2 pt-2 border-t border-white/10">
-                  <label className="block text-[11px] font-bold text-slate-300">
+                <div className="space-y-2 pt-2 border-t border-[#262a33]">
+                  <label className="block text-[11px] font-bold text-[#c7c4d7]">
                     Add Extra Custom Options (e.g. Profile PIN, Server, Backup Code, Region)
                   </label>
                   <div className="flex gap-2">
@@ -1605,12 +1625,12 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                           handleAddCustomOption();
                         }
                       }}
-                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400"
+                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff]"
                     />
                     <button
                       type="button"
                       onClick={handleAddCustomOption}
-                      className="px-4 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-black border border-cyan-500/40 text-xs font-bold transition-all cursor-pointer shrink-0"
+                      className="px-4 py-2 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] border border-[#31353e] text-xs font-bold transition-all cursor-pointer shrink-0"
                     >
                       + Add Option
                     </button>
@@ -1622,13 +1642,13 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                       {customOptionNames.map((optName) => (
                         <span
                           key={optName}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-semibold"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#8083ff]/15 border border-[#8083ff]/30 text-[#8083ff] text-xs font-semibold"
                         >
                           <span>{optName}</span>
                           <button
                             type="button"
                             onClick={() => handleRemoveCustomOption(optName)}
-                            className="hover:text-rose-400 text-slate-400 font-bold ml-1 cursor-pointer"
+                            className="hover:text-[#ffb4ab] text-[#908fa0] font-bold ml-1 cursor-pointer"
                             title="Remove custom option"
                           >
                             ✕
@@ -1641,15 +1661,15 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
               </div>
 
               {/* Add Initial Stock Credentials */}
-              <div className="p-4 rounded-2xl bg-black/40 border border-cyan-500/25 space-y-3">
+              <div className="p-4 rounded-2xl bg-[#10141d] border border-[#262a33] space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-black text-cyan-300 uppercase tracking-wider">
+                  <label className="block text-xs font-black text-[#dfe2ee] uppercase tracking-wider">
                     Add Initial Stock Credentials ({inventoryList.length} items ready)
                   </label>
                   <button
                     type="button"
                     onClick={() => setBulkMode(!bulkMode)}
-                    className="text-xs text-cyan-400 underline font-bold cursor-pointer"
+                    className="text-xs text-[#8083ff] hover:underline font-bold cursor-pointer font-mono"
                   >
                     {bulkMode ? "Switch to Form Mode" : "Bulk Paste Mode (ID:PASS)"}
                   </button>
@@ -1662,12 +1682,12 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                       placeholder="Paste credentials line by line:&#10;username1:pass1&#10;username2:pass2"
                       value={bulkStockText}
                       onChange={(e) => setBulkStockText(e.target.value)}
-                      className="w-full px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white font-mono placeholder:text-slate-500 resize-none"
+                      className="w-full px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] font-mono placeholder-[#908fa0]/60 resize-none focus:outline-none focus:border-[#8083ff]"
                     />
                     <button
                       type="button"
                       onClick={handleParseBulk}
-                      className="px-4 py-2 rounded-xl bg-cyan-500 text-black text-xs font-bold cursor-pointer"
+                      className="px-4 py-2 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white text-xs font-bold transition-all cursor-pointer"
                     >
                       Parse and Add Lines
                     </button>
@@ -1677,56 +1697,56 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {fieldOptions.includeId && (
                         <div>
-                          <label className="block text-[10px] text-slate-400 uppercase font-bold mb-0.5">Account ID / Username</label>
+                          <label className="block text-[10px] text-[#908fa0] uppercase font-bold mb-0.5">Account ID / Username</label>
                           <input
                             type="text"
                             placeholder="e.g. user_account_01"
                             value={stockInputId}
                             onChange={(e) => setStockInputId(e.target.value)}
-                            className="w-full px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono"
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-mono"
                           />
                         </div>
                       )}
                       {fieldOptions.includePassword && (
                         <div>
-                          <label className="block text-[10px] text-slate-400 uppercase font-bold mb-0.5">Password</label>
+                          <label className="block text-[10px] text-[#908fa0] uppercase font-bold mb-0.5">Password</label>
                           <input
                             type="text"
                             placeholder="Account Password"
                             value={stockInputPass}
                             onChange={(e) => setStockInputPass(e.target.value)}
-                            className="w-full px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono"
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-mono"
                           />
                         </div>
                       )}
                       {fieldOptions.includeKey && (
                         <div>
-                          <label className="block text-[10px] text-slate-400 uppercase font-bold mb-0.5">License Key / Token</label>
+                          <label className="block text-[10px] text-[#908fa0] uppercase font-bold mb-0.5">License Key / Token</label>
                           <input
                             type="text"
                             placeholder="XXXX-YYYY-ZZZZ"
                             value={stockInputKey}
                             onChange={(e) => setStockInputKey(e.target.value)}
-                            className="w-full px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono"
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-mono"
                           />
                         </div>
                       )}
                       {fieldOptions.includePin && (
                         <div>
-                          <label className="block text-[10px] text-slate-400 uppercase font-bold mb-0.5">PIN / 2FA Secret</label>
+                          <label className="block text-[10px] text-[#908fa0] uppercase font-bold mb-0.5">PIN / 2FA Secret</label>
                           <input
                             type="text"
                             placeholder="PIN or 2FA code"
                             value={stockInputPin}
                             onChange={(e) => setStockInputPin(e.target.value)}
-                            className="w-full px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono"
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-mono"
                           />
                         </div>
                       )}
                       {/* Render inputs for EVERY custom option! */}
                       {customOptionNames.map((optName) => (
                         <div key={optName}>
-                          <label className="block text-[10px] text-cyan-300 uppercase font-bold mb-0.5">
+                          <label className="block text-[10px] text-[#8083ff] uppercase font-bold mb-0.5">
                             {optName}
                           </label>
                           <input
@@ -1739,7 +1759,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                                 [optName]: e.target.value,
                               })
                             }
-                            className="w-full px-3 py-2 text-xs rounded-xl bg-black/60 border border-cyan-500/30 text-white focus:outline-none focus:border-cyan-400 font-mono"
+                            className="w-full px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] focus:outline-none focus:border-[#8083ff] font-mono"
                           />
                         </div>
                       ))}
@@ -1747,7 +1767,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                     <button
                       type="button"
                       onClick={handleAddStockItem}
-                      className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15 cursor-pointer"
+                      className="px-4 py-2 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#dfe2ee] text-xs font-bold border border-[#31353e] transition-all cursor-pointer"
                     >
                       + Add Item to Stock Batch
                     </button>
@@ -1756,16 +1776,16 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                 {/* Display added items in batch */}
                 {inventoryList.length > 0 && (
-                  <div className="max-h-28 overflow-y-auto space-y-1 p-2 bg-black/60 rounded-xl border border-white/10 text-[11px] font-mono">
+                  <div className="max-h-28 overflow-y-auto space-y-1 p-2 bg-[#0f131c] rounded-xl border border-[#262a33] text-[11px] font-mono">
                     {inventoryList.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-slate-300">
+                      <div key={idx} className="flex justify-between items-center text-[#c7c4d7]">
                         <span className="truncate">
                           #{idx + 1}: {Object.entries(item).map(([k, v]) => `${k}: ${v}`).join(" | ")}
                         </span>
                         <button
                           type="button"
                           onClick={() => setInventoryList(inventoryList.filter((_, i) => i !== idx))}
-                          className="text-rose-400 hover:text-rose-300 ml-2 font-bold cursor-pointer"
+                          className="text-[#ffb4ab] hover:underline ml-2 font-bold cursor-pointer"
                         >
                           ✕
                         </button>
@@ -1777,13 +1797,13 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
               {/* Description & Features */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Short Description</label>
+                <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Short Description</label>
                 <input
                   type="text"
                   placeholder="e.g. Ultra HD 4K streaming key with private PIN profile."
                   value={shortDescription}
                   onChange={(e) => setShortDescription(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-cyan-500/30 text-xs text-white placeholder:text-slate-500"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff]"
                 />
               </div>
 
@@ -1791,7 +1811,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-black text-sm shadow-xl shadow-cyan-500/30 cursor-pointer disabled:opacity-50"
+                  className="w-full py-4 rounded-2xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white font-black text-sm shadow-xl shadow-[#8083ff]/20 cursor-pointer disabled:opacity-50 transition-all"
                 >
                   {submitting ? "Publishing Product to Store..." : "Publish Product to Trinitymart Store"}
                 </button>
@@ -1806,58 +1826,58 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-5">
           <div onClick={() => setIsStockModalOpen(false)} className="fixed inset-0 bg-black/85 backdrop-blur-md" />
 
-          <div className="relative w-full max-w-3xl bg-[#090f1d] rounded-3xl p-5 sm:p-7 shadow-2xl border border-cyan-500/30 z-10 max-h-[92vh] overflow-y-auto space-y-5 text-white">
+          <div className="relative w-full max-w-3xl bg-[#181c24] rounded-2xl p-5 sm:p-7 shadow-2xl border border-[#262a33] z-10 max-h-[92vh] overflow-y-auto space-y-5 text-[#dfe2ee]">
             {/* Modal Header */}
-            <div className="flex items-start justify-between pb-4 border-b border-cyan-500/20 gap-3">
+            <div className="flex items-start justify-between pb-4 border-b border-[#262a33] gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <ProductIcon
                   type={targetProduct.iconType}
                   customLogoUrl={targetProduct.customLogoUrl}
                   logoSize={targetProduct.logoSize}
-                  className="w-11 h-11 shrink-0"
+                  className="w-11 h-11 shrink-0 rounded-xl bg-[#0f131c] border border-[#262a33] p-1"
                   size={22}
                 />
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-base sm:text-lg font-black text-white truncate">
+                    <h3 className="text-base sm:text-lg font-black text-[#dfe2ee] truncate">
                       {targetProduct.name}
                     </h3>
                     <span
                       className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border ${
                         ((targetProduct.inventory ? targetProduct.inventory.filter((i: any) => !i.claimedAt).length : targetProduct.stockCount) ?? 0) > 0
-                          ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
-                          : "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                          ? "bg-[#005236]/30 text-[#4edea3] border-[#4edea3]/30"
+                          : "bg-[#93000a]/20 text-[#ffb4ab] border-[#ffb4ab]/30"
                       }`}
                     >
                       📦 {((targetProduct.inventory ? targetProduct.inventory.filter((i: any) => !i.claimedAt).length : targetProduct.stockCount) ?? 0)} Available in DB
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-xs text-[#908fa0] mt-0.5 font-mono">
                     Live database stock linked directly to account credentials (ID, Password, Token).
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setIsStockModalOpen(false)}
-                className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer shrink-0"
+                className="p-1.5 rounded-xl bg-[#0f131c] hover:bg-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] transition-colors cursor-pointer shrink-0"
               >
                 ✕
               </button>
             </div>
 
             {/* Navigation Tabs inside Stock Modal */}
-            <div className="flex items-center gap-2 p-1 rounded-2xl bg-slate-900/90 border border-cyan-500/20">
+            <div className="flex items-center gap-2 p-1 rounded-xl bg-[#10141d] border border-[#262a33]">
               <button
                 type="button"
                 onClick={() => setStockModalTab("view")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   stockModalTab === "view"
-                    ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/25"
-                    : "text-slate-400 hover:text-white"
+                    ? "bg-[#8083ff] text-[#0d0096] shadow-md shadow-[#8083ff]/20 font-black"
+                    : "text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
                 }`}
               >
                 <span>📋 Available Credentials</span>
-                <span className="bg-black/40 px-2 py-0.5 rounded-full text-[10px]">
+                <span className="bg-black/30 px-2 py-0.5 rounded-full text-[10px] font-mono">
                   {(targetProduct.inventory ? targetProduct.inventory.filter((i: any) => !i.claimedAt).length : 0)}
                 </span>
               </button>
@@ -1865,10 +1885,10 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
               <button
                 type="button"
                 onClick={() => setStockModalTab("add")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   stockModalTab === "add"
-                    ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/25"
-                    : "text-slate-400 hover:text-white"
+                    ? "bg-[#8083ff] text-[#0d0096] shadow-md shadow-[#8083ff]/20 font-black"
+                    : "text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
                 }`}
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1883,13 +1903,13 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 {targetProduct.inventory && targetProduct.inventory.length > 0 && (
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
                     <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#908fa0]" />
                       <input
                         type="text"
                         placeholder="Search by ID, username, token, or PIN…"
                         value={stockSearchQuery}
                         onChange={(e) => setStockSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-black/50 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                        className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-mono"
                       />
                     </div>
 
@@ -1897,7 +1917,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                       <button
                         type="button"
                         onClick={toggleShowAllPasswords}
-                        className="px-3 py-2 text-xs font-bold rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
+                        className="px-3 py-2 text-xs font-bold rounded-xl bg-[#262a33] hover:bg-[#31353e] border border-[#31353e] text-[#dfe2ee] transition-all cursor-pointer flex items-center gap-1.5"
                       >
                         {showAllStockPasswords ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         <span>{showAllStockPasswords ? "Hide All Passwords" : "Show All Passwords"}</span>
@@ -1906,9 +1926,9 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                       <button
                         type="button"
                         onClick={handleCopyAllCredentials}
-                        className="px-3 py-2 text-xs font-bold rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 transition-all cursor-pointer flex items-center gap-1.5"
+                        className="px-3 py-2 text-xs font-bold rounded-xl bg-[#8083ff]/15 hover:bg-[#8083ff]/25 border border-[#8083ff]/30 text-[#8083ff] transition-all cursor-pointer flex items-center gap-1.5"
                       >
-                        {copiedStockId === "all-credentials" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copiedStockId === "all-credentials" ? <Check className="w-3.5 h-3.5 text-[#4edea3]" /> : <Copy className="w-3.5 h-3.5" />}
                         <span>{copiedStockId === "all-credentials" ? "Copied All!" : "Copy All (ID:PASS)"}</span>
                       </button>
                     </div>
@@ -1917,22 +1937,22 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                 {/* Empty State */}
                 {(!targetProduct.inventory || targetProduct.inventory.length === 0) && (
-                  <div className="text-center py-10 px-4 rounded-2xl bg-black/40 border border-white/5 space-y-3">
-                    <div className="w-12 h-12 mx-auto rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 text-xl">
+                  <div className="text-center py-10 px-4 rounded-2xl bg-[#10141d] border border-[#262a33] space-y-3">
+                    <div className="w-12 h-12 mx-auto rounded-2xl bg-[#8083ff]/10 border border-[#8083ff]/20 flex items-center justify-center text-[#8083ff] text-xl">
                       📦
                     </div>
                     <div className="space-y-1">
-                      <h4 className="text-sm font-black text-white">
+                      <h4 className="text-sm font-black text-[#dfe2ee]">
                         No Credentials Stored in Database Yet
                       </h4>
-                      <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                      <p className="text-xs text-[#908fa0] max-w-sm mx-auto">
                         Add account IDs, passwords, or license keys using the &ldquo;Add Stock&rdquo; tab so this product has available units in the database and shows as In Stock to buyers.
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setStockModalTab("add")}
-                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black text-xs shadow-lg shadow-cyan-500/25 cursor-pointer hover:scale-105 transition-all"
+                      className="px-4 py-2.5 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white font-black text-xs shadow-lg shadow-[#8083ff]/25 cursor-pointer transition-all"
                     >
                       ➕ Add First Account ID &amp; Password
                     </button>
@@ -1961,29 +1981,29 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                         return (
                           <div
                             key={item.id || idx}
-                            className={`p-3.5 rounded-2xl border transition-all space-y-2.5 ${
+                            className={`p-3.5 rounded-xl border transition-all space-y-2.5 ${
                               isClaimed
-                                ? "bg-white/[0.02] border-white/5 opacity-60"
-                                : "bg-black/50 border-cyan-500/20 hover:border-cyan-500/40"
+                                ? "bg-[#10141d]/50 border-[#262a33]/50 opacity-60"
+                                : "bg-[#10141d] border-[#262a33] hover:border-[#3b3f49]"
                             }`}
                           >
                             {/* Card Top: Index, Status, Added At, Delete Button */}
-                            <div className="flex items-center justify-between pb-2 border-b border-white/5 text-xs">
+                            <div className="flex items-center justify-between pb-2 border-b border-[#262a33] text-xs">
                               <div className="flex items-center gap-2">
-                                <span className="font-mono font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-lg border border-cyan-500/20 text-[10px]">
+                                <span className="font-mono font-bold text-[#8083ff] bg-[#8083ff]/10 px-2 py-0.5 rounded-lg border border-[#8083ff]/20 text-[10px]">
                                   #{idx + 1}
                                 </span>
                                 <span
                                   className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
                                     isClaimed
                                       ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
-                                      : "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                                      : "bg-[#005236]/30 text-[#4edea3] border-[#4edea3]/30"
                                   }`}
                                 >
                                   {isClaimed ? "Delivered / Claimed" : "Available in DB"}
                                 </span>
                                 {item.addedAt && (
-                                  <span className="text-[10px] text-slate-500 hidden sm:inline">
+                                  <span className="text-[10px] text-[#908fa0] font-mono hidden sm:inline">
                                     Added: {new Date(item.addedAt).toLocaleDateString([], { month: "short", day: "numeric" })}{" "}
                                     {new Date(item.addedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                                   </span>
@@ -1994,11 +2014,11 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                                 type="button"
                                 disabled={deletingStockItemId === item.id}
                                 onClick={() => handleDeleteStockItem(item.id)}
-                                className="text-slate-400 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-colors cursor-pointer flex items-center gap-1 text-[11px]"
+                                className="text-[#908fa0] hover:text-[#ffb4ab] p-1.5 rounded-lg hover:bg-[#93000a]/20 transition-colors cursor-pointer flex items-center gap-1 text-[11px]"
                                 title="Delete this credential from database"
                               >
                                 {deletingStockItemId === item.id ? (
-                                  <span className="w-3.5 h-3.5 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" />
+                                  <span className="w-3.5 h-3.5 border-2 border-[#ffb4ab] border-t-transparent rounded-full animate-spin" />
                                 ) : (
                                   <Trash2 className="w-3.5 h-3.5" />
                                 )}
@@ -2010,14 +2030,14 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
                               {/* Account ID / Username */}
                               {accountId && (
-                                <div className="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between gap-2">
+                                <div className="p-2.5 rounded-xl bg-[#181c24] border border-[#262a33] flex items-center justify-between gap-2">
                                   <div className="min-w-0 flex items-center gap-1.5">
-                                    <User className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                                    <User className="w-3.5 h-3.5 text-[#8083ff] shrink-0" />
                                     <div className="min-w-0">
-                                      <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-sans">
+                                      <span className="text-[9px] uppercase tracking-wider text-[#908fa0] block font-sans">
                                         Account ID / Login
                                       </span>
-                                      <span className="text-white font-bold truncate block select-all">
+                                      <span className="text-[#dfe2ee] font-bold truncate block select-all">
                                         {accountId}
                                       </span>
                                     </div>
@@ -2025,11 +2045,11 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                                   <button
                                     type="button"
                                     onClick={() => copyStockValue(accountId, `id-${item.id}`)}
-                                    className="p-1 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0"
+                                    className="p-1 rounded-md bg-[#0f131c] hover:bg-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] transition-colors cursor-pointer shrink-0"
                                     title="Copy Account ID"
                                   >
                                     {copiedStockId === `id-${item.id}` ? (
-                                      <Check className="w-3 h-3 text-emerald-400" />
+                                      <Check className="w-3 h-3 text-[#4edea3]" />
                                     ) : (
                                       <Copy className="w-3 h-3" />
                                     )}
@@ -2039,14 +2059,14 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                               {/* Password */}
                               {password && (
-                                <div className="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between gap-2">
+                                <div className="p-2.5 rounded-xl bg-[#181c24] border border-[#262a33] flex items-center justify-between gap-2">
                                   <div className="min-w-0 flex items-center gap-1.5">
-                                    <Lock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                                    <Lock className="w-3.5 h-3.5 text-[#8083ff] shrink-0" />
                                     <div className="min-w-0">
-                                      <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-sans">
+                                      <span className="text-[9px] uppercase tracking-wider text-[#908fa0] block font-sans">
                                         Password
                                       </span>
-                                      <span className="text-white font-bold truncate block select-all">
+                                      <span className="text-[#dfe2ee] font-bold truncate block select-all">
                                         {isPwdRevealed ? password : "••••••••••••"}
                                       </span>
                                     </div>
@@ -2055,7 +2075,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                                     <button
                                       type="button"
                                       onClick={() => toggleRevealStockPassword(item.id)}
-                                      className="p-1 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                                      className="p-1 rounded-md bg-[#0f131c] hover:bg-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] transition-colors cursor-pointer"
                                       title={isPwdRevealed ? "Hide Password" : "Show Password"}
                                     >
                                       {isPwdRevealed ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
@@ -2063,11 +2083,11 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                                     <button
                                       type="button"
                                       onClick={() => copyStockValue(password, `pwd-${item.id}`)}
-                                      className="p-1 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                                      className="p-1 rounded-md bg-[#0f131c] hover:bg-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] transition-colors cursor-pointer"
                                       title="Copy Password"
                                     >
                                       {copiedStockId === `pwd-${item.id}` ? (
-                                        <Check className="w-3 h-3 text-emerald-400" />
+                                        <Check className="w-3 h-3 text-[#4edea3]" />
                                       ) : (
                                         <Copy className="w-3 h-3" />
                                       )}
@@ -2078,14 +2098,14 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                               {/* License Key / Token */}
                               {token && (
-                                <div className="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between gap-2">
+                                <div className="p-2.5 rounded-xl bg-[#181c24] border border-[#262a33] flex items-center justify-between gap-2">
                                   <div className="min-w-0 flex items-center gap-1.5">
-                                    <Key className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                    <Key className="w-3.5 h-3.5 text-[#8083ff] shrink-0" />
                                     <div className="min-w-0">
-                                      <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-sans">
+                                      <span className="text-[9px] uppercase tracking-wider text-[#908fa0] block font-sans">
                                         License Key / Code
                                       </span>
-                                      <span className="text-indigo-300 font-bold truncate block select-all">
+                                      <span className="text-[#8083ff] font-bold truncate block select-all">
                                         {token}
                                       </span>
                                     </div>
@@ -2093,11 +2113,11 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                                   <button
                                     type="button"
                                     onClick={() => copyStockValue(token, `tok-${item.id}`)}
-                                    className="p-1 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0"
+                                    className="p-1 rounded-md bg-[#0f131c] hover:bg-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] transition-colors cursor-pointer shrink-0"
                                     title="Copy Key"
                                   >
                                     {copiedStockId === `tok-${item.id}` ? (
-                                      <Check className="w-3 h-3 text-emerald-400" />
+                                      <Check className="w-3 h-3 text-[#4edea3]" />
                                     ) : (
                                       <Copy className="w-3 h-3" />
                                     )}
@@ -2107,11 +2127,11 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                               {/* 2FA / PIN */}
                               {pin && (
-                                <div className="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between gap-2">
+                                <div className="p-2.5 rounded-xl bg-[#181c24] border border-[#262a33] flex items-center justify-between gap-2">
                                   <div className="min-w-0 flex items-center gap-1.5">
                                     <Shield className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                                     <div className="min-w-0">
-                                      <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-sans">
+                                      <span className="text-[9px] uppercase tracking-wider text-[#908fa0] block font-sans">
                                         PIN / 2FA Secret
                                       </span>
                                       <span className="text-amber-300 font-bold truncate block select-all">
@@ -2122,11 +2142,11 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                                   <button
                                     type="button"
                                     onClick={() => copyStockValue(pin, `pin-${item.id}`)}
-                                    className="p-1 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0"
+                                    className="p-1 rounded-md bg-[#0f131c] hover:bg-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] transition-colors cursor-pointer shrink-0"
                                     title="Copy PIN"
                                   >
                                     {copiedStockId === `pin-${item.id}` ? (
-                                      <Check className="w-3 h-3 text-emerald-400" />
+                                      <Check className="w-3 h-3 text-[#4edea3]" />
                                     ) : (
                                       <Copy className="w-3 h-3" />
                                     )}
@@ -2141,22 +2161,22 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                                     return null;
                                   }
                                   return (
-                                    <div key={k} className="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between gap-2">
+                                    <div key={k} className="p-2.5 rounded-xl bg-[#181c24] border border-[#262a33] flex items-center justify-between gap-2">
                                       <div className="min-w-0">
-                                        <span className="text-[9px] uppercase tracking-wider text-slate-400 block font-sans">
+                                        <span className="text-[9px] uppercase tracking-wider text-[#908fa0] block font-sans">
                                           {k}
                                         </span>
-                                        <span className="text-white font-bold truncate block select-all">
+                                        <span className="text-[#dfe2ee] font-bold truncate block select-all">
                                           {String(v)}
                                         </span>
                                       </div>
                                       <button
                                         type="button"
                                         onClick={() => copyStockValue(String(v), `custom-${item.id}-${k}`)}
-                                        className="p-1 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0"
+                                        className="p-1 rounded-md bg-[#0f131c] hover:bg-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] transition-colors cursor-pointer shrink-0"
                                       >
                                         {copiedStockId === `custom-${item.id}-${k}` ? (
-                                          <Check className="w-3 h-3 text-emerald-400" />
+                                          <Check className="w-3 h-3 text-[#4edea3]" />
                                         ) : (
                                           <Copy className="w-3 h-3" />
                                         )}
@@ -2177,17 +2197,17 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
             {stockModalTab === "add" && (
               <form onSubmit={handleSaveStockToDatabase} className="space-y-4">
                 {/* Switcher: Single vs Bulk Paste */}
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-black/40 border border-white/10">
+                <div className="flex items-center justify-between p-3 rounded-xl bg-[#10141d] border border-[#262a33]">
                   <div>
-                    <span className="text-xs font-bold text-white block">Input Mode</span>
-                    <span className="text-[10px] text-slate-400">
+                    <span className="text-xs font-bold text-[#dfe2ee] block">Input Mode</span>
+                    <span className="text-[10px] text-[#908fa0] font-mono">
                       {stockBulkMode ? "Paste multiple accounts (one per line)" : "Add a single account credential"}
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setStockBulkMode(!stockBulkMode)}
-                    className="px-3 py-1.5 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-bold hover:bg-cyan-500 hover:text-black transition-all cursor-pointer"
+                    className="px-3 py-1.5 rounded-xl bg-[#262a33] text-[#8083ff] border border-[#31353e] text-xs font-bold hover:bg-[#8083ff] hover:text-[#0d0096] transition-all cursor-pointer font-mono"
                   >
                     {stockBulkMode ? "Switch to Form Mode" : "⚡ Switch to Bulk Paste Mode"}
                   </button>
@@ -2196,24 +2216,24 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 {stockBulkMode ? (
                   /* Bulk Paste Mode */
                   <div className="space-y-2">
-                    <label className="block text-xs font-bold text-slate-300">
+                    <label className="block font-mono text-xs font-bold text-[#c7c4d7]">
                       Paste Account Credentials (one per line)
                     </label>
-                    <p className="text-[11px] text-slate-400">
-                      Accepted format: <code className="text-cyan-300">username:password</code> or{" "}
-                      <code className="text-cyan-300">username:password:licenseKey</code> or{" "}
-                      <code className="text-cyan-300">licenseKeyCode</code>
+                    <p className="text-[11px] text-[#908fa0]">
+                      Accepted format: <code className="text-[#8083ff] font-mono">username:password</code> or{" "}
+                      <code className="text-[#8083ff] font-mono">username:password:licenseKey</code> or{" "}
+                      <code className="text-[#8083ff] font-mono">licenseKeyCode</code>
                     </p>
                     <textarea
                       rows={6}
                       placeholder={`steam_user_01:Pass1234\nsteam_user_02:Pass5678\nnetflix_user1@gmail.com:Pass9999`}
                       value={stockBulkText}
                       onChange={(e) => setStockBulkText(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-2xl bg-black/60 border border-cyan-500/30 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 resize-none leading-relaxed"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#dfe2ee] font-mono placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] resize-none leading-relaxed"
                     />
-                    <div className="text-[11px] text-slate-400">
+                    <div className="text-[11px] text-[#908fa0] font-mono">
                       Lines detected:{" "}
-                      <span className="font-bold text-cyan-400">
+                      <span className="font-bold text-[#8083ff]">
                         {stockBulkText.split("\n").map((l) => l.trim()).filter(Boolean).length}
                       </span>{" "}
                       accounts ready to add.
@@ -2223,7 +2243,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                   /* Single Form Mode */
                   <div className="space-y-3">
                     <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">
+                      <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">
                         Account ID / Login / Username / Email
                       </label>
                       <input
@@ -2231,12 +2251,12 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                         placeholder="e.g. steam_pro_acc10 or buyer@netflix.com"
                         value={singleStockId}
                         onChange={(e) => setSingleStockId(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-cyan-500/30 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-mono"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">
+                      <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">
                         Account Password
                       </label>
                       <div className="relative">
@@ -2245,12 +2265,12 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                           placeholder="Account password"
                           value={singleStockPass}
                           onChange={(e) => setSingleStockPass(e.target.value)}
-                          className="w-full px-3.5 py-2.5 pr-10 rounded-xl bg-black/50 border border-cyan-500/30 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                          className="w-full px-3.5 py-2.5 pr-10 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-mono"
                         />
                         <button
                           type="button"
                           onClick={() => setShowSinglePass(!showSinglePass)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#908fa0] hover:text-[#dfe2ee]"
                         >
                           {showSinglePass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
@@ -2259,7 +2279,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs font-bold text-slate-300 mb-1">
+                        <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">
                           License Key / Redeem Code (Optional)
                         </label>
                         <input
@@ -2267,12 +2287,12 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                           placeholder="e.g. STEAM-XXXX-YYYY or Activation Token"
                           value={singleStockKey}
                           onChange={(e) => setSingleStockKey(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-cyan-500/30 text-xs text-white placeholder:text-slate-500 font-mono"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-mono"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-slate-300 mb-1">
+                        <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">
                           2FA / Backup PIN / Profile PIN (Optional)
                         </label>
                         <input
@@ -2280,21 +2300,21 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                           placeholder="e.g. 1234 or 2FA backup codes"
                           value={singleStockPin}
                           onChange={(e) => setSingleStockPin(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-cyan-500/30 text-xs text-white placeholder:text-slate-500 font-mono"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-mono"
                         />
                       </div>
                     </div>
 
                     {/* Render inputs for any Custom Options defined on this product */}
                     {stockModalCustomFields.length > 0 && (
-                      <div className="space-y-2 pt-2 border-t border-cyan-500/20">
-                        <label className="block text-xs font-bold text-cyan-300">
+                      <div className="space-y-2 pt-2 border-t border-[#262a33]">
+                        <label className="block text-xs font-bold text-[#8083ff]">
                           Custom Product Options ({stockModalCustomFields.length})
                         </label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {stockModalCustomFields.map((optName) => (
                             <div key={optName}>
-                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                              <label className="block text-[11px] font-bold text-[#c7c4d7] mb-1">
                                 {optName}
                               </label>
                               <input
@@ -2307,7 +2327,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                                     [optName]: e.target.value,
                                   })
                                 }
-                                className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-cyan-500/30 text-xs text-white placeholder:text-slate-500 font-mono focus:outline-none focus:border-cyan-400"
+                                className="w-full px-3.5 py-2 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#dfe2ee] placeholder-[#908fa0]/60 font-mono focus:outline-none focus:border-[#8083ff]"
                               />
                             </div>
                           ))}
@@ -2316,8 +2336,8 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                     )}
 
                     {/* Inline Add Custom Option Field for this product */}
-                    <div className="pt-2 border-t border-white/10 space-y-1.5">
-                      <label className="block text-[11px] font-bold text-slate-400">
+                    <div className="pt-2 border-t border-[#262a33] space-y-1.5">
+                      <label className="block text-[11px] font-bold text-[#908fa0]">
                         + Add another custom option field to this product:
                       </label>
                       <div className="flex gap-2">
@@ -2336,7 +2356,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                               }
                             }
                           }}
-                          className="flex-1 px-3 py-1.5 text-xs rounded-xl bg-black/60 border border-white/15 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400"
+                          className="flex-1 px-3 py-1.5 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff]"
                         />
                         <button
                           type="button"
@@ -2347,7 +2367,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                               setNewStockModalCustomOption("");
                             }
                           }}
-                          className="px-3 py-1.5 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-bold hover:bg-cyan-500 hover:text-black transition-all cursor-pointer shrink-0"
+                          className="px-3 py-1.5 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] border border-[#31353e] text-xs font-bold transition-all cursor-pointer shrink-0"
                         >
                           + Add Field
                         </button>
@@ -2360,11 +2380,11 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                   <button
                     type="submit"
                     disabled={addingStock}
-                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-black text-xs shadow-xl shadow-cyan-500/30 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="w-full py-3.5 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white font-black text-xs shadow-xl shadow-[#8083ff]/25 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
                   >
                     {addingStock ? (
                       <>
-                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span className="w-4 h-4 border-2 border-[#0d0096] border-t-transparent rounded-full animate-spin" />
                         <span>Saving to Database…</span>
                       </>
                     ) : (
@@ -2384,45 +2404,45 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
       {isEditModalOpen && editingProduct && (
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
           <div onClick={() => setIsEditModalOpen(false)} className="fixed inset-0 bg-black/85 backdrop-blur-md" />
-          <div className="relative w-full max-w-2xl bg-[#090f1d] rounded-3xl p-6 sm:p-8 shadow-2xl border border-indigo-500/30 z-10 max-h-[90vh] overflow-y-auto space-y-6 text-white">
-            <div className="flex items-center justify-between pb-4 border-b border-indigo-500/20">
+          <div className="relative w-full max-w-2xl bg-[#181c24] rounded-2xl p-6 sm:p-8 shadow-2xl border border-[#262a33] z-10 max-h-[90vh] overflow-y-auto space-y-6 text-[#dfe2ee]">
+            <div className="flex items-center justify-between pb-4 border-b border-[#262a33]">
               <div className="flex items-center gap-2.5">
                 <ProductIcon
                   type={editIconType}
                   customLogoUrl={editCustomLogoUrl}
                   logoSize={editLogoSize}
-                  className="w-10 h-10 shrink-0"
+                  className="w-10 h-10 shrink-0 rounded-xl bg-[#0f131c] border border-[#262a33] p-1"
                   size={20}
                 />
                 <div>
-                  <h3 className="text-lg font-black text-white">Edit Product Details</h3>
-                  <p className="text-xs text-slate-400">Update title, pricing, database stock units, and description.</p>
+                  <h3 className="text-lg font-black text-[#dfe2ee]">Edit Product Details</h3>
+                  <p className="font-mono text-xs text-[#908fa0]">Update title, dual pricing (INR &amp; USD), database stock units, and specs.</p>
                 </div>
               </div>
-              <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+              <button onClick={() => setIsEditModalOpen(false)} className="text-[#908fa0] hover:text-[#dfe2ee]">✕</button>
             </div>
 
             <form onSubmit={handleSaveEdit} className="space-y-4">
               {/* Product Title */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Product Title</label>
+                <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Product Title</label>
                 <input
                   type="text"
                   required
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-indigo-500/30 text-sm text-white font-bold focus:outline-none focus:border-indigo-400"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-sm text-[#dfe2ee] font-bold focus:outline-none focus:border-[#8083ff]"
                 />
               </div>
 
               {/* Category & Badge */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Category</label>
+                  <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Category</label>
                   <select
                     value={editCategory}
                     onChange={(e) => setEditCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-indigo-500/30 text-sm text-white focus:outline-none cursor-pointer"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-sm text-[#dfe2ee] focus:outline-none cursor-pointer"
                   >
                     <option value="Streaming">Streaming</option>
                     <option value="Gaming">Gaming</option>
@@ -2433,11 +2453,11 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Badge</label>
+                  <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Badge</label>
                   <select
                     value={editBadge}
                     onChange={(e) => setEditBadge(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-indigo-500/30 text-sm text-white focus:outline-none cursor-pointer"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-sm text-[#dfe2ee] focus:outline-none cursor-pointer"
                   >
                     <option value="None">None</option>
                     <option value="Instant Key">Instant Key</option>
@@ -2449,39 +2469,53 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 </div>
               </div>
 
-              {/* Pricing & Database Stock Units */}
+              {/* Pricing & Database Stock Units (Dual Currency) */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Sale Price (₹ INR)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-mono text-xs font-bold text-[#c7c4d7]">Sale Price (₹ INR)</label>
+                    {Number(editPrice) > 0 && (
+                      <span className="font-mono text-[11px] text-[#4edea3]">
+                        ~${(Number(editPrice) * (APP_CONFIG.inrToUsdRate || 0.0118)).toFixed(2)} USD
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="number"
                     required
                     min="1"
                     value={editPrice}
                     onChange={(e) => setEditPrice(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-indigo-500/30 text-sm text-white font-bold focus:outline-none focus:border-indigo-400"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-sm text-[#dfe2ee] font-mono font-bold focus:outline-none focus:border-[#8083ff]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Original Price (₹ INR)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-mono text-xs font-bold text-[#c7c4d7]">Original Price (₹ INR)</label>
+                    {Number(editOriginalPrice) > 0 && (
+                      <span className="font-mono text-[11px] text-[#908fa0]">
+                        ~${(Number(editOriginalPrice) * (APP_CONFIG.inrToUsdRate || 0.0118)).toFixed(2)} USD
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="number"
                     value={editOriginalPrice}
                     onChange={(e) => setEditOriginalPrice(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-indigo-500/30 text-sm text-white font-bold focus:outline-none focus:border-indigo-400"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-sm text-[#dfe2ee] font-mono font-bold focus:outline-none focus:border-[#8083ff]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Database Stock Units</label>
+                  <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Database Stock Units</label>
                   <input
                     type="number"
                     required
                     min="0"
                     value={editStockCount}
                     onChange={(e) => setEditStockCount(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-indigo-500/30 text-sm text-white font-bold focus:outline-none focus:border-indigo-400"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-sm text-[#dfe2ee] font-mono font-bold focus:outline-none focus:border-[#8083ff]"
                   />
                 </div>
               </div>
@@ -2489,11 +2523,11 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
               {/* Delivery Type & Stock Status Toggle */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Delivery Method</label>
+                  <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Delivery Method</label>
                   <select
                     value={editDeliveryType}
                     onChange={(e) => setEditDeliveryType(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-indigo-500/30 text-sm text-white focus:outline-none cursor-pointer"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#dfe2ee] focus:outline-none focus:border-[#8083ff] cursor-pointer"
                   >
                     <option value="Instant Account ID + Pass">Instant Account ID + Pass (Steam / Netflix)</option>
                     <option value="Instant Activation Key">Instant Activation Key / Code</option>
@@ -2502,17 +2536,17 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Stock Availability</label>
+                  <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Stock Availability</label>
                   <button
                     type="button"
                     onClick={() => setEditInStock(!editInStock)}
-                    className={`w-full py-2.5 px-4 rounded-xl text-xs font-black transition-all border flex items-center justify-center gap-2 cursor-pointer ${
+                    className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold font-mono transition-all border flex items-center justify-center gap-2 cursor-pointer ${
                       editInStock
-                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
-                        : "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                        ? "bg-[#005236]/30 text-[#4edea3] border-[#4edea3]/40"
+                        : "bg-[#93000a]/20 text-[#ffb4ab] border-[#ffb4ab]/40"
                     }`}
                   >
-                    <span className={`w-2.5 h-2.5 rounded-full ${editInStock ? "bg-emerald-400" : "bg-rose-400"}`} />
+                    <span className={`w-2 h-2 rounded-full ${editInStock ? "bg-[#4edea3]" : "bg-[#ffb4ab]"}`} />
                     <span>{editInStock ? "In Stock (Available)" : "Marked Out of Stock"}</span>
                   </button>
                 </div>
@@ -2520,73 +2554,73 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
               {/* Warranty */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Warranty Guarantee</label>
+                <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Warranty Guarantee</label>
                 <input
                   type="text"
                   value={editWarranty}
                   onChange={(e) => setEditWarranty(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-indigo-500/30 text-xs text-white"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#dfe2ee] focus:outline-none focus:border-[#8083ff]"
                 />
               </div>
 
               {/* Custom Options / Credential Fields to Deliver for Edit Product */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-black/40 border border-indigo-500/25 space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <div className="p-4 sm:p-5 rounded-xl bg-[#10141d] border border-[#262a33] space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-[#262a33]">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-indigo-300 uppercase tracking-wider">
+                    <span className="text-xs font-mono font-bold text-[#8083ff] uppercase tracking-wider">
                       Custom Options &amp; Credential Fields to Deliver
                     </span>
                   </div>
-                  <span className="text-[11px] text-slate-400">
+                  <span className="text-[11px] font-mono text-[#908fa0]">
                     Define credentials buyer receives
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                  <label className="flex items-center gap-2 p-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] cursor-pointer hover:border-[#31353e] transition-colors">
                     <input
                       type="checkbox"
                       checked={editIncludeId}
                       onChange={(e) => setEditIncludeId(e.target.checked)}
-                      className="rounded text-indigo-400"
+                      className="rounded accent-[#8083ff]"
                     />
                     <span>Account ID / Login</span>
                   </label>
 
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                  <label className="flex items-center gap-2 p-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] cursor-pointer hover:border-[#31353e] transition-colors">
                     <input
                       type="checkbox"
                       checked={editIncludePassword}
                       onChange={(e) => setEditIncludePassword(e.target.checked)}
-                      className="rounded text-indigo-400"
+                      className="rounded accent-[#8083ff]"
                     />
                     <span>Password</span>
                   </label>
 
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                  <label className="flex items-center gap-2 p-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] cursor-pointer hover:border-[#31353e] transition-colors">
                     <input
                       type="checkbox"
                       checked={editIncludeKey}
                       onChange={(e) => setEditIncludeKey(e.target.checked)}
-                      className="rounded text-indigo-400"
+                      className="rounded accent-[#8083ff]"
                     />
                     <span>License Key</span>
                   </label>
 
-                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+                  <label className="flex items-center gap-2 p-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] cursor-pointer hover:border-[#31353e] transition-colors">
                     <input
                       type="checkbox"
                       checked={editIncludePin}
                       onChange={(e) => setEditIncludePin(e.target.checked)}
-                      className="rounded text-indigo-400"
+                      className="rounded accent-[#8083ff]"
                     />
                     <span>PIN / 2FA</span>
                   </label>
                 </div>
 
                 {/* Extra Custom Options */}
-                <div className="space-y-2 pt-2 border-t border-white/10">
-                  <label className="block text-[11px] font-bold text-slate-300">
+                <div className="space-y-2 pt-2 border-t border-[#262a33]">
+                  <label className="block text-[11px] font-mono font-bold text-[#c7c4d7]">
                     Extra Custom Options (e.g. Profile PIN, Server, Backup Code, Region)
                   </label>
                   <div className="flex gap-2">
@@ -2601,12 +2635,12 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                           handleAddEditCustomOption();
                         }
                       }}
-                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-400"
+                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff]"
                     />
                     <button
                       type="button"
                       onClick={handleAddEditCustomOption}
-                      className="px-4 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500 text-indigo-300 hover:text-white border border-indigo-500/40 text-xs font-bold transition-all cursor-pointer shrink-0"
+                      className="px-4 py-2 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] border border-[#31353e] text-xs font-mono font-bold transition-all cursor-pointer shrink-0"
                     >
                       + Add Option
                     </button>
@@ -2618,13 +2652,13 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                       {editCustomOptionsList.map((optName) => (
                         <span
                           key={optName}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-semibold"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0f131c] border border-[#262a33] text-[#8083ff] text-xs font-mono font-semibold"
                         >
                           <span>{optName}</span>
                           <button
                             type="button"
                             onClick={() => handleRemoveEditCustomOption(optName)}
-                            className="hover:text-rose-400 text-slate-400 font-bold ml-1 cursor-pointer"
+                            className="hover:text-[#ffb4ab] text-[#908fa0] font-bold ml-1 cursor-pointer"
                             title="Remove custom option"
                           >
                             ✕
@@ -2637,29 +2671,29 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
               </div>
 
               {/* Product Visuals: Custom Logo & Background */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-black/40 border border-indigo-500/25 space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <div className="p-4 sm:p-5 rounded-xl bg-[#10141d] border border-[#262a33] space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-[#262a33]">
                   <div className="flex items-center gap-2">
-                    <Palette className="w-4 h-4 text-indigo-400" />
-                    <span className="text-xs font-black text-indigo-300 uppercase tracking-wider">
-                      Product Visuals: Custom Logo & Background
+                    <Palette className="w-4 h-4 text-[#8083ff]" />
+                    <span className="text-xs font-mono font-bold text-[#8083ff] uppercase tracking-wider">
+                      Product Visuals: Custom Logo &amp; Background
                     </span>
                   </div>
-                  <span className="text-[11px] text-slate-400">Custom styling &amp; live preview</span>
+                  <span className="text-[11px] font-mono text-[#908fa0]">Custom styling &amp; live preview</span>
                 </div>
 
                 {/* 1. Custom Logo & Brand Icon */}
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />
+                    <label className="text-xs font-mono font-bold text-[#c7c4d7] flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-[#8083ff]" />
                       <span>Custom Product Logo / Brand Icon</span>
                     </label>
                     {editCustomLogoUrl && (
                       <button
                         type="button"
                         onClick={() => setEditCustomLogoUrl("")}
-                        className="text-[11px] text-rose-400 hover:text-rose-300 underline font-semibold cursor-pointer"
+                        className="text-[11px] font-mono text-[#ffb4ab] hover:underline font-semibold cursor-pointer"
                       >
                         Reset to default icon
                       </button>
@@ -2672,9 +2706,9 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                       placeholder="Paste Image URL (https://...) or upload image file below"
                       value={editCustomLogoUrl}
                       onChange={(e) => setEditCustomLogoUrl(e.target.value)}
-                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-400 font-mono"
+                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-mono"
                     />
-                    <label className="px-3 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shrink-0">
+                    <label className="px-3 py-2 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] border border-[#31353e] text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer transition-colors shrink-0">
                       <Upload className="w-3.5 h-3.5" />
                       <span>Upload File</span>
                       <input
@@ -2692,10 +2726,10 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                   {/* Built-in Brand Icons */}
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1.5">
+                    <label className="block text-[11px] font-mono text-[#908fa0] mb-1.5">
                       Or select from built-in brand icons:
                     </label>
-                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1 bg-black/30 rounded-xl border border-white/5">
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1 bg-[#0f131c] rounded-xl border border-[#262a33]">
                       {BUILTIN_ICONS.map((icon) => (
                         <button
                           key={icon}
@@ -2704,10 +2738,10 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                             setEditIconType(icon);
                             setEditCustomLogoUrl("");
                           }}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
+                          className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold capitalize transition-all cursor-pointer ${
                             editIconType === icon && !editCustomLogoUrl
-                              ? "bg-indigo-500 text-white font-black shadow-md shadow-indigo-500/30"
-                              : "bg-white/5 hover:bg-white/15 text-slate-300 border border-white/10"
+                              ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-md shadow-[#8083ff]/20"
+                              : "bg-[#181c24] hover:bg-[#262a33] text-[#dfe2ee] border border-[#262a33]"
                           }`}
                         >
                           {icon}
@@ -2718,7 +2752,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                   {/* Logo Size Selection */}
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1.5">
+                    <label className="block text-[11px] font-mono text-[#908fa0] mb-1.5">
                       Logo / Icon Size:
                     </label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
@@ -2729,12 +2763,12 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                           onClick={() => setEditLogoSize(sz.id)}
                           className={`p-2 rounded-xl text-left border transition-all cursor-pointer ${
                             editLogoSize === sz.id
-                              ? "bg-indigo-500/20 border-indigo-400 text-indigo-200 shadow-md shadow-indigo-500/20"
-                              : "bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10"
+                              ? "bg-[#8083ff]/15 border-[#8083ff] text-[#8083ff] shadow-sm"
+                              : "bg-[#0f131c] border-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
                           }`}
                         >
-                          <div className="text-xs font-bold">{sz.label}</div>
-                          <div className="text-[10px] text-slate-400">{sz.desc}</div>
+                          <div className="text-xs font-mono font-bold">{sz.label}</div>
+                          <div className="text-[10px] text-[#908fa0]">{sz.desc}</div>
                         </button>
                       ))}
                     </div>
@@ -2742,17 +2776,17 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 </div>
 
                 {/* 2. Custom Background & Styling */}
-                <div className="space-y-2.5 pt-2 border-t border-white/10">
+                <div className="space-y-2.5 pt-2 border-t border-[#262a33]">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                    <label className="text-xs font-mono font-bold text-[#c7c4d7] flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-[#8083ff]" />
                       <span>Card Background: Custom Image or Gradient Theme</span>
                     </label>
                     {editCustomBgUrl && (
                       <button
                         type="button"
                         onClick={() => setEditCustomBgUrl("")}
-                        className="text-[11px] text-rose-400 hover:text-rose-300 underline font-semibold cursor-pointer"
+                        className="text-[11px] font-mono text-[#ffb4ab] hover:underline font-semibold cursor-pointer"
                       >
                         Reset to theme gradient
                       </button>
@@ -2761,7 +2795,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                   {/* Gradient presets */}
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1.5">
+                    <label className="block text-[11px] font-mono text-[#908fa0] mb-1.5">
                       Curated Gradient Themes:
                     </label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
@@ -2773,14 +2807,14 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                             setEditBannerGradient(gp.value);
                             setEditCustomBgUrl("");
                           }}
-                          className={`flex items-center gap-2 p-2 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
+                          className={`flex items-center gap-2 p-2 rounded-xl text-xs font-mono transition-all cursor-pointer ${
                             editBannerGradient === gp.value && !editCustomBgUrl
-                              ? `bg-white/15 ${gp.border} text-white shadow-md`
-                              : "bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10"
+                              ? `bg-[#262a33] border border-[#8083ff] text-[#dfe2ee] shadow-sm`
+                              : "bg-[#0f131c] border border-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
                           }`}
                         >
                           <span
-                            className={`w-3.5 h-3.5 rounded-full bg-gradient-to-br ${gp.value} border border-white/30 shrink-0`}
+                            className={`w-3.5 h-3.5 rounded-full bg-gradient-to-br ${gp.value} border border-[#262a33] shrink-0`}
                           />
                           <span className="truncate">{gp.name}</span>
                         </button>
@@ -2795,9 +2829,9 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                       placeholder="Paste Custom Background Image URL (https://...) or upload below"
                       value={editCustomBgUrl}
                       onChange={(e) => setEditCustomBgUrl(e.target.value)}
-                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-400 font-mono"
+                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] font-mono"
                     />
-                    <label className="px-3 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shrink-0">
+                    <label className="px-3 py-2 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] border border-[#31353e] text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer transition-colors shrink-0">
                       <Upload className="w-3.5 h-3.5" />
                       <span>Upload BG</span>
                       <input
@@ -2815,7 +2849,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                   {/* Background Size Selection */}
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1.5">
+                    <label className="block text-[11px] font-mono text-[#908fa0] mb-1.5">
                       Background Image Size (Scaling Mode):
                     </label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
@@ -2826,12 +2860,12 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                           onClick={() => setEditBgSize(bs.id)}
                           className={`p-2 rounded-xl text-left border transition-all cursor-pointer ${
                             editBgSize === bs.id
-                              ? "bg-indigo-500/20 border-indigo-400 text-indigo-200 shadow-md shadow-indigo-500/20"
-                              : "bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10"
+                              ? "bg-[#8083ff]/15 border-[#8083ff] text-[#8083ff] shadow-sm"
+                              : "bg-[#0f131c] border-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
                           }`}
                         >
-                          <div className="text-xs font-bold">{bs.label}</div>
-                          <div className="text-[10px] text-slate-400">{bs.desc}</div>
+                          <div className="text-xs font-mono font-bold">{bs.label}</div>
+                          <div className="text-[10px] text-[#908fa0]">{bs.desc}</div>
                         </button>
                       ))}
                     </div>
@@ -2839,15 +2873,15 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 </div>
 
                 {/* 3. Live Real-Time Card Preview */}
-                <div className="pt-2 border-t border-white/10">
-                  <label className="block text-[11px] font-bold text-indigo-300 mb-2 flex items-center gap-1.5">
+                <div className="pt-2 border-t border-[#262a33]">
+                  <label className="block text-[11px] font-mono font-bold text-[#8083ff] mb-2 flex items-center gap-1.5">
                     <Maximize2 className="w-3.5 h-3.5" />
                     <span>Live Storefront Card Preview</span>
                   </label>
-                  <div className="w-full max-w-xs mx-auto rounded-3xl bg-[#0a1120] border border-indigo-500/30 overflow-hidden shadow-xl">
+                  <div className="w-full max-w-xs mx-auto rounded-2xl bg-[#181c24] border border-[#262a33] overflow-hidden shadow-xl">
                     <div
                       className={`relative h-36 w-full p-4 flex flex-col justify-between overflow-hidden ${
-                        !editCustomBgUrl ? `bg-gradient-to-br ${editBannerGradient}` : "bg-slate-900"
+                        !editCustomBgUrl ? `bg-gradient-to-br ${editBannerGradient}` : "bg-[#181c24]"
                       }`}
                       style={
                         editCustomBgUrl
@@ -2861,14 +2895,14 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                       }
                     >
                       {editCustomBgUrl && (
-                        <div className="absolute inset-0 bg-gradient-to-t from-[#0a1120] via-black/40 to-black/30 pointer-events-none" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#181c24] via-black/40 to-black/30 pointer-events-none" />
                       )}
                       <div className="relative z-10 flex items-center justify-between">
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#050811]/70 text-indigo-300 backdrop-blur-md border border-indigo-500/30">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-[#0f131c]/80 text-[#8083ff] backdrop-blur-md border border-[#262a33]">
                           {editCategory}
                         </span>
                         {editBadge && editBadge !== "None" && (
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-400 text-black shadow-indigo-400/40">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase bg-[#8083ff] text-[#0d0096]">
                             {editBadge}
                           </span>
                         )}
@@ -2882,22 +2916,22 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                           className="w-12 h-12"
                           size={24}
                         />
-                        <div className="px-2 py-0.5 rounded-lg bg-[#050811]/80 backdrop-blur-md border border-indigo-500/30 text-indigo-300 text-[10px] font-bold">
+                        <div className="px-2 py-0.5 rounded-lg bg-[#0f131c]/80 backdrop-blur-md border border-[#262a33] text-[#4edea3] text-[10px] font-mono font-bold">
                           ⚡ Instant
                         </div>
                       </div>
                     </div>
 
-                    <div className="p-3 bg-[#0a1120] border-t border-white/5 space-y-1">
-                      <div className="text-xs font-black text-white truncate">
+                    <div className="p-3 bg-[#181c24] border-t border-[#262a33] space-y-1">
+                      <div className="text-xs font-bold text-[#dfe2ee] truncate">
                         {editName.trim() || "Product Title Example"}
                       </div>
                       <div className="flex items-baseline gap-2">
-                        <span className="text-sm font-black text-white">
+                        <span className="text-sm font-mono font-bold text-[#dfe2ee]">
                           ₹{editPrice || "199"}
                         </span>
                         {editOriginalPrice && (
-                          <span className="text-[10px] text-slate-500 line-through">
+                          <span className="text-[10px] font-mono text-[#908fa0] line-through">
                             ₹{editOriginalPrice}
                           </span>
                         )}
@@ -2909,29 +2943,29 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
               {/* Short Description */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Short Description</label>
+                <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Short Description</label>
                 <input
                   type="text"
                   value={editShortDescription}
                   onChange={(e) => setEditShortDescription(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-indigo-500/30 text-xs text-white"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#dfe2ee] focus:outline-none focus:border-[#8083ff]"
                 />
               </div>
 
               {/* Detailed Description */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Full Detailed Description</label>
+                <label className="block font-mono text-xs font-bold text-[#c7c4d7] mb-1">Full Detailed Description</label>
                 <textarea
                   rows={3}
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-indigo-500/30 text-xs text-white resize-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#dfe2ee] focus:outline-none focus:border-[#8083ff] resize-none"
                 />
               </div>
 
               {/* Features List Editor */}
-              <div className="p-4 rounded-2xl bg-black/40 border border-indigo-500/25 space-y-2">
-                <label className="block text-xs font-black text-indigo-300 uppercase tracking-wider">
+              <div className="p-4 rounded-xl bg-[#10141d] border border-[#262a33] space-y-2">
+                <label className="block text-xs font-mono font-bold text-[#8083ff] uppercase tracking-wider">
                   Product Features / Highlights ({editFeatures.length})
                 </label>
                 <div className="flex gap-2">
@@ -2949,7 +2983,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                         }
                       }
                     }}
-                    className="flex-1 px-3 py-2 text-xs rounded-xl bg-black/60 border border-white/15 text-white"
+                    className="flex-1 px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff]"
                   />
                   <button
                     type="button"
@@ -2959,20 +2993,20 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                         setNewFeatureText("");
                       }
                     }}
-                    className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs cursor-pointer"
+                    className="px-4 py-2 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white font-mono font-bold text-xs cursor-pointer"
                   >
                     Add
                   </button>
                 </div>
 
-                <div className="space-y-1.5 max-h-36 overflow-y-auto pt-1">
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pt-1 font-mono">
                   {editFeatures.map((feat, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-white/5 text-xs text-slate-300">
+                    <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#c7c4d7]">
                       <span className="truncate">{feat}</span>
                       <button
                         type="button"
                         onClick={() => setEditFeatures(editFeatures.filter((_, i) => i !== idx))}
-                        className="text-rose-400 hover:text-rose-300 ml-2 cursor-pointer"
+                        className="text-[#ffb4ab] hover:text-white ml-2 cursor-pointer"
                       >
                         ✕
                       </button>
@@ -2985,7 +3019,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-indigo-500 via-blue-600 to-cyan-500 hover:from-indigo-400 hover:to-cyan-400 text-white font-black text-sm shadow-xl shadow-indigo-500/30 cursor-pointer disabled:opacity-50"
+                  className="w-full py-4 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white font-mono font-bold text-sm shadow-xl shadow-[#8083ff]/20 cursor-pointer disabled:opacity-50"
                 >
                   {submitting ? "Saving Changes to Database..." : "Save Product Changes to Database"}
                 </button>
