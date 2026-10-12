@@ -1,4 +1,6 @@
 import nodemailer, { type SentMessageInfo } from "nodemailer";
+import fs from "fs";
+import path from "path";
 import { Redis } from "@upstash/redis";
 import { APP_CONFIG } from "@/lib/config";
 import { incrementCouponUsage } from "@/lib/coupons";
@@ -472,6 +474,35 @@ export async function getFulfilledCredential(
   return list[0] ?? null;
 }
 
+export const ADMIN_PROFILE_PIC_KEY = "trinitymart_admin_profile_pic";
+
+/**
+ * Retrieve the current Admin Profile Picture URL or Base64 data from Redis,
+ * environment variables, or local default.
+ */
+export async function getAdminProfilePic(): Promise<string> {
+  try {
+    const saved = await redis.get<string>(ADMIN_PROFILE_PIC_KEY);
+    if (saved && typeof saved === "string" && saved.trim()) {
+      return saved.trim();
+    }
+  } catch (e) {
+    console.warn("Could not read admin profile pic from Redis:", e);
+  }
+  return (
+    process.env.ADMIN_PROFILE_PIC ||
+    process.env.NEXT_PUBLIC_ADMIN_PROFILE_PIC ||
+    "/admin-profile.jpg"
+  );
+}
+
+/**
+ * Persist updated Admin Profile Picture URL or Base64 data into Redis.
+ */
+export async function setAdminProfilePic(picUrl: string): Promise<void> {
+  await redis.set(ADMIN_PROFILE_PIC_KEY, picUrl.trim());
+}
+
 export function createMailTransporter() {
   const user = (process.env.GMAIL_USER || "").trim();
   const pass = (process.env.GMAIL_APP_PASSWORD || "").replace(/\s+/g, "");
@@ -531,92 +562,173 @@ export async function sendCredentialEmail({
       ? APP_CONFIG.discordLink
       : `${baseUrl}/discord`);
 
+  // ── Profile Picture Resolution & Inline Attachment ───────────────────────
+  const configuredPic = await getAdminProfilePic();
+  const attachments: Array<{
+    filename?: string;
+    path?: string;
+    content?: Buffer;
+    contentType?: string;
+    cid?: string;
+  }> = [];
+
+  let avatarImgSrc = "";
+  const publicJpgPath = path.join(process.cwd(), "public", "admin-profile.jpg");
+
+  if (configuredPic && configuredPic.startsWith("data:image/")) {
+    const match = configuredPic.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      attachments.push({
+        filename: "admin-avatar.png",
+        content: Buffer.from(match[2], "base64"),
+        contentType: match[1],
+        cid: "admin-profile-avatar",
+      });
+      avatarImgSrc = "cid:admin-profile-avatar";
+    } else {
+      avatarImgSrc = `${baseUrl}/admin-profile.jpg`;
+    }
+  } else if (configuredPic && (configuredPic.startsWith("http://") || configuredPic.startsWith("https://"))) {
+    avatarImgSrc = configuredPic;
+  } else if (fs.existsSync(publicJpgPath)) {
+    attachments.push({
+      filename: "admin-profile.jpg",
+      path: publicJpgPath,
+      cid: "admin-profile-avatar",
+    });
+    avatarImgSrc = "cid:admin-profile-avatar";
+  } else {
+    avatarImgSrc = `${baseUrl}/admin-profile.jpg`;
+  }
+
+  // ── Credentials HTML formatting with rich gradient cards ────────────────
   const credentialsHtml = allCreds
-    .map(
-      (cred, idx) => {
-        const itemTitle = cred.productName || primaryTitle;
-        const accountId = cred.fields?.id || cred.fields?.username || cred.fields?.login || (cred.email !== email ? cred.email : "");
-        const password = cred.fields?.password || cred.password || cred.emailPassword;
-        const token = cred.fields?.token || cred.token || cred.fields?.key;
-        const pin = cred.fields?.pin || cred.twoFactorKey || cred.fields?.["2fa"];
+    .map((cred, idx) => {
+      const itemTitle = cred.productName || primaryTitle;
+      const accountId = cred.fields?.id || cred.fields?.username || cred.fields?.login || (cred.email !== email ? cred.email : "");
+      const password = cred.fields?.password || cred.password || cred.emailPassword;
+      const token = cred.fields?.token || cred.token || cred.fields?.key;
+      const pin = cred.fields?.pin || cred.twoFactorKey || cred.fields?.["2fa"];
 
-        const standardKeys = new Set([
-          "id",
-          "email",
-          "username",
-          "login",
-          "password",
-          "emailPassword",
-          "discordPassword",
-          "token",
-          "key",
-          "license",
-          "code",
-          "pin",
-          "twoFactorKey",
-          "2fa",
-          "twoFactor",
-          "domain",
-          "keyweb",
-          "productName",
-        ]);
+      const standardKeys = new Set([
+        "id",
+        "email",
+        "username",
+        "login",
+        "password",
+        "emailPassword",
+        "discordPassword",
+        "token",
+        "key",
+        "license",
+        "code",
+        "pin",
+        "twoFactorKey",
+        "2fa",
+        "twoFactor",
+        "domain",
+        "keyweb",
+        "productName",
+      ]);
 
-        const customFieldsHtml = cred.fields
-          ? Object.entries(cred.fields)
-              .filter(([k, v]) => !standardKeys.has(k) && Boolean(v))
-              .map(
-                ([k, v]) => `
+      const customFieldsHtml = cred.fields
+        ? Object.entries(cred.fields)
+            .filter(([k, v]) => !standardKeys.has(k) && Boolean(v))
+            .map(
+              ([k, v]) => `
+      <tr>
+        <td style="color:#94a3b8;font-size:13px;padding:6px 0;width:130px;font-weight:600;">${k}:</td>
+        <td style="padding:4px 0;">
+          <div style="background:#090d16;color:#e2e8f0;font-size:13px;font-weight:700;font-family:'Courier New',Courier,monospace;padding:9px 14px;border-radius:8px;border:1px solid #1e293b;word-break:break-all;">
+            ${String(v)}
+          </div>
+        </td>
+      </tr>`
+            )
+            .join("")
+        : "";
+
+      return `
+    <div style="background:linear-gradient(180deg,#14192b 0%,#0c101d 100%);border:1.5px solid #29354d;border-radius:16px;padding:22px;margin:18px 0;box-shadow:0 12px 30px rgba(0,0,0,0.5);">
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:12px;">
         <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>${k}:</strong></td>
-          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;word-break:break-all;">${String(v)}</td>
-        </tr>`
-              )
-              .join("")
-          : "";
+          <td>
+            <span style="background:linear-gradient(135deg,#06b6d4 0%,#3b82f6 100%);color:#ffffff;font-size:11px;font-weight:800;padding:5px 12px;border-radius:8px;text-transform:uppercase;letter-spacing:0.6px;display:inline-block;">
+              🔑 ${qty > 1 ? `Unit #${idx + 1} &mdash; ${itemTitle}` : `Credentials &bull; ${itemTitle}`}
+            </span>
+          </td>
+          <td align="right">
+            <span style="color:#34d399;font-size:11px;font-weight:700;background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);border-radius:16px;padding:3px 10px;display:inline-block;">
+              ● Verified &amp; Active
+            </span>
+          </td>
+        </tr>
+      </table>
 
-        return `
-    <div style="background:#f8fafc;border:2px solid #06b6d4;border-radius:12px;padding:18px 22px;margin:16px 0;">
-      <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:#0891b2;text-transform:uppercase;letter-spacing:0.5px;">
-        ${qty > 1 ? `Unit #${idx + 1}: ${itemTitle}` : `Your ${itemTitle} Credentials`}
-      </p>
       <table width="100%" cellpadding="0" cellspacing="0">
         ${accountId ? `
         <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>Account ID / Login:</strong></td>
-          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${accountId}</td>
+          <td style="color:#94a3b8;font-size:13px;padding:6px 0;width:130px;font-weight:600;">Account ID / Login</td>
+          <td style="padding:4px 0;">
+            <div style="background:#090d16;color:#38bdf8;font-size:14px;font-weight:700;font-family:'Courier New',Courier,monospace;padding:9px 14px;border-radius:8px;border:1px solid #1e293b;word-break:break-all;">
+              ${accountId}
+            </div>
+          </td>
         </tr>` : `
         <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:105px;"><strong>Customer Email:</strong></td>
-          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${cred.email}</td>
+          <td style="color:#94a3b8;font-size:13px;padding:6px 0;width:130px;font-weight:600;">Customer Email</td>
+          <td style="padding:4px 0;">
+            <div style="background:#090d16;color:#38bdf8;font-size:14px;font-weight:700;font-family:'Courier New',Courier,monospace;padding:9px 14px;border-radius:8px;border:1px solid #1e293b;word-break:break-all;">
+              ${cred.email}
+            </div>
+          </td>
         </tr>`}
         ${password ? `
         <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>Password:</strong></td>
-          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${password}</td>
+          <td style="color:#94a3b8;font-size:13px;padding:6px 0;width:130px;font-weight:600;">Password</td>
+          <td style="padding:4px 0;">
+            <div style="background:#090d16;color:#4ade80;font-size:14px;font-weight:700;font-family:'Courier New',Courier,monospace;padding:9px 14px;border-radius:8px;border:1px solid #1e293b;word-break:break-all;">
+              ${password}
+            </div>
+          </td>
         </tr>` : ""}
         ${token ? `
         <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>License Key / Code:</strong></td>
-          <td style="color:#0f172a;font-size:13px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;word-break:break-all;">${token}</td>
+          <td style="color:#94a3b8;font-size:13px;padding:6px 0;width:130px;font-weight:600;">License / Key</td>
+          <td style="padding:4px 0;">
+            <div style="background:#090d16;color:#c084fc;font-size:13px;font-weight:700;font-family:'Courier New',Courier,monospace;padding:9px 14px;border-radius:8px;border:1px solid #1e293b;word-break:break-all;">
+              ${token}
+            </div>
+          </td>
         </tr>` : ""}
         ${pin ? `
         <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>2FA / PIN:</strong></td>
-          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${pin}</td>
+          <td style="color:#94a3b8;font-size:13px;padding:6px 0;width:130px;font-weight:600;">2FA / PIN Code</td>
+          <td style="padding:4px 0;">
+            <div style="background:#090d16;color:#fbbf24;font-size:14px;font-weight:700;font-family:'Courier New',Courier,monospace;padding:9px 14px;border-radius:8px;border:1px solid #1e293b;word-break:break-all;">
+              ${pin}
+            </div>
+          </td>
         </tr>` : ""}
         ${customFieldsHtml}
         ${cred.domain ? `
         <tr>
-          <td style="color:#64748b;font-size:14px;padding:5px 0;width:130px;"><strong>Domain:</strong></td>
-          <td style="color:#0f172a;font-size:14px;font-weight:600;font-family:monospace;background:#ffffff;padding:7px 12px;border-radius:6px;border:1px solid #cbd5e1;">${cred.domain}</td>
+          <td style="color:#94a3b8;font-size:13px;padding:6px 0;width:130px;font-weight:600;">Domain</td>
+          <td style="padding:4px 0;">
+            <div style="background:#090d16;color:#e2e8f0;font-size:13px;font-weight:600;font-family:'Courier New',Courier,monospace;padding:9px 14px;border-radius:8px;border:1px solid #1e293b;">
+              ${cred.domain}
+            </div>
+          </td>
         </tr>` : ""}
       </table>
-      <p style="margin:10px 0 0;font-size:12px;color:#64748b;">
-        💡 Save these credentials securely. Full replacement warranty is active.
-      </p>
+
+      <div style="margin-top:14px;padding:10px 14px;background:rgba(6,182,212,0.06);border-left:3px solid #06b6d4;border-radius:0 8px 8px 0;">
+        <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.5;">
+          🔒 <strong style="color:#e2e8f0;">Security tip:</strong> Save credentials safely. Full replacement warranty is active.
+        </p>
+      </div>
     </div>`;
-      }
-    )
+    })
     .join("");
 
   const adminUser = (process.env.GMAIL_USER || "").trim();
@@ -627,6 +739,7 @@ export async function sendCredentialEmail({
     to: email,
     bcc: adminUser && adminUser.toLowerCase() !== email.toLowerCase() ? adminUser : undefined,
     subject: `✅ Your ${primaryTitle} [${qty} Delivered] — Payment Confirmed`,
+    attachments,
     html: `
       <!DOCTYPE html>
       <html lang="en">
@@ -635,98 +748,152 @@ export async function sendCredentialEmail({
         <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
         <title>${primaryTitle}</title>
       </head>
-      <body style="margin:0;padding:0;background:#0f172a;font-family:'Segoe UI',Arial,sans-serif;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:40px 0;">
+      <body style="margin:0;padding:0;background:#0b0f19;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;color:#dfe2ee;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#0b0f19;padding:40px 12px;">
           <tr>
             <td align="center">
-              <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
-                <!-- Header -->
+              <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#111524;border-radius:24px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,0.6);border:1px solid #232b42;">
+                
+                <!-- ── GRADIENT HEADER WITH ADMIN PROFILE PIC ── -->
                 <tr>
-                  <td style="background:linear-gradient(135deg,#06b6d4,#2563eb);padding:36px 40px;text-align:center;">
-                    <div style="font-size:38px;margin-bottom:8px;">⚡</div>
-                    <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:-0.5px;">Payment Confirmed!</h1>
-                    <p style="margin:8px 0 0;color:rgba(255,255,255,0.9);font-size:14px;">${qty}x ${primaryTitle} delivered instantly</p>
+                  <td style="background:linear-gradient(135deg,#1e1b4b 0%,#2e1065 50%,#0f172a 100%);padding:40px 32px 32px 32px;text-align:center;border-bottom:1px solid #2e3856;">
+                    
+                    <!-- Admin Profile Picture with Glowing Gradient Ring -->
+                    <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 16px auto;">
+                      <tr>
+                        <td align="center">
+                          <div style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#06b6d4,#8b5cf6,#ec4899);padding:3px;box-shadow:0 0 25px rgba(6,182,212,0.45);display:inline-block;">
+                            <img src="${avatarImgSrc}" width="80" height="80" alt="Admin Profile" style="width:80px;height:80px;border-radius:50%;object-fit:cover;display:block;background:#0f172a;" />
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Official Admin Dispatcher Badge -->
+                    <div style="text-align:center;margin-bottom:12px;">
+                      <span style="display:inline-block;background:linear-gradient(135deg,rgba(6,182,212,0.2),rgba(139,92,246,0.2));border:1px solid rgba(56,189,248,0.4);border-radius:24px;padding:5px 16px;font-size:11px;font-weight:800;color:#38bdf8;letter-spacing:0.8px;text-transform:uppercase;">
+                        🛡️ TRINITYMART DISPATCH &bull; VERIFIED ADMIN
+                      </span>
+                    </div>
+
+                    <!-- Thank You Heading (Rich Gradient Accent) -->
+                    <h1 style="margin:0 0 8px 0;color:#ffffff;font-size:26px;font-weight:800;letter-spacing:-0.5px;line-height:1.2;">
+                      Thank You for Your Order! 🎉
+                    </h1>
+                    <p style="margin:0 auto;color:#cbd5e1;font-size:14px;line-height:1.6;max-width:460px;">
+                      Hi ${senderName ? `<strong style="color:#ffffff;">${senderName}</strong>` : "there"}, your payment of <strong style="color:#34d399;">₹${amount}</strong> was confirmed successfully. Your digital assets are delivered below.
+                    </p>
                   </td>
                 </tr>
-                <tr>
-                  <td style="padding:32px 36px;">
-                    <p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">
-                      Hi ${senderName ? `<strong>${senderName}</strong>` : "there"},<br/>
-                      Thank you for your purchase from Trinitymart! Your payment has been verified and your authentic account credentials from our database are below.
-                    </p>
 
-                    <!-- Features & Warranty Badge -->
-                    <div style="display:flex;gap:8px;margin-bottom:20px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 16px;">
-                      <span style="font-size:16px;">🛡️</span>
-                      <div style="font-size:13px;color:#166534;line-height:1.5;">
-                        <strong>Warranty Guarantee Included:</strong> Every product is backed by our full replacement warranty. If you ever need help, reach out to our 24/7 support team on Discord!
+                <!-- ── MAIN BODY CONTENT ── -->
+                <tr>
+                  <td style="padding:32px 28px;">
+                    
+                    <!-- Warranty Guarantee Banner -->
+                    <div style="display:flex;align-items:center;background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(5,150,105,0.05));border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:14px 18px;margin-bottom:24px;">
+                      <span style="font-size:22px;margin-right:12px;">🛡️</span>
+                      <div style="font-size:13px;color:#a7f3d0;line-height:1.5;">
+                        <strong style="color:#34d399;">Full Replacement Warranty Active:</strong> Every unit is verified and backed by replacement guarantee. Need help? 24/7 Discord support is always on standby.
                       </div>
                     </div>
 
-                    <!-- Account Details Section -->
-                    ${credentialsHtml}
+                    <!-- ── CREDENTIALS SECTION (GRADIENT STYLED) ── -->
+                    <div style="margin:20px 0;">
+                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                        <span style="font-size:12px;font-weight:800;color:#38bdf8;text-transform:uppercase;letter-spacing:1px;">
+                          ⚡ Instant Delivered Credentials
+                        </span>
+                        <span style="font-size:12px;color:#94a3b8;">
+                          ${qty} Unit(s)
+                        </span>
+                      </div>
+                      ${credentialsHtml}
+                    </div>
 
-                    <!-- Payment Summary Box -->
-                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:18px 20px;margin:20px 0;">
-                      <p style="margin:0 0 10px;font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Payment Details</p>
-                      <table width="100%" cellpadding="0" cellspacing="0">
+                    <!-- ── OFFICIAL INVOICE & WEB RECEIPT (GRADIENT BUTTON) ── -->
+                    <div style="background:linear-gradient(135deg,rgba(15,23,42,0.95) 0%,rgba(24,30,54,0.95) 100%);border:1.5px solid #3b82f6;border-radius:18px;padding:24px;margin:26px 0;box-shadow:0 8px 32px rgba(37,99,235,0.2);">
+                      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
                         <tr>
-                          <td style="color:#64748b;font-size:13px;padding:4px 0;">Product</td>
-                          <td style="color:#0f172a;font-size:13px;font-weight:600;text-align:right;">${primaryTitle}</td>
+                          <td>
+                            <div style="font-size:12px;font-weight:800;color:#60a5fa;text-transform:uppercase;letter-spacing:1px;">
+                              📄 OFFICIAL INVOICE &amp; PAYMENT SUMMARY
+                            </div>
+                          </td>
+                          <td align="right">
+                            <span style="font-size:11px;font-weight:700;color:#34d399;background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);padding:3px 10px;border-radius:20px;">
+                              PAID IN FULL
+                            </span>
+                          </td>
+                        </tr>
+                      </table>
+
+                      <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+                        <tr>
+                          <td style="color:#94a3b8;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">Product</td>
+                          <td style="color:#ffffff;font-weight:700;text-align:right;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">${primaryTitle}</td>
                         </tr>
                         <tr>
-                          <td style="color:#64748b;font-size:13px;padding:4px 0;">Quantity</td>
-                          <td style="color:#0891b2;font-size:13px;font-weight:700;text-align:right;">${qty} Unit(s)</td>
+                          <td style="color:#94a3b8;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">Quantity</td>
+                          <td style="color:#38bdf8;font-weight:700;text-align:right;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">${qty} Unit(s)</td>
                         </tr>
                         <tr>
-                          <td style="color:#64748b;font-size:13px;padding:4px 0;">Order ID</td>
-                          <td style="color:#0891b2;font-size:13px;font-weight:600;text-align:right;font-family:monospace;">${orderId}</td>
+                          <td style="color:#94a3b8;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">Invoice / Order ID</td>
+                          <td style="color:#60a5fa;font-weight:700;text-align:right;font-family:'Courier New',Courier,monospace;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">${orderId}</td>
                         </tr>
                         ${utr ? `
                         <tr>
-                          <td style="color:#64748b;font-size:13px;padding:4px 0;">Bank UTR</td>
-                          <td style="color:#0f172a;font-size:13px;font-weight:600;text-align:right;font-family:monospace;">${utr}</td>
+                          <td style="color:#94a3b8;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">Bank UTR Reference</td>
+                          <td style="color:#e2e8f0;font-weight:700;text-align:right;font-family:'Courier New',Courier,monospace;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">${utr}</td>
                         </tr>` : ""}
                         <tr>
-                          <td style="color:#64748b;font-size:13px;padding:4px 0;">Amount Paid</td>
-                          <td style="color:#16a34a;font-size:14px;font-weight:700;text-align:right;">₹${amount}</td>
+                          <td style="color:#94a3b8;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">Amount Paid</td>
+                          <td style="color:#34d399;font-weight:800;font-size:15px;text-align:right;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">₹${amount}</td>
+                        </tr>
+                        <tr>
+                          <td style="color:#94a3b8;padding:6px 0;">Warranty Coverage</td>
+                          <td style="color:#34d399;font-weight:700;text-align:right;padding:6px 0;">Lifetime Replacement Active</td>
                         </tr>
                       </table>
+
+                      <!-- Glowing Gradient Invoice Link Button -->
+                      <div style="text-align:center;margin-top:20px;">
+                        <a href="${confirmReceiptUrl}" target="_blank" style="display:inline-block;background:linear-gradient(135deg,#06b6d4 0%,#2563eb 50%,#7c3aed 100%);color:#ffffff;text-decoration:none;padding:14px 34px;border-radius:12px;font-weight:800;font-size:14px;letter-spacing:0.4px;box-shadow:0 6px 24px rgba(6,182,212,0.45);border:1px solid rgba(255,255,255,0.25);">
+                          📄 View Official Invoice &amp; Confirm Delivery &rarr;
+                        </a>
+                        <p style="margin:10px 0 0 0;font-size:11px;color:#94a3b8;">
+                          Click to open your live web invoice, save receipt &amp; log delivery in 1 click.
+                        </p>
+                      </div>
                     </div>
 
-                    <!-- Delivery Receipt Confirmation Box -->
-                    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:18px 20px;margin:20px 0;text-align:center;">
-                      <p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#1e40af;">
-                        📬 Confirm Delivery &amp; Access Web Receipt
-                      </p>
-                      <p style="margin:0 0 12px;font-size:12px;color:#3b82f6;line-height:1.4;">
-                        Confirm that you have received your credentials and view your warranty status and receipt online anytime.
-                      </p>
-                      <a href="${confirmReceiptUrl}" target="_blank" style="display:inline-block;background:#0891b2;color:#ffffff;text-decoration:none;padding:10px 22px;border-radius:8px;font-weight:600;font-size:13px;box-shadow:0 2px 4px rgba(8,145,178,0.2);">
-                        ✅ Confirm Receipt Online
+                    <!-- ── 24/7 DISCORD SUPPORT BOX ── -->
+                    <div style="background:linear-gradient(135deg,rgba(88,101,242,0.15) 0%,rgba(124,58,237,0.12) 100%);border:1px solid rgba(88,101,242,0.35);border-radius:16px;padding:22px 20px;text-align:center;margin:22px 0;">
+                      <p style="margin:0 0 6px;font-weight:800;color:#818cf8;font-size:15px;">💬 Need Help? 24/7 Live Discord Support</p>
+                      <p style="margin:0 0 14px;color:#94a3b8;font-size:13px;line-height:1.5;">Join our official server for warranty replacements, ticket assistance, and instant guide downloads.</p>
+                      <a href="${emailDiscordUrl}" target="_blank" style="display:inline-block;background:linear-gradient(135deg,#5865F2,#7c3aed);color:#ffffff;text-decoration:none;padding:11px 26px;border-radius:10px;font-weight:700;font-size:13px;box-shadow:0 4px 14px rgba(88,101,242,0.35);">
+                        Join Official Discord Server &rarr;
                       </a>
                     </div>
 
-                    <!-- Discord 24/7 Support Box -->
-                    <div style="background:linear-gradient(135deg,rgba(88,101,242,0.1),rgba(124,58,237,0.1));border:1px solid rgba(88,101,242,0.3);border-radius:12px;padding:20px;text-align:center;margin:24px 0;">
-                      <p style="margin:0 0 6px;font-weight:700;color:#5865F2;font-size:15px;">Need Help? 24/7 Support on Discord</p>
-                      <p style="margin:0 0 14px;color:#64748b;font-size:13px;">Join our official server for warranty replacements, boost guides, and instant ticket assistance.</p>
-                      <a href="${emailDiscordUrl}" target="_blank" style="display:inline-block;background:#5865F2;color:#ffffff;text-decoration:none;padding:10px 22px;border-radius:8px;font-weight:600;font-size:13px;">
-                        💬 Join Discord Support Server
-                      </a>
-                    </div>
-
-                    <p style="margin:20px 0 0;color:#94a3b8;font-size:12px;line-height:1.6;text-align:center;">
+                    <p style="margin:20px 0 0;color:#64748b;font-size:12px;line-height:1.6;text-align:center;">
                       Please save these credentials safely and change the passwords if desired.
                     </p>
                   </td>
                 </tr>
-                <!-- Footer -->
+
+                <!-- ── FOOTER ── -->
                 <tr>
-                  <td style="background:#f1f5f9;border-top:1px solid #e2e8f0;padding:18px 36px;text-align:center;">
-                    <p style="margin:0;color:#94a3b8;font-size:12px;">Get Your Account &middot; Automated UPI Settlement &middot; 24/7 Support</p>
+                  <td style="background:#090d16;border-top:1px solid #1e293b;padding:22px 36px;text-align:center;">
+                    <p style="margin:0 0 6px;color:#64748b;font-size:12px;font-weight:600;">
+                      Trinitymart &bull; Automated Digital Goods Dispatch &bull; 24/7 Support
+                    </p>
+                    <p style="margin:0;color:#475569;font-size:11px;">
+                      This email contains your confidential credentials. If you did not make this purchase, contact support immediately.
+                    </p>
                   </td>
                 </tr>
+
               </table>
             </td>
           </tr>
@@ -769,6 +936,50 @@ export async function sendMerchantSaleNotification({
     const primaryTitle = productName || credentials[0]?.productName || "Digital Asset";
     const qty = credentials.length;
 
+    const baseUrl = (
+      process.env.APP_URL ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
+      "https://get-me-account.vercel.app"
+    ).replace(/\/+$/, "");
+
+    // Resolve Admin Profile Pic
+    const configuredPic = await getAdminProfilePic();
+    const attachments: Array<{
+      filename?: string;
+      path?: string;
+      content?: Buffer;
+      contentType?: string;
+      cid?: string;
+    }> = [];
+
+    let avatarImgSrc = "";
+    const publicJpgPath = path.join(process.cwd(), "public", "admin-profile.jpg");
+
+    if (configuredPic && configuredPic.startsWith("data:image/")) {
+      const match = configuredPic.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        attachments.push({
+          filename: "admin-avatar.png",
+          content: Buffer.from(match[2], "base64"),
+          contentType: match[1],
+          cid: "merchant-admin-avatar",
+        });
+        avatarImgSrc = "cid:merchant-admin-avatar";
+      }
+    } else if (configuredPic && (configuredPic.startsWith("http://") || configuredPic.startsWith("https://"))) {
+      avatarImgSrc = configuredPic;
+    } else if (fs.existsSync(publicJpgPath)) {
+      attachments.push({
+        filename: "admin-profile.jpg",
+        path: publicJpgPath,
+        cid: "merchant-admin-avatar",
+      });
+      avatarImgSrc = "cid:merchant-admin-avatar";
+    } else {
+      avatarImgSrc = `${baseUrl}/admin-profile.jpg`;
+    }
+
     const credentialsListHtml = credentials
       .map((cred, idx) => {
         const id = cred.fields?.id || cred.fields?.username || cred.fields?.login || cred.email;
@@ -776,14 +987,14 @@ export async function sendMerchantSaleNotification({
         const tok = cred.fields?.token || cred.token || cred.fields?.key;
         const pin = cred.fields?.pin || cred.twoFactorKey || cred.fields?.["2fa"];
         return `
-          <div style="background:#f8fafc;border-left:4px solid #10b981;border-radius:8px;padding:12px 16px;margin:10px 0;font-family:monospace;">
-            <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#0f172a;text-transform:uppercase;font-family:'Segoe UI',sans-serif;">
+          <div style="background:#090d16;border:1px solid #1e293b;border-left:4px solid #10b981;border-radius:10px;padding:14px 16px;margin:12px 0;font-family:'Courier New',Courier,monospace;">
+            <p style="margin:0 0 8px;font-size:12px;font-weight:700;color:#38bdf8;text-transform:uppercase;font-family:'Segoe UI',sans-serif;">
               Unit #${idx + 1} &mdash; ${cred.productName || primaryTitle}
             </p>
-            ${id ? `<p style="margin:4px 0;font-size:13px;color:#334155;"><strong>Login / ID:</strong> ${id}</p>` : ""}
-            ${pass ? `<p style="margin:4px 0;font-size:13px;color:#334155;"><strong>Password:</strong> ${pass}</p>` : ""}
-            ${tok ? `<p style="margin:4px 0;font-size:13px;color:#334155;word-break:break-all;"><strong>Token/Key:</strong> ${tok}</p>` : ""}
-            ${pin ? `<p style="margin:4px 0;font-size:13px;color:#334155;"><strong>2FA / PIN:</strong> ${pin}</p>` : ""}
+            ${id ? `<p style="margin:4px 0;font-size:13px;color:#cbd5e1;"><strong style="color:#94a3b8;">Login / ID:</strong> <span style="color:#38bdf8;font-weight:700;">${id}</span></p>` : ""}
+            ${pass ? `<p style="margin:4px 0;font-size:13px;color:#cbd5e1;"><strong style="color:#94a3b8;">Password:</strong> <span style="color:#4ade80;font-weight:700;">${pass}</span></p>` : ""}
+            ${tok ? `<p style="margin:4px 0;font-size:13px;color:#cbd5e1;word-break:break-all;"><strong style="color:#94a3b8;">Token/Key:</strong> <span style="color:#c084fc;font-weight:700;">${tok}</span></p>` : ""}
+            ${pin ? `<p style="margin:4px 0;font-size:13px;color:#cbd5e1;"><strong style="color:#94a3b8;">2FA / PIN:</strong> <span style="color:#fbbf24;font-weight:700;">${pin}</span></p>` : ""}
           </div>
         `;
       })
@@ -793,59 +1004,78 @@ export async function sendMerchantSaleNotification({
       from: `"Trinitymart Store" <${adminEmail}>`,
       to: adminEmail,
       subject: `💰 Money Received! ₹${amount} from ${customerEmail} (Order #${orderId})`,
+      attachments,
       html: `
         <!DOCTYPE html>
         <html>
         <head><meta charset="UTF-8"/></head>
-        <body style="font-family:'Segoe UI',Arial,sans-serif;background:#0f172a;padding:30px 10px;margin:0;">
+        <body style="font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;background:#0b0f19;padding:30px 10px;margin:0;color:#dfe2ee;">
           <table width="100%" cellpadding="0" cellspacing="0">
             <tr>
               <td align="center">
-                <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.3);">
+                <table width="580" cellpadding="0" cellspacing="0" style="max-width:580px;background:#111524;border-radius:20px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.6);border:1px solid #232b42;">
+                  
+                  <!-- Gradient Header -->
                   <tr>
-                    <td style="background:linear-gradient(135deg,#059669,#10b981);padding:30px;text-align:center;color:#ffffff;">
-                      <h1 style="margin:0;font-size:24px;">💰 Payment Received!</h1>
-                      <p style="margin:6px 0 0;font-size:15px;opacity:0.95;">₹${amount} credited &amp; credentials dispatched to buyer</p>
+                    <td style="background:linear-gradient(135deg,#065f46 0%,#047857 50%,#0f172a 100%);padding:32px 24px;text-align:center;border-bottom:1px solid #10b981;">
+                      <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 12px auto;">
+                        <tr>
+                          <td align="center">
+                            <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#10b981,#34d399,#06b6d4);padding:3px;box-shadow:0 0 20px rgba(16,185,129,0.45);display:inline-block;">
+                              <img src="${avatarImgSrc}" width="72" height="72" alt="Admin Profile" style="width:72px;height:72px;border-radius:50%;object-fit:cover;display:block;background:#0f172a;" />
+                            </div>
+                          </td>
+                        </tr>
+                      </table>
+                      <h1 style="margin:0;font-size:24px;color:#ffffff;font-weight:800;">💰 Money Received!</h1>
+                      <p style="margin:6px 0 0;font-size:15px;color:#a7f3d0;">₹${amount} credited &amp; credentials dispatched to buyer</p>
                     </td>
                   </tr>
+
+                  <!-- Order Summary -->
                   <tr>
-                    <td style="padding:28px 32px;">
+                    <td style="padding:28px 28px;">
                       <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;font-size:14px;border-collapse:collapse;">
-                        <tr style="border-bottom:1px solid #e2e8f0;">
-                          <td style="padding:8px 0;color:#64748b;font-weight:600;">Amount Received</td>
-                          <td style="padding:8px 0;color:#059669;font-weight:800;font-size:16px;text-align:right;">₹${amount}</td>
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+                          <td style="padding:10px 0;color:#94a3b8;font-weight:600;">Amount Received</td>
+                          <td style="padding:10px 0;color:#34d399;font-weight:800;font-size:17px;text-align:right;">₹${amount}</td>
                         </tr>
-                        <tr style="border-bottom:1px solid #e2e8f0;">
-                          <td style="padding:8px 0;color:#64748b;font-weight:600;">Customer Email</td>
-                          <td style="padding:8px 0;color:#0f172a;font-weight:700;text-align:right;">${customerEmail}</td>
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+                          <td style="padding:10px 0;color:#94a3b8;font-weight:600;">Customer Email</td>
+                          <td style="padding:10px 0;color:#ffffff;font-weight:700;text-align:right;">${customerEmail}</td>
                         </tr>
-                        <tr style="border-bottom:1px solid #e2e8f0;">
-                          <td style="padding:8px 0;color:#64748b;font-weight:600;">Order ID</td>
-                          <td style="padding:8px 0;color:#0284c7;font-weight:700;font-family:monospace;text-align:right;">${orderId}</td>
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+                          <td style="padding:10px 0;color:#94a3b8;font-weight:600;">Order ID</td>
+                          <td style="padding:10px 0;color:#38bdf8;font-weight:700;font-family:'Courier New',Courier,monospace;text-align:right;">${orderId}</td>
                         </tr>
                         ${utr ? `
-                        <tr style="border-bottom:1px solid #e2e8f0;">
-                          <td style="padding:8px 0;color:#64748b;font-weight:600;">Bank UTR / Ref</td>
-                          <td style="padding:8px 0;color:#0f172a;font-weight:700;font-family:monospace;text-align:right;">${utr}</td>
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+                          <td style="padding:10px 0;color:#94a3b8;font-weight:600;">Bank UTR / Ref</td>
+                          <td style="padding:10px 0;color:#e2e8f0;font-weight:700;font-family:'Courier New',Courier,monospace;text-align:right;">${utr}</td>
                         </tr>` : ""}
-                        <tr style="border-bottom:1px solid #e2e8f0;">
-                          <td style="padding:8px 0;color:#64748b;font-weight:600;">Product</td>
-                          <td style="padding:8px 0;color:#0f172a;font-weight:600;text-align:right;">${primaryTitle} (${qty}x)</td>
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+                          <td style="padding:10px 0;color:#94a3b8;font-weight:600;">Product</td>
+                          <td style="padding:10px 0;color:#ffffff;font-weight:700;text-align:right;">${primaryTitle} (${qty}x)</td>
                         </tr>
                         <tr>
-                          <td style="padding:8px 0;color:#64748b;font-weight:600;">Time</td>
-                          <td style="padding:8px 0;color:#64748b;text-align:right;">${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST</td>
+                          <td style="padding:10px 0;color:#94a3b8;font-weight:600;">Time</td>
+                          <td style="padding:10px 0;color:#cbd5e1;text-align:right;">${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST</td>
                         </tr>
                       </table>
 
-                      <h3 style="margin:24px 0 10px;font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Delivered Credentials:</h3>
+                      <div style="margin:24px 0 10px;">
+                        <span style="font-size:12px;font-weight:800;color:#38bdf8;text-transform:uppercase;letter-spacing:1px;">
+                          Delivered Credentials Copy:
+                        </span>
+                      </div>
                       ${credentialsListHtml}
 
-                      <p style="margin:20px 0 0;font-size:12px;color:#94a3b8;text-align:center;">
-                        This notification confirms that money was received and credentials have been dispatched.
+                      <p style="margin:24px 0 0;font-size:12px;color:#64748b;text-align:center;">
+                        This notification confirms that money was received and credentials were dispatched to customer.
                       </p>
                     </td>
                   </tr>
+
                 </table>
               </td>
             </tr>
@@ -1107,6 +1337,304 @@ export type StoredOrder = {
 export const ORDERS_HISTORY_KEY = "orders_history";
 export const EMAIL_TRACK_KEY = (orderId: string) => `email_track:${orderId}`;
 
+/**
+ * Check FamGateway status for a given orderId with timeout safety.
+ */
+export async function checkFamGatewayOrderStatus(orderId: string): Promise<{
+  status: "success" | "pending" | "expired" | "not_found";
+  utr?: string;
+  senderName?: string;
+  amount?: number;
+}> {
+  const apiKey = process.env.FAMGATEWAY_API_KEY;
+
+  // 1. Fast checkout-status check (<400ms typical)
+  try {
+    const res = await fetch(
+      `https://famgateway.in/api/checkout-status.php?order_id=${encodeURIComponent(orderId)}`,
+      {
+        cache: "no-store",
+        signal: AbortSignal.timeout(3500),
+      }
+    );
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.status === "success" || data.status === "COMPLETED") {
+        return {
+          status: "success",
+          utr: data.utr || data.data?.utr,
+          senderName: data.sender_name || data.data?.sender_name,
+          amount: Number(data.amount || data.data?.amount) || undefined,
+        };
+      }
+      if (data.status === "expired" || data.status === "FAILED") {
+        return { status: "expired" };
+      }
+      if (data.status === "pending") {
+        return { status: "pending" };
+      }
+    }
+  } catch (err) {}
+
+  // 2. Authoritative verify-order endpoint with fallback
+  if (apiKey) {
+    try {
+      const res = await fetch(
+        `https://famgateway.in/api/verify-order.php?api_key=${encodeURIComponent(
+          apiKey
+        )}&order_id=${encodeURIComponent(orderId)}`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "X-Api-Key": apiKey,
+          },
+          cache: "no-store",
+          signal: AbortSignal.timeout(4000),
+        }
+      );
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === "success") {
+          return {
+            status: "success",
+            utr: data.data?.utr || data.utr,
+            senderName: data.data?.sender_name || data.sender_name,
+            amount: Number(data.data?.amount || data.amount) || undefined,
+          };
+        }
+        if (data.status === "expired") {
+          return { status: "expired" };
+        }
+      }
+    } catch (err) {}
+  }
+
+  return { status: "pending" };
+}
+
+/**
+ * Check Atlos Crypto status for a given orderId with timeout safety.
+ */
+export async function checkAtlosOrderStatus(orderId: string): Promise<{
+  status: "success" | "mempool_detected" | "pending";
+  txid?: string;
+  amount?: number;
+}> {
+  const atlosSecret = process.env.ATLOS_API_SECRET || "6UCqzHHDmb5f0NbXOGCmLKFc2PVIMEYB";
+  const merchantId = process.env.ATLOS_MERCHANT_ID || "ADK7QABYR0";
+
+  if (!atlosSecret) {
+    return { status: "pending" };
+  }
+
+  try {
+    const res = await fetch("https://api.atlos.io/gateway/rest/Transaction/List", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ApiSecret: atlosSecret,
+      },
+      body: JSON.stringify({ MerchantId: merchantId, OrderId: orderId }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(6000),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const transactions = Array.isArray(data)
+        ? data
+        : data.Transactions || data.transactions || data.items || [];
+      const match = transactions.find(
+        (t: any) =>
+          t.OrderId === orderId ||
+          t.orderId === orderId ||
+          t.order_id === orderId
+      );
+
+      if (match) {
+        if (
+          match.Status === 100 ||
+          match.status === "success" ||
+          String(match.Status) === "100"
+        ) {
+          return {
+            status: "success",
+            txid: match.BlockchainHash || match.Txid || match.txid || match.hash,
+            amount: Number(match.PaidAmount || match.OrderAmount || match.amount),
+          };
+        }
+        if (match.Status === 10 || match.status === "pending_mempool") {
+          return {
+            status: "mempool_detected",
+          };
+        }
+      }
+    }
+  } catch (err) {}
+
+  return { status: "pending" };
+}
+
+const activeWatchers = new Set<string>();
+
+/**
+ * Server-side background watcher:
+ * Actively monitors an order even if the user cuts or closes the payment window.
+ * The moment the payment gateway registers the payment, it fulfills and automatically emails the customer.
+ */
+export function startBackgroundOrderWatcher(
+  orderId: string,
+  email: string,
+  method: "upi" | "crypto" = "upi"
+) {
+  if (!orderId || !email) return;
+  if (activeWatchers.has(orderId)) return;
+
+  activeWatchers.add(orderId);
+  console.log(`[WATCHER] Active watcher registered for order: ${orderId} (${email})`);
+
+  let attempts = 0;
+  const maxAttempts = 120; // 120 checks = ~15 minutes
+
+  const checkTick = async () => {
+    attempts++;
+
+    try {
+      if (await isAlreadySent(orderId)) {
+        activeWatchers.delete(orderId);
+        return;
+      }
+
+      let isPaid = false;
+      let utr: string | undefined = undefined;
+      let senderName: string | undefined = undefined;
+      let amount: number | undefined = undefined;
+
+      if (method === "crypto") {
+        const cryptoRes = await checkAtlosOrderStatus(orderId);
+        if (cryptoRes.status === "success") {
+          isPaid = true;
+          utr = cryptoRes.txid ? `CRYPTO:${cryptoRes.txid}` : undefined;
+          amount = cryptoRes.amount;
+        }
+      } else {
+        const upiRes = await checkFamGatewayOrderStatus(orderId);
+        if (upiRes.status === "success") {
+          isPaid = true;
+          utr = upiRes.utr;
+          senderName = upiRes.senderName;
+          amount = upiRes.amount;
+        }
+      }
+
+      if (isPaid) {
+        console.log(`[WATCHER] 💰 Payment confirmed in background for ${orderId}! Dispatching email...`);
+        const orderData = await getOrder(orderId);
+        await fulfillOrder({
+          orderId,
+          email,
+          utr,
+          senderName,
+          amount: amount || orderData?.amount || APP_CONFIG.price,
+          quantity: orderData?.quantity || 1,
+          productId: orderData?.productId,
+          productName: orderData?.productName,
+          cartItems: orderData?.cartItems,
+        });
+
+        activeWatchers.delete(orderId);
+        return;
+      }
+    } catch (err) {
+      console.warn(`[WATCHER] Tick error for ${orderId}:`, err);
+    }
+
+    if (attempts >= maxAttempts) {
+      activeWatchers.delete(orderId);
+      return;
+    }
+
+    const delayMs = attempts < 30 ? 4000 : 10000;
+    setTimeout(checkTick, delayMs);
+  };
+
+  setTimeout(checkTick, 3000);
+}
+
+/**
+ * Reconcile pending orders:
+ * Sweeps all pending orders from the last 2 hours and checks if any were paid while the user's window was closed.
+ */
+export async function reconcilePendingOrders(): Promise<{ checked: number; fulfilled: number }> {
+  try {
+    const history = (await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY)) || [];
+    const now = Date.now();
+    const twoHoursAgo = now - 2 * 60 * 60 * 1000;
+
+    const pendingOrders = history.filter((o) => {
+      if (o.status !== "pending") return false;
+      const createdTime = new Date(o.createdAt).getTime();
+      return createdTime >= twoHoursAgo;
+    });
+
+    let fulfilledCount = 0;
+
+    for (const ord of pendingOrders) {
+      if (await isAlreadySent(ord.orderId)) {
+        await markOrderConfirmedInHistory({
+          orderId: ord.orderId,
+          quantity: ord.quantity || 1,
+        });
+        fulfilledCount++;
+        continue;
+      }
+
+      // 1. Check UPI status
+      const upiStatus = await checkFamGatewayOrderStatus(ord.orderId);
+      if (upiStatus.status === "success") {
+        console.log(`[RECONCILE] Automatically fulfilling paid order ${ord.orderId} and sending email to ${ord.email}...`);
+        const result = await fulfillOrder({
+          orderId: ord.orderId,
+          email: ord.email,
+          utr: upiStatus.utr,
+          senderName: upiStatus.senderName,
+          amount: upiStatus.amount || ord.amount,
+          quantity: ord.quantity || 1,
+          productId: ord.productId,
+          productName: ord.productName,
+          cartItems: ord.cartItems,
+        });
+        if (result.success) fulfilledCount++;
+        continue;
+      }
+
+      // 2. Check Crypto status
+      const cryptoStatus = await checkAtlosOrderStatus(ord.orderId);
+      if (cryptoStatus.status === "success") {
+        console.log(`[RECONCILE] Automatically fulfilling paid crypto order ${ord.orderId} and sending email to ${ord.email}...`);
+        const result = await fulfillOrder({
+          orderId: ord.orderId,
+          email: ord.email,
+          utr: cryptoStatus.txid ? `CRYPTO:${cryptoStatus.txid}` : undefined,
+          amount: cryptoStatus.amount || ord.amount,
+          quantity: ord.quantity || 1,
+          productId: ord.productId,
+          productName: ord.productName,
+          cartItems: ord.cartItems,
+        });
+        if (result.success) fulfilledCount++;
+      }
+    }
+
+    return { checked: pendingOrders.length, fulfilled: fulfilledCount };
+  } catch (err) {
+    console.error("[RECONCILE] Error during reconciliation:", err);
+    return { checked: 0, fulfilled: 0 };
+  }
+}
+
 export async function recordNewOrder(data: {
   orderId: string;
   email: string;
@@ -1174,6 +1702,19 @@ export async function recordNewOrder(data: {
     await redis.set(ORDERS_HISTORY_KEY, filtered);
   } catch (err) {
     console.warn("Could not save to orders_history:", err);
+  }
+
+  // ── AUTOMATIC BACKGROUND WATCHER ──
+  // Immediately start server-side background monitoring so if the user closes
+  // or cuts the browser window, payment completion automatically triggers fulfillment & email!
+  try {
+    startBackgroundOrderWatcher(
+      data.orderId,
+      data.email,
+      data.productId?.includes("crypto") ? "crypto" : "upi"
+    );
+  } catch (e) {
+    console.warn("Failed to launch background watcher:", e);
   }
 }
 

@@ -27,6 +27,7 @@ import {
 } from "@/lib/products";
 import { ProductCard } from "@/components/ProductCard";
 import { ProductIcon } from "@/components/ProductIcons";
+import { ProductCardSkeleton } from "@/components/Skeleton";
 import { useCurrency } from "@/lib/currency-context";
 import { APP_CONFIG } from "@/lib/config";
 
@@ -60,14 +61,61 @@ const FAQS = [
   },
 ];
 
+interface TelemetryData {
+  latestKey: string;
+  latestProductName: string;
+  latestTimeAgo: string;
+  latestTickerText: string;
+  avgEscrowTime: string;
+  speedIndex: string;
+  activeInventory: string;
+  escrowSettlement: string;
+  totalTrades: string;
+  systemStatus: string;
+}
+
+const DEFAULT_TELEMETRY: TelemetryData = {
+  latestKey: "NETFLIX-UHD-****",
+  latestProductName: "Netflix Premium 4K UHD Key",
+  latestTimeAgo: "Just now",
+  latestTickerText: "LATEST KEY: NETFLIX-UHD-**** DISPATCHED (Just now)",
+  avgEscrowTime: "4.2s",
+  speedIndex: "5.4s",
+  activeInventory: "--",
+  escrowSettlement: "100%",
+  totalTrades: "0",
+  systemStatus: "DISPATCH OPERATIONAL",
+};
+
 export default function HomePage() {
   const [allProducts, setAllProducts] = useState<Product[]>(getClientInitialProducts);
+  const [isLoading, setIsLoading] = useState<boolean>(() => allProducts.length === 0);
+  const [telemetry, setTelemetry] = useState<TelemetryData>(DEFAULT_TELEMETRY);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeVector, setActiveVector] = useState("All Stock");
   const [sortBy, setSortBy] = useState<"popularity" | "price-low" | "newest">("popularity");
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { formatPrice } = useCurrency();
+
+  // Fetch real database telemetry
+  useEffect(() => {
+    async function fetchTelemetry() {
+      try {
+        const res = await fetch("/api/telemetry", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          setTelemetry((prev) => ({ ...prev, ...data }));
+        }
+      } catch (e) {
+        console.warn("Could not fetch database telemetry:", e);
+      }
+    }
+    fetchTelemetry();
+    // Live update telemetry every 30 seconds
+    const interval = setInterval(fetchTelemetry, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Fetch live products from Redis/DB
   useEffect(() => {
@@ -86,6 +134,8 @@ export default function HomePage() {
         }
       } catch (e) {
         console.warn("Could not fetch latest products, using local catalog:", e);
+      } finally {
+        setIsLoading(false);
       }
     }
     fetchProducts();
@@ -144,13 +194,13 @@ export default function HomePage() {
           <div className="flex items-center gap-3 flex-wrap justify-center md:justify-start">
             <span className="flex items-center gap-1.5 text-[#4edea3] font-semibold">
               <span className="w-1.5 h-1.5 rounded-full bg-[#4edea3] animate-pulse" />
-              SYS STATUS: DISPATCH OPERATIONAL
+              SYS STATUS: {telemetry.systemStatus}
             </span>
             <span className="hidden sm:inline text-[#31353e]">•</span>
-            <span className="hidden sm:inline">AVG ESCROW TIME: 4.2s</span>
+            <span className="hidden sm:inline">AVG ESCROW TIME: {telemetry.avgEscrowTime}</span>
             <span className="hidden sm:inline text-[#31353e]">•</span>
             <span className="text-[#c7c4d7] font-medium">
-              LATEST KEY: NETFLIX-UHD-**** DISPATCHED (2m ago)
+              LATEST KEY: {telemetry.latestKey} DISPATCHED ({telemetry.latestTimeAgo})
             </span>
           </div>
           <div className="flex items-center gap-4">
@@ -414,7 +464,13 @@ export default function HomePage() {
           </div>
 
           {/* Catalog Grid */}
-          {filteredProducts.length === 0 ? (
+          {isLoading && allProducts.length === 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <ProductCardSkeleton key={i} />
+              ))}
+            </div>
+          ) : filteredProducts.length === 0 ? (
             <div className="text-center py-16 bg-[#181c24] rounded-2xl border border-[#262a33] space-y-3">
               <HelpCircle className="w-12 h-12 text-[#908fa0] mx-auto opacity-40" />
               <h3 className="text-lg font-bold text-[#dfe2ee]">No packages found</h3>
@@ -461,7 +517,7 @@ export default function HomePage() {
               <span className="font-mono text-xs text-[#908fa0] uppercase">Speed Index</span>
               <Clock className="w-4 h-4 text-[#4edea3]" />
             </div>
-            <div className="text-3xl font-black text-[#dfe2ee] font-mono">6.8s</div>
+            <div className="text-3xl font-black text-[#dfe2ee] font-mono">{telemetry.speedIndex}</div>
             <div className="font-mono text-xs text-[#4edea3] flex items-center gap-1">
               <CheckCircle className="w-3.5 h-3.5" />
               <span>Median webhook delivery</span>
@@ -474,7 +530,7 @@ export default function HomePage() {
               <span className="font-mono text-xs text-[#908fa0] uppercase">Escrow Settlement</span>
               <ShieldCheck className="w-4 h-4 text-[#8083ff]" />
             </div>
-            <div className="text-3xl font-black text-[#dfe2ee] font-mono">100%</div>
+            <div className="text-3xl font-black text-[#dfe2ee] font-mono">{telemetry.escrowSettlement}</div>
             <div className="font-mono text-xs text-[#c7c4d7]">
               Non-custodial zero chargeback
             </div>
@@ -486,9 +542,9 @@ export default function HomePage() {
               <span className="font-mono text-xs text-[#908fa0] uppercase">Active Inventory</span>
               <Sparkles className="w-4 h-4 text-[#d0bcff]" />
             </div>
-            <div className="text-3xl font-black text-[#dfe2ee] font-mono">14,280</div>
+            <div className="text-3xl font-black text-[#dfe2ee] font-mono">{telemetry.activeInventory}</div>
             <div className="font-mono text-xs text-[#c7c4d7]">
-              Automated keys in hot cold-vault
+              Live database vault stock
             </div>
           </div>
 
@@ -521,7 +577,7 @@ export default function HomePage() {
               </h2>
             </div>
             <div className="font-mono text-xs text-[#908fa0]">
-              RATING: 4.98 / 5.00 FROM 12,410 TRADES
+              RATING: 4.98 / 5.00 FROM {telemetry.totalTrades} TRADES
             </div>
           </div>
 

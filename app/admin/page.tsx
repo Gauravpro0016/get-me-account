@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { AdminProductsManager } from "@/components/AdminProductsManager";
 import { AdminCouponsManager } from "@/components/AdminCouponsManager";
+import { AdminEmailSettings } from "@/components/AdminEmailSettings";
 import { APP_CONFIG } from "@/lib/config";
 
 type Credential = {
@@ -76,7 +77,7 @@ export default function AdminPage() {
   const [authenticated, setAuthenticated] = useState(false);
 
   // ── Navigation Tab ───────────────────────────────────────────────────────
-  const [tab, setTab] = useState<"orders" | "products" | "coupons">("orders");
+  const [tab, setTab] = useState<"orders" | "products" | "coupons" | "email">("orders");
 
   // ── Search & Filter state ────────────────────────────────────────────────
   const [orderSearch, setOrderSearch] = useState("");
@@ -1073,6 +1074,18 @@ export default function AdminPage() {
                 >
                   <span>🎟️ Coupons</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTab("email")}
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer font-mono ${
+                    tab === "email"
+                      ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-md"
+                      : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33]"
+                  }`}
+                >
+                  <span>🎨 Email &amp; Profile</span>
+                </button>
               </div>
 
               {/* Action Buttons for Tablet / Desktop */}
@@ -1819,6 +1832,11 @@ export default function AdminPage() {
         {/* ── TAB 4: PROMO COUPONS MANAGEMENT ── */}
         {tab === "coupons" && (
           <AdminCouponsManager adminPassword={password} />
+        )}
+
+        {/* ── TAB 5: EMAIL BRANDING & ADMIN PROFILE ── */}
+        {tab === "email" && (
+          <AdminEmailSettings adminPassword={password} />
         )}
       </main>
 

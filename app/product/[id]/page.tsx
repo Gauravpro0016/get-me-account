@@ -29,6 +29,7 @@ import {
 import { ProductIcon } from "@/components/ProductIcons";
 import { ProductReviews } from "@/components/ProductReviews";
 import { ProductListScrollBar } from "@/components/ProductListScrollBar";
+import { ProductDetailSkeleton } from "@/components/Skeleton";
 import { useCart } from "@/lib/cart-context";
 import { useCurrency } from "@/lib/currency-context";
 import { APP_CONFIG } from "@/lib/config";
@@ -39,6 +40,7 @@ export default function ProductDetailPage() {
   const id = typeof params.id === "string" ? params.id : "";
 
   const [product, setProduct] = useState<Product | undefined>(() => getProductById(id));
+  const [loading, setLoading] = useState<boolean>(() => !getProductById(id));
   const [allProducts, setAllProducts] = useState<Product[]>(getClientInitialProducts);
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
@@ -63,10 +65,16 @@ export default function ProductDetailPage() {
         }
       } catch (e) {
         console.warn("Failed to load dynamic product:", e);
+      } finally {
+        setLoading(false);
       }
     }
     loadProductData();
   }, [id]);
+
+  if (loading && !product) {
+    return <ProductDetailSkeleton />;
+  }
 
   if (!product) {
     return (

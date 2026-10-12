@@ -335,21 +335,64 @@ export function CheckoutModal() {
     deliveredList,
   ]);
 
-  // Window beforeunload protection: warns user if they refresh while payment is pending
+  // Dispatch beacon when user cuts, refreshes, or closes the payment window
+  const notifyWindowCut = () => {
+    const activeId = cryptoOrder?.order_id || order?.order_id;
+    if (!activeId) return;
+    const targetEmail = email?.trim().toLowerCase();
+    const payload = JSON.stringify({
+      orderId: activeId,
+      email: targetEmail,
+      method: paymentMethod,
+    });
+    try {
+      if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: "application/json" });
+        navigator.sendBeacon("/api/payment/on-window-cut", blob);
+      } else {
+        fetch("/api/payment/on-window-cut", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          keepalive: true,
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.warn("Could not send window-cut beacon:", e);
+    }
+  };
+
+  // Window beforeunload & pagehide protection:
+  // Warns user if they refresh, and automatically dispatches a beacon so server continues
+  // monitoring the gateway and auto-sends the fulfillment email even if window is cut!
   useEffect(() => {
     if (paymentStatus !== "pending") return;
+
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      notifyWindowCut();
       e.preventDefault();
       e.returnValue =
-        "Payment in progress! Leaving or refreshing will interrupt your active session.";
+        "Payment in progress! Safe to close if paid: your credentials will automatically be sent to your email.";
       return e.returnValue;
     };
+
+    const handlePageHide = () => {
+      notifyWindowCut();
+    };
+
     window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [paymentStatus]);
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, [paymentStatus, order, cryptoOrder, email, paymentMethod]);
 
   // Reset modal state on close
   const handleClose = () => {
+    if (paymentStatus === "pending") {
+      notifyWindowCut();
+    }
     setIsCheckoutOpen(false);
     if (paymentStatus === "success") {
       clearCart();
@@ -375,6 +418,9 @@ export function CheckoutModal() {
   };
 
   const handleForceClose = () => {
+    if (paymentStatus === "pending") {
+      notifyWindowCut();
+    }
     try {
       localStorage.removeItem(ACTIVE_ORDER_STORAGE_KEY);
     } catch {}
@@ -824,10 +870,10 @@ export function CheckoutModal() {
                 Payment In Progress!
               </h4>
               <p className="text-xs text-[#c7c4d7] mt-1.5 max-w-sm leading-relaxed">
-                If you already sent money or scanned the QR code via UPI,{" "}
-                <strong>do not cancel!</strong> Please enter your 12-digit UPI
-                Bank Reference / UTR number below to receive your account
-                credentials immediately.
+                If you already sent payment or opened your UPI / Crypto app,{" "}
+                <strong>rest assured:</strong> your credentials and receipt will{" "}
+                <span className="text-emerald-400 font-bold">automatically be sent to {email || "your email"}</span>{" "}
+                as soon as the gateway confirms your payment, even if you close this window now.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-2.5 w-full max-w-xs pt-1">
@@ -1211,14 +1257,19 @@ export function CheckoutModal() {
 
               {paymentMethod === "crypto" ? (
                 <>
-                  {/* Protection notice */}
-                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-2 text-left">
-                    <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span className="text-[11px] text-amber-200 leading-snug">
-                      <strong>Non-Custodial Atlos Gateway:</strong> Direct
-                      wallet payment. Accidental page refreshes will not lose
-                      your session.
-                    </span>
+                  {/* Auto-email on confirmation banner */}
+                  <div className="p-3 rounded-xl bg-gradient-to-r from-amber-500/15 via-indigo-500/10 to-teal-500/10 border border-amber-400/30 flex items-start gap-2.5 text-left shadow-sm">
+                    <div className="p-1 rounded-lg bg-amber-500/20 text-amber-400 shrink-0 mt-0.5">
+                      <Mail className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                        <span>⚡ Safe to close window: Auto-email delivery guaranteed</span>
+                      </p>
+                      <p className="text-[11px] text-[#dfe2ee]/90 leading-snug">
+                        Even if you close or switch this tab, once payment is detected on-chain, your credentials &amp; invoice will <strong className="text-emerald-400">automatically be sent to {email || "your email"}</strong>.
+                      </p>
+                    </div>
                   </div>
 
                   {/* Amount to pay */}
@@ -1360,16 +1411,19 @@ export function CheckoutModal() {
                 </>
               ) : (
                 <>
-                  {/* Protection notice */}
-                  <div className="p-2.5 rounded-xl bg-[#181c24] border border-[#262a33] flex items-center gap-2 text-left">
-                    <ShieldCheck className="w-4 h-4 text-[#8083ff] shrink-0" />
-                    <span className="text-[11px] text-[#c7c4d7] leading-snug">
-                      <strong className="text-[#dfe2ee]">
-                        Protected Session:
-                      </strong>{" "}
-                      Accidental clicks or page refreshes will not lose your
-                      order or money.
-                    </span>
+                  {/* Auto-email on UPI payment banner */}
+                  <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-500/15 via-[#8083ff]/10 to-teal-500/10 border border-emerald-400/30 flex items-start gap-2.5 text-left shadow-sm">
+                    <div className="p-1 rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0 mt-0.5">
+                      <Mail className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-[11px] font-bold text-emerald-300 flex items-center gap-1.5">
+                        <span>⚡ Safe to close window: Auto-email delivery guaranteed</span>
+                      </p>
+                      <p className="text-[11px] text-[#dfe2ee]/90 leading-snug">
+                        Even if you close this window or switch to your UPI app, once payment is completed, your account credentials &amp; invoice will <strong className="text-emerald-400">automatically be sent to {email || "your email"}</strong>.
+                      </p>
+                    </div>
                   </div>
 
                   {/* Amount to pay */}

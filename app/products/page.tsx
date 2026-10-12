@@ -21,6 +21,7 @@ import {
 import { ProductCard } from "@/components/ProductCard";
 import { SearchBar } from "@/components/SearchBar";
 import { ProductListScrollBar } from "@/components/ProductListScrollBar";
+import { ProductsCatalogSkeleton } from "@/components/Skeleton";
 
 function ProductsContent() {
   const searchParams = useSearchParams();
@@ -219,13 +220,7 @@ function ProductsContent() {
 
 export default function ProductsPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center bg-[#050811]">
-          <div className="w-8 h-8 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-        </div>
-      }
-    >
+    <Suspense fallback={<ProductsCatalogSkeleton />}>
       <ProductsContent />
     </Suspense>
   );

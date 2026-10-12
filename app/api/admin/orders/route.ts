@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllOrders } from "@/lib/fulfillment";
+import { getAllOrders, reconcilePendingOrders } from "@/lib/fulfillment";
 
 function checkAdmin(req: NextRequest): boolean {
   const adminPassword = process.env.ADMIN_PASSWORD;
@@ -11,6 +11,11 @@ export async function GET(req: NextRequest) {
   if (!checkAdmin(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Non-blocking auto-reconciliation sweep of any orphaned pending orders
+  reconcilePendingOrders().catch((err) => {
+    console.warn("[ADMIN ORDERS] Reconcile error:", err);
+  });
 
   try {
     const orders = await getAllOrders();
