@@ -5,7 +5,7 @@ import {
   POOL_KEY,
   getBlacklist,
 } from "@/lib/fulfillment";
-import { PRODUCTS as DEFAULT_PRODUCTS } from "@/lib/products";
+import { PRODUCTS as DEFAULT_PRODUCTS, Product } from "@/lib/products";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -69,16 +69,17 @@ export async function GET() {
         redis.get<any[]>(ORDERS_HISTORY_KEY).catch(() => []),
         redis.get<any[]>(POOL_KEY).catch(() => []),
         getBlacklist().catch(() => new Set<string>()),
-        redis.get<any[]>(CUSTOM_PRODUCTS_KEY).catch(() => []),
+        redis.get<Product[]>(CUSTOM_PRODUCTS_KEY).catch(() => []),
         redis.get<string[]>(REMOVED_PRODUCTS_KEY).catch(() => []),
-        redis.get<Record<string, any>>(PRODUCT_OVERRIDES_KEY).catch(() => ({})),
+        redis.get<Record<string, any>>(PRODUCT_OVERRIDES_KEY).catch(() => ({} as Record<string, any>)),
       ]);
 
     const history = Array.isArray(historyRaw) ? historyRaw : [];
     const pool = Array.isArray(poolRaw) ? poolRaw : [];
-    const customProds = Array.isArray(customProdsRaw) ? customProdsRaw : [];
-    const removedIds = Array.isArray(removedIdsRaw) ? removedIdsRaw : [];
-    const overrides = overridesRaw && typeof overridesRaw === "object" ? overridesRaw : {};
+    const customProds: Product[] = Array.isArray(customProdsRaw) ? customProdsRaw : [];
+    const removedIds: string[] = Array.isArray(removedIdsRaw) ? removedIdsRaw : [];
+    const overrides: Record<string, any> =
+      overridesRaw && typeof overridesRaw === "object" ? overridesRaw : {};
 
     // Filter confirmed & delivered orders from Redis history
     const confirmedOrders = history.filter(
@@ -190,7 +191,7 @@ export async function GET() {
       );
     });
 
-    const allActiveCatalog = [...customProds, ...DEFAULT_PRODUCTS].filter(
+    const allActiveCatalog: Product[] = [...customProds, ...DEFAULT_PRODUCTS].filter(
       (p) => !removedIds.includes(p.id)
     );
 
