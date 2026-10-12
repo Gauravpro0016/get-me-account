@@ -226,9 +226,13 @@ export default function HomePage() {
                 key={`bg-card-${prod.id}-${idx}`}
                 className="w-60 p-3 rounded-2xl bg-[#0f131c]/80 border border-[#8083ff]/30 shadow-lg shrink-0 flex items-center gap-3 backdrop-blur-xs"
               >
-                <div className="p-1 rounded-xl bg-[#181c24] border border-[#262a33]">
-                  <ProductIcon type={prod.iconType} className="w-7 h-7" size={18} />
-                </div>
+                <ProductIcon
+                  type={prod.iconType}
+                  customLogoUrl={prod.customLogoUrl}
+                  logoSize={prod.logoSize}
+                  className="w-9 h-9 shrink-0 rounded-lg border border-[#262a33]"
+                  size={18}
+                />
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-[#dfe2ee] truncate">{prod.name}</div>
                   <div className="text-[10px] font-mono text-[#8083ff]">
@@ -359,15 +363,13 @@ export default function HomePage() {
               >
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="p-1 rounded-xl bg-[#0f131c] border border-[#262a33] group-hover/card:border-[#8083ff]/50 transition-colors">
-                      <ProductIcon
-                        type={prod.iconType}
-                        customLogoUrl={prod.customLogoUrl}
-                        logoSize={prod.logoSize}
-                        className="w-7 h-7"
-                        size={18}
-                      />
-                    </div>
+                    <ProductIcon
+                      type={prod.iconType}
+                      customLogoUrl={prod.customLogoUrl}
+                      logoSize={prod.logoSize}
+                      className="w-10 h-10 shrink-0 rounded-xl border border-[#262a33] group-hover/card:border-[#8083ff]/50 transition-colors shadow-sm"
+                      size={20}
+                    />
                     <div className="min-w-0">
                       <span className="text-[10px] font-mono uppercase font-bold text-[#8083ff] block truncate">
                         {prod.category}

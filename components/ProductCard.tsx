@@ -67,15 +67,13 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
       <div className="flex flex-col gap-4">
         {/* Card Header: Visual Emblem + Stock State */}
         <div className="flex items-start justify-between gap-3">
-          <div className="w-12 h-12 rounded-lg bg-[#262a33] border border-[#31353e] flex items-center justify-center shrink-0 group-hover:border-[#8083ff]/50 transition-colors shadow-sm">
-            <ProductIcon
-              type={product.iconType}
-              customLogoUrl={product.customLogoUrl}
-              logoSize={product.logoSize}
-              className="w-8 h-8 text-[#8083ff]"
-              size={24}
-            />
-          </div>
+          <ProductIcon
+            type={product.iconType}
+            customLogoUrl={product.customLogoUrl}
+            logoSize={product.logoSize}
+            className="w-13 h-13 sm:w-14 sm:h-14 shrink-0 rounded-xl border border-[#262a33] group-hover:border-[#8083ff]/60 group-hover:shadow-[0_0_15px_rgba(128,131,255,0.25)] transition-all shadow-md"
+            size={28}
+          />
 
           <div className="flex flex-col items-end gap-1">
             <span

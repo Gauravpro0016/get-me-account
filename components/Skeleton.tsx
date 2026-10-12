@@ -29,7 +29,7 @@ export function ProductCardSkeleton({ className = "" }: { className?: string }) 
       <div className="flex flex-col gap-4">
         {/* Header: Visual Emblem + Stock Pill */}
         <div className="flex items-start justify-between gap-3">
-          <Skeleton className="w-12 h-12 rounded-lg bg-[#262a33]" />
+          <Skeleton className="w-13 h-13 sm:w-14 sm:h-14 rounded-xl bg-[#262a33]" />
           <div className="flex flex-col items-end gap-1.5">
             <Skeleton className="w-24 h-5 rounded-md" />
             <Skeleton className="w-14 h-3 rounded" />

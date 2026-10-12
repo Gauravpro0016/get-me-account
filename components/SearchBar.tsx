@@ -148,8 +148,10 @@ export function SearchBar({
                 >
                   <ProductIcon
                     type={product.iconType}
-                    className="w-10 h-10 shrink-0"
-                    size={18}
+                    customLogoUrl={product.customLogoUrl}
+                    logoSize={product.logoSize}
+                    className="w-10 h-10 shrink-0 rounded-xl"
+                    size={20}
                   />
                   <div className="truncate">
                     <p className="text-sm font-semibold text-slate-900 dark:text-white group-hover:text-cyan-500 truncate transition-colors">
