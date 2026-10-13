@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { randomUUID } from "crypto";
+import { sendDiscordRestockNotification } from "@/lib/discord";
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL!,
@@ -90,6 +91,19 @@ export async function POST(req: NextRequest) {
 
     if (addedList.length > 0) {
       await writePool(pool);
+
+      // Automated Discord Restock Notification
+      sendDiscordRestockNotification({
+        productName: "Discord Nitro Booster",
+        productId: "discord-nitro-booster",
+        category: "Discord",
+        unitsAdded: addedList.length,
+        totalStock: pool.length,
+        price: process.env.PRICE_INR || 25,
+      }).catch((err) => {
+        console.error("[DISCORD] Failed to send restock alert for credentials:", err);
+      });
+
       return NextResponse.json(
         { success: true, count: addedList.length, credentials: addedList },
         { status: 201 }
@@ -160,6 +174,18 @@ export async function POST(req: NextRequest) {
 
   pool.push(newCredential);
   await writePool(pool);
+
+  // Automated Discord Restock Notification
+  sendDiscordRestockNotification({
+    productName: "Discord Nitro Booster",
+    productId: "discord-nitro-booster",
+    category: "Discord",
+    unitsAdded: 1,
+    totalStock: pool.length,
+    price: process.env.PRICE_INR || 25,
+  }).catch((err) => {
+    console.error("[DISCORD] Failed to send restock alert for credential:", err);
+  });
 
   return NextResponse.json({ success: true, credential: newCredential }, { status: 201 });
 }

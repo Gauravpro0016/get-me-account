@@ -4,6 +4,7 @@ import path from "path";
 import { Redis } from "@upstash/redis";
 import { APP_CONFIG } from "@/lib/config";
 import { incrementCouponUsage } from "@/lib/coupons";
+import { sendDiscordPurchaseNotification } from "@/lib/discord";
 
 export type Credential = {
   id: string;
@@ -1270,6 +1271,21 @@ export async function fulfillOrder({
     });
   } catch (err) {
     console.warn("Failed to send merchant sale alert:", err);
+  }
+
+  // Also dispatch automated Discord announcement to channel (e.g., "#orders" or "#vouches")
+  try {
+    await sendDiscordPurchaseNotification({
+      orderId,
+      email,
+      senderName,
+      amount: resolvedAmount,
+      productName: resolvedProductName,
+      quantity: targetQty,
+      utr,
+    });
+  } catch (err) {
+    console.warn("Failed to dispatch Discord purchase notification:", err);
   }
 
   // Increment coupon usage count if coupon was used

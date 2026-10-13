@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { Product, InventoryItem, PRODUCTS as DEFAULT_PRODUCTS } from "@/lib/products";
 import { getBlacklist, markCredentialDeleted } from "@/lib/fulfillment";
+import { sendDiscordRestockNotification } from "@/lib/discord";
 
 export const dynamic = "force-dynamic";
 
@@ -309,6 +310,18 @@ export async function POST(req: NextRequest) {
 
     if (newProduct.inventory && newProduct.inventory.length > 0) {
       await redis.set(INVENTORY_KEY(slug), newProduct.inventory);
+
+      // Automated Discord Restock Notification
+      sendDiscordRestockNotification({
+        productName: newProduct.name,
+        productId: newProduct.id,
+        category: newProduct.category,
+        unitsAdded: newProduct.inventory.length,
+        totalStock: newProduct.inventory.length,
+        price: newProduct.price,
+      }).catch((err) => {
+        console.error("[DISCORD] Failed to send restock alert for new product:", err);
+      });
     }
 
     let existing: Product[] = [];
@@ -669,6 +682,38 @@ export async function PUT(req: NextRequest) {
       } catch (e) {
         console.warn("Could not sync custom products list on add:", e);
       }
+
+      // Resolve product metadata for Discord Restock Notification
+      let targetName = id;
+      let targetCategory = "Digital Goods";
+      let targetPrice: number | string | undefined = overrides[id]?.price;
+
+      const defaultProd = DEFAULT_PRODUCTS.find((p) => p.id === id);
+      if (defaultProd) {
+        targetName = defaultProd.name;
+        targetCategory = defaultProd.category;
+        if (targetPrice === undefined) targetPrice = defaultProd.price;
+      }
+      const customProd = customProducts.find((p) => p.id === id);
+      if (customProd) {
+        targetName = customProd.name;
+        targetCategory = customProd.category;
+        if (targetPrice === undefined) targetPrice = customProd.price;
+      }
+      if (overrides[id]?.name) targetName = overrides[id].name;
+      if (overrides[id]?.category) targetCategory = overrides[id].category;
+
+      // Trigger automated Discord Restock Notification in background
+      sendDiscordRestockNotification({
+        productName: targetName,
+        productId: id,
+        category: targetCategory,
+        unitsAdded: newItems.length,
+        totalStock: activeCount,
+        price: targetPrice,
+      }).catch((err) => {
+        console.error("[DISCORD] Failed to send restock alert:", err);
+      });
 
       return NextResponse.json({
         success: true,

@@ -244,6 +244,43 @@ export async function GET() {
     const realTradesCount = confirmedOrders.length;
     const totalVerifiedTrades = realTradesCount > 0 ? realTradesCount.toLocaleString("en-US") : "0";
 
+    // ── 7. REAL KEYS SOLD TODAY & ALL TIME (DATABASE BASED) ──
+    const istOffsetMs = 5.5 * 60 * 60 * 1000;
+    const istNow = new Date(Date.now() + istOffsetMs);
+    const todayIstStr = istNow.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const now = new Date();
+    const todayMidnightUtc = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    ).getTime();
+
+    let keysSoldTodayCount = 0;
+    let totalKeysSoldCount = 0;
+
+    for (const o of confirmedOrders) {
+      const qty = Math.max(
+        1,
+        Number(o.quantity) ||
+          (Array.isArray(o.deliveredCredentials) ? o.deliveredCredentials.length : 1)
+      );
+      totalKeysSoldCount += qty;
+
+      const orderTime = new Date(o.confirmedAt || o.createdAt || 0).getTime();
+      const orderIstStr = new Date(orderTime + istOffsetMs).toISOString().slice(0, 10);
+      const isToday = orderTime >= todayMidnightUtc || orderIstStr === todayIstStr;
+
+      if (isToday) {
+        keysSoldTodayCount += qty;
+      }
+    }
+
+    const claimedRaw = await redis.get<string[]>("trinitymart_claimed_credentials").catch(() => []);
+    const claimedCount = Array.isArray(claimedRaw) ? claimedRaw.length : 0;
+    const verifiedTotalKeys = Math.max(totalKeysSoldCount, claimedCount);
+
+    // If sales happened today, use today's count. Otherwise if there are confirmed keys in DB, use verified total.
+    const displayKeysCount = keysSoldTodayCount > 0 ? keysSoldTodayCount : (verifiedTotalKeys > 0 ? verifiedTotalKeys : 0);
+    const keysSoldTodayText = `${displayKeysCount.toLocaleString("en-US")} Keys Sold Today`;
+
     return NextResponse.json(
       {
         latestKey,
@@ -260,6 +297,10 @@ export async function GET() {
         escrowSettlement,
         totalTrades: totalVerifiedTrades,
         confirmedOrdersCount: realTradesCount,
+        keysSoldToday: displayKeysCount,
+        keysSoldTodayExact: keysSoldTodayCount,
+        totalKeysSold: verifiedTotalKeys,
+        keysSoldTodayText,
         systemStatus: "DISPATCH OPERATIONAL",
         isDatabaseBased: true,
         updatedAt: new Date().toISOString(),
@@ -285,6 +326,10 @@ export async function GET() {
         escrowSettlement: "100%",
         totalTrades: "0",
         confirmedOrdersCount: 0,
+        keysSoldToday: 0,
+        keysSoldTodayExact: 0,
+        totalKeysSold: 0,
+        keysSoldTodayText: "0 Keys Sold Today",
         systemStatus: "DISPATCH OPERATIONAL",
         isDatabaseBased: true,
         updatedAt: new Date().toISOString(),

@@ -24,6 +24,9 @@ type StoredOrder = {
   email: string;
   amount: number;
   quantity?: number;
+  productId?: string;
+  productName?: string;
+  cartItems?: Array<{ productId: string; productName?: string; quantity: number; price?: number }>;
   status: "pending" | "confirmed" | "failed" | "expired";
   createdAt: string;
   confirmedAt?: string;
@@ -750,7 +753,7 @@ export default function AdminPage() {
           return (
             <div
               key={cIdx}
-              className={`rounded-lg p-2 space-y-1.5 text-xs transition-all ${
+              className={`rounded-lg p-2 sm:p-2.5 space-y-1.5 text-xs transition-all min-w-0 overflow-hidden ${
                 deliveredList.length > 1
                   ? "bg-white/[0.04] border border-white/10"
                   : "bg-white/[0.02]"
@@ -763,10 +766,10 @@ export default function AdminPage() {
               )}
 
               {/* Email */}
-              <div className="flex items-center justify-between gap-1.5">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-white/40 text-[11px] w-11 shrink-0 font-medium">Email:</span>
-                  <span className="text-white font-semibold truncate select-all">{cred.email}</span>
+              <div className="flex items-center justify-between gap-1.5 min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                  <span className="text-white/40 text-[11px] w-12 shrink-0 font-medium">Email:</span>
+                  <span className="text-white font-semibold truncate select-all text-xs">{cred.email}</span>
                 </div>
                 <button
                   type="button"
@@ -780,10 +783,10 @@ export default function AdminPage() {
 
               {/* Email Password */}
               {(cred.emailPassword || cred.password) && (
-                <div className="flex items-center justify-between gap-1.5 font-mono">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-white/40 text-[11px] w-20 shrink-0 font-sans font-medium">Email Pass:</span>
-                    <span className="text-white/80 truncate">
+                <div className="flex items-center justify-between gap-1.5 font-mono min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <span className="text-white/40 text-[11px] w-16 sm:w-20 shrink-0 font-sans font-medium">Email Pass:</span>
+                    <span className="text-white/80 truncate text-xs select-all">
                       {isEmailPwdRevealed ? (cred.emailPassword || cred.password) : "••••••••"}
                     </span>
                   </div>
@@ -809,10 +812,10 @@ export default function AdminPage() {
 
               {/* Discord Password */}
               {cred.discordPassword && (
-                <div className="flex items-center justify-between gap-1.5 font-mono">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-white/40 text-[11px] w-20 shrink-0 font-sans font-medium">Discord Pass:</span>
-                    <span className="text-white/80 truncate">
+                <div className="flex items-center justify-between gap-1.5 font-mono min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <span className="text-white/40 text-[11px] w-16 sm:w-20 shrink-0 font-sans font-medium">Discord Pass:</span>
+                    <span className="text-white/80 truncate text-xs select-all">
                       {isDiscordPwdRevealed ? cred.discordPassword : "••••••••"}
                     </span>
                   </div>
@@ -838,18 +841,18 @@ export default function AdminPage() {
 
               {/* Domain */}
               {cred.domain && (
-                <div className="flex items-center gap-1.5 text-[11px] text-white/60">
-                  <span className="text-white/40 w-11 shrink-0 font-medium">Domain:</span>
+                <div className="flex items-center gap-1.5 text-[11px] text-white/60 min-w-0">
+                  <span className="text-white/40 w-12 shrink-0 font-medium">Domain:</span>
                   <span className="truncate">{cred.domain}</span>
                 </div>
               )}
 
               {/* Token */}
               {cred.token && (
-                <div className="flex items-center justify-between gap-1.5 font-mono text-[11px]">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-white/40 w-11 shrink-0 font-sans font-medium">Token:</span>
-                    <span className="text-indigo-300 truncate max-w-[120px] sm:max-w-[180px]">
+                <div className="flex items-center justify-between gap-1.5 font-mono text-[11px] min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <span className="text-white/40 w-12 shrink-0 font-sans font-medium">Token:</span>
+                    <span className="text-indigo-300 truncate select-all">
                       {isTokRevealed ? cred.token : "••••••••••••"}
                     </span>
                   </div>
@@ -875,10 +878,10 @@ export default function AdminPage() {
 
               {/* 2FA Key */}
               {cred.twoFactorKey && (
-                <div className="flex items-center justify-between gap-1.5 font-mono text-[11px]">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-white/40 w-11 shrink-0 font-sans font-medium">2FA:</span>
-                    <span className="text-amber-400 truncate max-w-[120px] sm:max-w-[180px]">{cred.twoFactorKey}</span>
+                <div className="flex items-center justify-between gap-1.5 font-mono text-[11px] min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <span className="text-white/40 w-12 shrink-0 font-sans font-medium">2FA:</span>
+                    <span className="text-amber-400 truncate select-all">{cred.twoFactorKey}</span>
                   </div>
                   <button
                     type="button"
@@ -893,10 +896,10 @@ export default function AdminPage() {
 
               {/* Keyweb */}
               {cred.keyweb && (
-                <div className="flex items-center justify-between gap-1.5 text-[11px]">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-white/40 w-11 shrink-0 font-medium">Web:</span>
-                    <span className="text-sky-300 truncate max-w-[120px] sm:max-w-[180px]">{cred.keyweb}</span>
+                <div className="flex items-center justify-between gap-1.5 text-[11px] min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <span className="text-white/40 w-12 shrink-0 font-medium">Web:</span>
+                    <span className="text-sky-300 truncate select-all">{cred.keyweb}</span>
                   </div>
                   <button
                     type="button"
@@ -1284,7 +1287,7 @@ export default function AdminPage() {
             {/* Orders Container */}
             <div className="rounded-2xl bg-[#181c24] border border-[#262a33] shadow-xl overflow-hidden">
               {/* Header with Title and Modern View Mode Switcher */}
-              <div className="p-4 sm:p-5 border-b border-[#262a33] bg-[#0a0e16]/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="p-3.5 sm:p-5 border-b border-[#262a33] bg-[#0a0e16]/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <h2 className="text-base sm:text-lg font-bold text-[#dfe2ee]">
@@ -1300,11 +1303,11 @@ export default function AdminPage() {
                 </div>
 
                 {/* View Mode Switcher: Cards vs Split Inspector vs Contained Table */}
-                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#0f131c] border border-[#262a33] self-start md:self-auto">
+                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#0f131c] border border-[#262a33] self-stretch sm:self-auto overflow-x-auto scrollbar-none">
                   <button
                     type="button"
                     onClick={() => setOrderViewMode("cards")}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold whitespace-nowrap shrink-0 transition-all cursor-pointer ${
                       orderViewMode === "cards"
                         ? "bg-[#8083ff] text-[#0d0096] shadow-sm font-black"
                         : "text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
@@ -1323,7 +1326,7 @@ export default function AdminPage() {
                         setSelectedOrderId(filteredOrders[0].orderId);
                       }
                     }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold whitespace-nowrap shrink-0 transition-all cursor-pointer ${
                       orderViewMode === "split"
                         ? "bg-[#8083ff] text-[#0d0096] shadow-sm font-black"
                         : "text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
@@ -1337,7 +1340,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={() => setOrderViewMode("table")}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold whitespace-nowrap shrink-0 transition-all cursor-pointer ${
                       orderViewMode === "table"
                         ? "bg-[#8083ff] text-[#0d0096] shadow-sm font-black"
                         : "text-[#908fa0] hover:text-[#dfe2ee] hover:bg-[#181c24]"
@@ -1383,28 +1386,28 @@ export default function AdminPage() {
                 </div>
               ) : orderViewMode === "cards" ? (
                 /* ── 1. MODERN CARDS FEED VIEW (NO HORIZONTAL SCROLL REQUIRED) ── */
-                <div className="p-4 sm:p-5 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div className="p-2.5 sm:p-5 grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4">
                   {filteredOrders.map((ord) => (
                     <div
                       key={ord.orderId}
-                      className="rounded-2xl bg-[#0f131c] border border-[#262a33] hover:border-[#31353e] p-4 sm:p-5 shadow-lg transition-all space-y-4 flex flex-col justify-between"
+                      className="rounded-xl sm:rounded-2xl bg-[#0f131c] border border-[#262a33] hover:border-[#31353e] p-3 sm:p-5 shadow-lg transition-all space-y-3.5 sm:space-y-4 flex flex-col justify-between min-w-0 overflow-hidden"
                     >
                       {/* Top Bar: Order ID, Timestamp, Status & Audit Button */}
-                      <div className="flex items-start justify-between gap-2.5 pb-3 border-b border-[#262a33]">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono text-sm font-bold text-[#8083ff]">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-[#262a33]">
+                        <div className="flex items-center justify-between gap-2 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                            <span className="font-mono text-xs sm:text-sm font-bold text-[#8083ff] truncate max-w-[170px] xs:max-w-none">
                               #{ord.orderId}
                             </span>
                             <button
                               type="button"
                               onClick={() => copyVal(ord.orderId, `card-id-${ord.orderId}`)}
-                              className="text-[#908fa0] hover:text-[#dfe2ee] p-1 rounded bg-[#181c24] hover:bg-[#262a33] text-xs cursor-pointer transition-colors"
+                              className="text-[#908fa0] hover:text-[#dfe2ee] p-1 rounded bg-[#181c24] hover:bg-[#262a33] text-[11px] cursor-pointer transition-colors shrink-0"
                               title="Copy Order ID"
                             >
                               {copiedKey === `card-id-${ord.orderId}` ? "✓ Copied" : "📋 Copy"}
                             </button>
-                            <span className="text-[11px] font-mono text-[#908fa0]">
+                            <span className="text-[10px] sm:text-[11px] font-mono text-[#908fa0] shrink-0">
                               {new Date(ord.createdAt).toLocaleDateString([], {
                                 month: "short",
                                 day: "numeric",
@@ -1416,10 +1419,16 @@ export default function AdminPage() {
                               })}
                             </span>
                           </div>
+                          {/* Mobile-only status badge */}
+                          <div className="sm:hidden shrink-0">
+                            {getStatusBadge(ord.status)}
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          {getStatusBadge(ord.status)}
+                        <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1.5 sm:pt-0 border-t border-[#262a33]/40 sm:border-t-0">
+                          <div className="hidden sm:block shrink-0">
+                            {getStatusBadge(ord.status)}
+                          </div>
                           <button
                             type="button"
                             onClick={() => {
@@ -1427,7 +1436,7 @@ export default function AdminPage() {
                               setResendCustomEmail(ord.email);
                               setResendStatusMsg(null);
                             }}
-                            className="px-2.5 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-xs font-mono font-bold cursor-pointer transition-colors shrink-0"
+                            className="w-full sm:w-auto text-center px-2.5 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-xs font-mono font-bold cursor-pointer transition-colors shrink-0"
                             title="Audit email delivery and resend credentials"
                           >
                             Audit &amp; Resend
@@ -1435,15 +1444,15 @@ export default function AdminPage() {
                         </div>
                       </div>
 
-                      {/* Main Details Grid: Customer Email, Amount, Payment UTR, Email Status */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      {/* Main Details Grid: Customer Email, Product, Amount, Payment UTR, Email Status */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 text-xs">
                         {/* Customer Email */}
-                        <div className="p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1">
+                        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1 min-w-0 overflow-hidden">
                           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
                             Customer Email
                           </span>
-                          <div className="flex items-center justify-between gap-1 font-mono text-[#dfe2ee] font-medium">
-                            <span className="truncate select-all">{ord.email}</span>
+                          <div className="flex items-center justify-between gap-1 font-mono text-[#dfe2ee] font-medium min-w-0">
+                            <span className="truncate select-all text-xs break-all sm:break-normal">{ord.email}</span>
                             <button
                               type="button"
                               onClick={() => copyVal(ord.email, `card-em-${ord.orderId}`)}
@@ -1456,7 +1465,7 @@ export default function AdminPage() {
                         </div>
 
                         {/* Amount & Dual Currency */}
-                        <div className="p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1">
+                        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1 min-w-0 overflow-hidden">
                           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
                             Total Order Value
                           </span>
@@ -1473,14 +1482,33 @@ export default function AdminPage() {
                           </div>
                         </div>
 
+                        {/* Product / Item Bought (if available) */}
+                        {ord.productName && (
+                          <div className="col-span-1 sm:col-span-2 p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] flex items-center justify-between gap-2 min-w-0 overflow-hidden">
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
+                                Item Purchased
+                              </span>
+                              <span className="font-mono text-xs font-bold text-[#dfe2ee] truncate block">
+                                {ord.productName}
+                              </span>
+                            </div>
+                            {ord.quantity && ord.quantity > 1 && (
+                              <span className="text-[10px] font-bold text-[#8083ff] bg-[#8083ff]/15 px-2 py-0.5 rounded shrink-0">
+                                {ord.quantity}x Units
+                              </span>
+                            )}
+                          </div>
+                        )}
+
                         {/* Payment Reference / UTR */}
-                        <div className="p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1">
+                        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1 min-w-0 overflow-hidden">
                           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
                             Bank UTR / Blockchain TxID
                           </span>
                           {ord.utr ? (
-                            <div className="flex items-center justify-between gap-1 font-mono text-[#4edea3] font-semibold">
-                              <span className="truncate select-all">{ord.utr}</span>
+                            <div className="flex items-center justify-between gap-1 font-mono text-[#4edea3] font-semibold min-w-0">
+                              <span className="truncate select-all text-xs">{ord.utr}</span>
                               <button
                                 type="button"
                                 onClick={() => copyVal(ord.utr, `card-utr-${ord.orderId}`)}
@@ -1491,23 +1519,23 @@ export default function AdminPage() {
                               </button>
                             </div>
                           ) : (
-                            <span className="font-mono text-[#908fa0]/60 block">— Pending Verification</span>
+                            <span className="font-mono text-[#908fa0]/60 block text-xs truncate">— Pending Verification</span>
                           )}
                         </div>
 
                         {/* Email Tracking Badge */}
-                        <div className="p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1">
+                        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1 min-w-0 overflow-hidden">
                           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
                             Delivery Telemetry
                           </span>
-                          <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                          <div className="flex items-start xs:items-center justify-between gap-1.5 flex-wrap min-w-0">
                             <div>{getEmailStatusBadge(ord)}</div>
                             {ord.emailOpenedAt ? (
-                              <span className="text-[10px] font-mono text-[#4edea3]">
+                              <span className="text-[10px] font-mono text-[#4edea3] shrink-0">
                                 Opened: {new Date(ord.emailOpenedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                               </span>
                             ) : ord.emailSentAt ? (
-                              <span className="text-[10px] font-mono text-[#908fa0]">
+                              <span className="text-[10px] font-mono text-[#908fa0] shrink-0">
                                 Sent: {new Date(ord.emailSentAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                               </span>
                             ) : null}
@@ -1516,8 +1544,8 @@ export default function AdminPage() {
                       </div>
 
                       {/* Delivered Credentials Box */}
-                      <div className="pt-1">
-                        <div className="flex items-center justify-between mb-1.5">
+                      <div className="pt-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
                           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0]">
                             Delivered Account &amp; Keys
                           </span>
@@ -1525,7 +1553,7 @@ export default function AdminPage() {
                             Instant Auto-Assigned
                           </span>
                         </div>
-                        <div className="p-3 rounded-xl bg-[#181c24] border border-[#262a33]">
+                        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] min-w-0 overflow-hidden">
                           {renderOrderCredentials(ord)}
                         </div>
                       </div>

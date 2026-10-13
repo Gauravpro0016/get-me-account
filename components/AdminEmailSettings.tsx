@@ -24,6 +24,15 @@ export function AdminEmailSettings({ adminPassword }: AdminEmailSettingsProps) {
     error?: string;
   } | null>(null);
 
+  // Test Discord state
+  const [sendingDiscordTest, setSendingDiscordTest] = useState(false);
+  const [discordTestResult, setDiscordTestResult] = useState<{
+    success: boolean;
+    message?: string;
+    error?: string;
+    configuredTarget?: string;
+  } | null>(null);
+
   // Preview device toggle
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
 
@@ -139,6 +148,39 @@ export function AdminEmailSettings({ adminPassword }: AdminEmailSettingsProps) {
     }
   };
 
+  const [sendingDiscordType, setSendingDiscordType] = useState<"purchase" | "restock" | null>(null);
+
+  const handleSendTestDiscord = async (type: "purchase" | "restock" = "purchase") => {
+    setSendingDiscordTest(true);
+    setSendingDiscordType(type);
+    setDiscordTestResult(null);
+    try {
+      const res = await fetch(`/api/admin/test-discord?type=${type}`, {
+        headers: {
+          "x-admin-password": adminPassword,
+        },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setDiscordTestResult({
+          success: true,
+          message: data.message || `Test ${type} notification sent to Discord!`,
+          configuredTarget: data.configuredTarget,
+        });
+      } else {
+        throw new Error(data.error || "Discord test failed");
+      }
+    } catch (err: unknown) {
+      setDiscordTestResult({
+        success: false,
+        error: err instanceof Error ? err.message : "Failed to send test notification to Discord",
+      });
+    } finally {
+      setSendingDiscordTest(false);
+      setSendingDiscordType(null);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
       
@@ -149,33 +191,73 @@ export function AdminEmailSettings({ adminPassword }: AdminEmailSettingsProps) {
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#8083ff]/15 border border-[#8083ff]/30 text-[#8083ff] text-xs font-mono font-bold tracking-wider uppercase">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Email Branding &amp; Gradient Engine</span>
+              <span>Email &amp; Discord Dispatch Engine</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black text-[#dfe2ee] tracking-tight">
-              Admin Profile &amp; Gradient Email Design
+              Admin Profile &amp; Notification Settings
             </h2>
             <p className="text-sm text-[#908fa0] max-w-2xl leading-relaxed">
-              Configure your admin profile picture and inspect the automated order confirmation email with rich gradient header, credentials card, and glowing invoice link.
+              Configure your admin profile picture, test automated buyer emails, and verify Discord channel purchase &amp; restock alerts.
             </p>
           </div>
 
-          {/* Quick Test Email Button */}
-          <div className="shrink-0">
+          {/* Action Buttons: Test Purchase + Test Restock + Test Email */}
+          <div className="shrink-0 flex flex-wrap sm:flex-nowrap items-stretch sm:items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => handleSendTestDiscord("purchase")}
+              disabled={sendingDiscordTest}
+              className="px-3.5 py-2.5 rounded-xl bg-[#5865F2] hover:bg-[#4752c4] text-white font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-[#5865F2]/25 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Send a sample purchase notification to your Discord server"
+            >
+              {sendingDiscordTest && sendingDiscordType === "purchase" ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Testing…</span>
+                </>
+              ) : (
+                <>
+                  <span>🛒</span>
+                  <span>Test Purchase Alert</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSendTestDiscord("restock")}
+              disabled={sendingDiscordTest}
+              className="px-3.5 py-2.5 rounded-xl bg-linear-to-r from-[#6366f1] to-[#a855f7] hover:brightness-110 text-white font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-[#6366f1]/25 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Send a sample product restock notification to your Discord server"
+            >
+              {sendingDiscordTest && sendingDiscordType === "restock" ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Testing…</span>
+                </>
+              ) : (
+                <>
+                  <span>🚀</span>
+                  <span>Test Restock Alert</span>
+                </>
+              )}
+            </button>
+
             <button
               type="button"
               onClick={handleSendTestEmail}
               disabled={sendingTest}
-              className="w-full sm:w-auto px-5 py-3 rounded-xl bg-linear-to-r from-[#06b6d4] via-[#2563eb] to-[#7c3aed] text-white font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-[#06b6d4]/25 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              className="px-4 py-2.5 rounded-xl bg-linear-to-r from-[#06b6d4] via-[#2563eb] to-[#7c3aed] text-white font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-[#06b6d4]/25 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
               {sendingTest ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Dispatching Test…</span>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Sending…</span>
                 </>
               ) : (
                 <>
-                  <Send className="w-4 h-4" />
-                  <span>Send Test Email to Inbox</span>
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Test Email</span>
                 </>
               )}
             </button>
@@ -208,6 +290,38 @@ export function AdminEmailSettings({ adminPassword }: AdminEmailSettingsProps) {
               {testResult.verifyTimeMs && (
                 <p className="text-[10px] opacity-75">
                   SMTP Handshake Latency: {testResult.verifyTimeMs}ms • Total Dispatch Time: {testResult.totalTimeMs}ms
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Live Discord Test Status Feedback */}
+        {discordTestResult && (
+          <div
+            className={`mt-4 p-4 rounded-xl border text-xs font-mono flex items-start gap-3 ${
+              discordTestResult.success
+                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                : "bg-red-500/10 border-red-500/30 text-red-300"
+            }`}
+          >
+            {discordTestResult.success ? (
+              <CheckCircle className="w-5 h-5 shrink-0 text-emerald-400" />
+            ) : (
+              <AlertCircle className="w-5 h-5 shrink-0 text-red-400" />
+            )}
+            <div className="space-y-1">
+              <p className="font-bold">
+                {discordTestResult.success
+                  ? "✅ Test Notification Sent to Discord!"
+                  : "❌ Failed to Dispatch Discord Alert"}
+              </p>
+              <p className="text-[11px] opacity-90">
+                {discordTestResult.message || discordTestResult.error}
+              </p>
+              {discordTestResult.configuredTarget && (
+                <p className="text-[10px] opacity-75">
+                  Mode: {discordTestResult.configuredTarget}
                 </p>
               )}
             </div>

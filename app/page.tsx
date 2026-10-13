@@ -72,6 +72,10 @@ interface TelemetryData {
   escrowSettlement: string;
   totalTrades: string;
   systemStatus: string;
+  keysSoldToday?: number;
+  keysSoldTodayExact?: number;
+  totalKeysSold?: number;
+  keysSoldTodayText?: string;
 }
 
 const DEFAULT_TELEMETRY: TelemetryData = {
@@ -85,6 +89,10 @@ const DEFAULT_TELEMETRY: TelemetryData = {
   escrowSettlement: "100%",
   totalTrades: "0",
   systemStatus: "DISPATCH OPERATIONAL",
+  keysSoldToday: 0,
+  keysSoldTodayExact: 0,
+  totalKeysSold: 0,
+  keysSoldTodayText: "0 Keys Sold Today",
 };
 
 export default function HomePage() {
@@ -264,10 +272,10 @@ export default function HomePage() {
             <div className="flex items-center gap-2.5">
               <span className="px-3 py-1 rounded-md bg-[#0a0e16] border border-[#262a33] text-[#4edea3] font-mono text-xs uppercase flex items-center gap-1.5 font-semibold">
                 <span className="w-2 h-2 rounded-full bg-[#4edea3]" />
-                99.98% Fulfillment Rate
+                {telemetry.escrowSettlement || "100%"} Fulfillment Rate
               </span>
               <span className="px-3 py-1 rounded-md bg-[#1c2028] border border-[#262a33] text-[#908fa0] font-mono text-xs">
-                4,892 Keys Sold Today
+                {telemetry.keysSoldTodayText || `${(telemetry.keysSoldToday ?? 0).toLocaleString()} Keys Sold Today`}
               </span>
             </div>
           </div>
@@ -343,9 +351,7 @@ export default function HomePage() {
             <span className="font-mono text-xs font-bold uppercase tracking-wider text-[#8083ff]">
               Live Inventory Telemetry
             </span>
-            <span className="hidden sm:inline font-mono text-xs text-[#908fa0]">
-              — Right-to-Left Automated Accounts Stream
-            </span>
+ 
           </div>
           <span className="font-mono text-[11px] text-[#908fa0] hidden sm:inline">
             ⚡ Hover to Pause • Click to Inspect Asset
