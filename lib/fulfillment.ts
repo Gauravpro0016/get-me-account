@@ -1364,37 +1364,82 @@ export async function checkFamGatewayOrderStatus(orderId: string): Promise<{
 }> {
   const apiKey = process.env.FAMGATEWAY_API_KEY;
 
-  // 1. Fast checkout-status check (<400ms typical)
+  // 1. Fast authoritative check via live FamGateway checkout-status endpoint (responds in ~300ms)
   try {
     const res = await fetch(
       `https://famgateway.in/api/checkout-status.php?order_id=${encodeURIComponent(orderId)}`,
       {
         cache: "no-store",
-        signal: AbortSignal.timeout(3500),
+        signal: AbortSignal.timeout(4000),
       }
     );
 
     if (res.ok) {
-      const data = await res.json();
-      if (data.status === "success" || data.status === "COMPLETED") {
-        return {
-          status: "success",
-          utr: data.utr || data.data?.utr,
-          senderName: data.sender_name || data.data?.sender_name,
-          amount: Number(data.amount || data.data?.amount) || undefined,
-        };
-      }
-      if (data.status === "expired" || data.status === "FAILED") {
-        return { status: "expired" };
-      }
-      if (data.status === "pending") {
-        return { status: "pending" };
+      const data = await res.json().catch(() => null);
+      if (data) {
+        const rawStatus = String(data.status || data.data?.status || "").toLowerCase();
+        const isSuccess =
+          rawStatus === "success" ||
+          rawStatus === "completed" ||
+          rawStatus === "paid" ||
+          data.success === true ||
+          data.paid === true;
+
+        if (isSuccess) {
+          return {
+            status: "success",
+            utr: data.utr || data.data?.utr || data.bank_utr,
+            senderName: data.sender_name || data.data?.sender_name,
+            amount: Number(data.amount || data.data?.amount) || undefined,
+          };
+        }
+        if (rawStatus === "expired" || rawStatus === "failed") {
+          return { status: "expired" };
+        }
       }
     }
-  } catch (err) {}
+  } catch (err) {
+    console.warn(`[FAMGATEWAY] checkout-status check failed for ${orderId}:`, err);
+  }
 
-  // 2. Authoritative verify-order endpoint with fallback
+  // 2. Check with Merchant API Key query param if available
   if (apiKey) {
+    try {
+      const res = await fetch(
+        `https://famgateway.in/api/checkout-status.php?order_id=${encodeURIComponent(
+          orderId
+        )}&api_key=${encodeURIComponent(apiKey)}`,
+        {
+          cache: "no-store",
+          signal: AbortSignal.timeout(3000),
+        }
+      );
+
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data) {
+          const rawStatus = String(data.status || data.data?.status || "").toLowerCase();
+          const isSuccess =
+            rawStatus === "success" ||
+            rawStatus === "completed" ||
+            rawStatus === "paid" ||
+            data.success === true;
+
+          if (isSuccess) {
+            return {
+              status: "success",
+              utr: data.utr || data.data?.utr || data.bank_utr,
+              senderName: data.sender_name || data.data?.sender_name,
+              amount: Number(data.amount || data.data?.amount) || undefined,
+            };
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[FAMGATEWAY] checkout-status with api_key failed for ${orderId}:`, err);
+    }
+
+    // 3. Optional fallback to verify-order.php
     try {
       const res = await fetch(
         `https://famgateway.in/api/verify-order.php?api_key=${encodeURIComponent(
@@ -1406,29 +1451,39 @@ export async function checkFamGatewayOrderStatus(orderId: string): Promise<{
             "X-Api-Key": apiKey,
           },
           cache: "no-store",
-          signal: AbortSignal.timeout(4000),
+          signal: AbortSignal.timeout(2500),
         }
       );
 
       if (res.ok) {
-        const data = await res.json();
-        if (data.status === "success") {
-          return {
-            status: "success",
-            utr: data.data?.utr || data.utr,
-            senderName: data.data?.sender_name || data.sender_name,
-            amount: Number(data.data?.amount || data.amount) || undefined,
-          };
-        }
-        if (data.status === "expired") {
-          return { status: "expired" };
+        const data = await res.json().catch(() => null);
+        if (data) {
+          const rawStatus = String(data.status || data.data?.status || "").toLowerCase();
+          const isSuccess =
+            rawStatus === "success" ||
+            rawStatus === "completed" ||
+            rawStatus === "paid" ||
+            data.success === true ||
+            data.paid === true;
+
+          if (isSuccess) {
+            return {
+              status: "success",
+              utr: data.data?.utr || data.utr || data.data?.bank_utr || data.bank_utr,
+              senderName: data.data?.sender_name || data.sender_name || data.data?.customer_name,
+              amount: Number(data.data?.amount || data.amount) || undefined,
+            };
+          }
         }
       }
-    } catch (err) {}
+    } catch (err) {
+      // Endpoint may not be active; catch silently
+    }
   }
 
   return { status: "pending" };
 }
+
 
 /**
  * Check Atlos Crypto status for a given orderId with timeout safety.
@@ -1921,17 +1976,69 @@ export async function resendOrderEmail(
   orderId: string,
   overrideEmail?: string
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
-  const credentials = await getFulfilledCredentials(orderId);
-  if (!credentials || credentials.length === 0) {
-    return { success: false, error: "No credentials found for this order ID in database." };
-  }
-
+  let credentials = await getFulfilledCredentials(orderId);
   const history = await getAllOrders();
-  const order = history.find((o) => o.orderId === orderId);
+  let order = history.find((o) => o.orderId === orderId);
+  if (!order) {
+    const fallback = await getOrder(orderId);
+    if (fallback) {
+      order = {
+        orderId: fallback.orderId,
+        email: fallback.email,
+        amount: fallback.amount,
+        quantity: fallback.quantity,
+        productId: fallback.productId,
+        productName: fallback.productName,
+        cartItems: fallback.cartItems,
+        status: "pending",
+        createdAt: new Date(fallback.createdAt || Date.now()).toISOString(),
+      };
+    }
+  }
   const targetEmail = overrideEmail?.trim() || order?.email;
 
   if (!targetEmail) {
     return { success: false, error: "No customer email address found for this order." };
+  }
+
+  // 1. If not found in FULFILLED_KEY, check if stored in order history
+  if (!credentials || credentials.length === 0) {
+    if (order?.deliveredCredentials && order.deliveredCredentials.length > 0) {
+      credentials = order.deliveredCredentials;
+    } else if (order?.deliveredCredential) {
+      credentials = [order.deliveredCredential as Credential];
+    }
+  }
+
+  // 2. If STILL no credentials and the order is in history, AUTO-FULFILL IT NOW!
+  if (!credentials || credentials.length === 0) {
+    if (order) {
+      console.log(`[RESEND] No fulfilled credentials in database for ${orderId}. Auto-fulfilling order now...`);
+      const fulfillRes = await fulfillOrder({
+        orderId,
+        email: targetEmail,
+        utr: order.utr || "ADMIN_MANUAL_FULFILLMENT",
+        senderName: order.senderName,
+        amount: order.amount || APP_CONFIG.price,
+        quantity: order.quantity || 1,
+        productId: order.productId,
+        productName: order.productName,
+        cartItems: order.cartItems,
+      });
+
+      if (fulfillRes.success && (fulfillRes.credentials || fulfillRes.credential)) {
+        return {
+          success: true,
+          messageId: "auto-fulfilled-and-sent",
+        };
+      } else {
+        return {
+          success: false,
+          error: fulfillRes.error || "Could not claim credentials from database stock.",
+        };
+      }
+    }
+    return { success: false, error: "No credentials found for this order ID in database." };
   }
 
   try {
@@ -1943,6 +2050,7 @@ export async function resendOrderEmail(
       utr: order?.utr,
       senderName: order?.senderName,
       amount: order?.amount || APP_CONFIG.price,
+      productName: order?.productName,
     });
 
     const now = new Date().toISOString();
@@ -1968,6 +2076,137 @@ export async function resendOrderEmail(
     };
   }
 }
+
+/**
+ * Manually fulfills an order from Admin panel:
+ * Supports assigning credentials from stock OR assigning custom credentials entered by admin.
+ */
+export async function manualFulfillOrder({
+  orderId,
+  overrideEmail,
+  customCredentials,
+  utr,
+}: {
+  orderId: string;
+  overrideEmail?: string;
+  customCredentials?: Partial<Credential>[];
+  utr?: string;
+}): Promise<{
+  success: boolean;
+  error?: string;
+  credentials?: Credential[];
+  messageId?: string;
+}> {
+  const history = await getAllOrders();
+  let order = history.find((o) => o.orderId === orderId);
+  if (!order) {
+    const fallback = await getOrder(orderId);
+    if (fallback) {
+      order = {
+        orderId: fallback.orderId,
+        email: fallback.email,
+        amount: fallback.amount,
+        quantity: fallback.quantity,
+        productId: fallback.productId,
+        productName: fallback.productName,
+        cartItems: fallback.cartItems,
+        status: "pending",
+        createdAt: new Date(fallback.createdAt || Date.now()).toISOString(),
+      };
+    }
+  }
+  const targetEmail = overrideEmail?.trim() || order?.email;
+
+  if (!targetEmail) {
+    return { success: false, error: "No customer email address linked to this order." };
+  }
+
+  // 1. If custom credentials were provided by admin
+  if (Array.isArray(customCredentials) && customCredentials.length > 0) {
+    const fullCreds: Credential[] = customCredentials.map((c, idx) => ({
+      id: c.id || `custom-${Date.now()}-${idx}`,
+      email: c.email || c.fields?.id || targetEmail,
+      password: c.password || c.fields?.password,
+      emailPassword: c.emailPassword || c.fields?.emailPassword,
+      discordPassword: c.discordPassword || c.fields?.discordPassword,
+      token: c.token || c.fields?.token,
+      domain: c.domain || c.fields?.domain,
+      twoFactorKey: c.twoFactorKey || c.fields?.twoFactorKey || c.fields?.pin,
+      keyweb: c.keyweb || c.fields?.keyweb,
+      addedAt: c.addedAt || new Date().toISOString(),
+      productId: order?.productId || c.productId,
+      productName: order?.productName || c.productName || "TrinityMart Digital Asset",
+      fields: (c.fields || {
+        id: c.email || targetEmail,
+        password: c.password || "",
+        token: c.token || "",
+      }) as Record<string, string>,
+    }));
+
+    await storeFulfilledCredentials(orderId, fullCreds);
+
+    await markOrderConfirmedInHistory({
+      orderId,
+      utr: utr || order?.utr || "MANUAL_ADMIN_FULFILLMENT",
+      senderName: order?.senderName,
+      credential: fullCreds[0],
+      credentials: fullCreds,
+      quantity: fullCreds.length,
+    });
+
+    try {
+      const sentInfo = await sendCredentialEmail({
+        email: targetEmail,
+        orderId,
+        credential: fullCreds[0],
+        credentials: fullCreds,
+        utr: utr || order?.utr,
+        senderName: order?.senderName,
+        amount: order?.amount || APP_CONFIG.price,
+        productName: order?.productName,
+      });
+
+      await recordEmailSent(orderId, {
+        messageId: sentInfo?.messageId,
+        recipient: targetEmail,
+        response: sentInfo?.response,
+      });
+
+      return {
+        success: true,
+        credentials: fullCreds,
+        messageId: sentInfo?.messageId,
+      };
+    } catch (err) {
+      await recordEmailFailed(orderId, err instanceof Error ? err.message : String(err));
+      return {
+        success: false,
+        error: `Credentials saved, but email delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+        credentials: fullCreds,
+      };
+    }
+  }
+
+  // 2. Otherwise auto-claim from inventory
+  const fulfillRes = await fulfillOrder({
+    orderId,
+    email: targetEmail,
+    utr: utr || order?.utr || "MANUAL_ADMIN_FULFILLMENT",
+    senderName: order?.senderName,
+    amount: order?.amount || APP_CONFIG.price,
+    quantity: order?.quantity || 1,
+    productId: order?.productId,
+    productName: order?.productName,
+    cartItems: order?.cartItems,
+  });
+
+  return {
+    success: fulfillRes.success,
+    error: fulfillRes.error,
+    credentials: fulfillRes.credentials || (fulfillRes.credential ? [fulfillRes.credential] : undefined),
+  };
+}
+
 
 export async function getAllOrders(): Promise<StoredOrder[]> {
   const history = await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY);

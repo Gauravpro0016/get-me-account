@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   fulfillOrder,
   getFulfilledCredential,
+  getFulfilledCredentials,
   getOrder,
   isAlreadySent,
+  checkFamGatewayOrderStatus,
+  redis,
+  ORDERS_HISTORY_KEY,
+  StoredOrder,
 } from "@/lib/fulfillment";
 import { APP_CONFIG } from "@/lib/config";
 
@@ -30,105 +35,63 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const apiKey = process.env.FAMGATEWAY_API_KEY;
-
-    // Check if already fulfilled
+    // 1. Check if queryId matches directly as fulfilled orderId
     if (await isAlreadySent(queryId)) {
-      const cred = await getFulfilledCredential(queryId);
+      const creds = await getFulfilledCredentials(queryId);
       return NextResponse.json({
         status: "confirmed",
         already_sent: true,
-        credential: cred
-          ? {
-              email: cred.email,
-              emailPassword: cred.emailPassword || cred.password,
-              discordPassword: cred.discordPassword,
-              token: cred.token,
-              domain: cred.domain,
-              twoFactorKey: cred.twoFactorKey,
-              keyweb: cred.keyweb,
-            }
-          : undefined,
-        credentials: cred ? [cred] : [],
+        credential: creds[0] || undefined,
+        credentials: creds,
       });
     }
 
-    // Check FamGateway
-    let verified = false;
-    let finalUtr: string | undefined = undefined;
-    let senderName: string | undefined = undefined;
+    // 2. Check if queryId is a 12-digit UTR in orders history
+    const history = (await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY)) ?? [];
+    const matchedByUtr = history.find(
+      (o) => (o.utr && o.utr.trim() === queryId) || o.orderId === queryId
+    );
 
-    if (apiKey) {
-      try {
-        const res = await fetch(
-          `https://famgateway.in/api/verify-order.php?api_key=${encodeURIComponent(
-            apiKey
-          )}&order_id=${encodeURIComponent(queryId)}`,
-          { cache: "no-store" }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === "success") {
-            verified = true;
-            finalUtr = data.data?.utr || data.utr;
-            senderName = data.data?.sender_name || data.sender_name;
-          }
-        }
-      } catch (err) {
-        console.warn("verify-order error in verify-tx:", err);
+    if (matchedByUtr && matchedByUtr.status === "confirmed") {
+      const creds = matchedByUtr.deliveredCredentials || (matchedByUtr.deliveredCredential ? [matchedByUtr.deliveredCredential] : []);
+      if (creds.length > 0) {
+        return NextResponse.json({
+          status: "confirmed",
+          already_sent: true,
+          credential: creds[0],
+          credentials: creds,
+          utr: matchedByUtr.utr,
+        });
       }
     }
 
-    if (!verified) {
-      // Try checkout-status.php
-      try {
-        const res = await fetch(
-          `https://famgateway.in/api/checkout-status.php?order_id=${encodeURIComponent(
-            queryId
-          )}`,
-          { cache: "no-store" }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === "success") {
-            verified = true;
-            finalUtr = data.utr;
-            senderName = data.sender_name;
-          }
-        }
-      } catch (err) {
-        console.warn("checkout-status error in verify-tx:", err);
-      }
-    }
+    const targetOrderId = matchedByUtr?.orderId || queryId;
 
-    if (verified) {
-      const orderData = await getOrder(queryId);
+    // 3. Check FamGateway status using unified helper
+    const fgStatus = await checkFamGatewayOrderStatus(targetOrderId);
+
+    if (fgStatus.status === "success") {
+      const orderData = await getOrder(targetOrderId);
+      const finalUtr = fgStatus.utr || (matchedByUtr?.utr) || (/^\d{12}$/.test(queryId) ? queryId : undefined);
+
       const result = await fulfillOrder({
-        orderId: queryId,
+        orderId: targetOrderId,
         email,
         utr: finalUtr,
-        senderName,
-        amount: orderData?.amount || APP_CONFIG.price,
-        quantity: orderData?.quantity || 1,
-        productId: orderData?.productId,
-        productName: orderData?.productName,
-        cartItems: orderData?.cartItems,
+        senderName: fgStatus.senderName || matchedByUtr?.senderName,
+        amount: orderData?.amount || matchedByUtr?.amount || fgStatus.amount || APP_CONFIG.price,
+        quantity: orderData?.quantity || matchedByUtr?.quantity || 1,
+        productId: orderData?.productId || matchedByUtr?.productId,
+        productName: orderData?.productName || matchedByUtr?.productName,
+        cartItems: orderData?.cartItems || matchedByUtr?.cartItems,
       });
+
+      const creds = result.credentials || (result.credential ? [result.credential] : []);
 
       return NextResponse.json({
         status: "confirmed",
-        credential: result.credential
-          ? {
-              email: result.credential.email,
-              emailPassword: result.credential.emailPassword || result.credential.password,
-              discordPassword: result.credential.discordPassword,
-              token: result.credential.token,
-              domain: result.credential.domain,
-              twoFactorKey: result.credential.twoFactorKey,
-              keyweb: result.credential.keyweb,
-            }
-          : undefined,
-        credentials: result.credentials || (result.credential ? [result.credential] : []),
+        credential: creds[0] || undefined,
+        credentials: creds,
         utr: finalUtr,
       });
     }
@@ -143,3 +106,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+

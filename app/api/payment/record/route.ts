@@ -10,6 +10,7 @@ import {
   redis,
   ORDERS_HISTORY_KEY,
   StoredOrder,
+  checkFamGatewayOrderStatus,
 } from "@/lib/fulfillment";
 import { APP_CONFIG } from "@/lib/config";
 
@@ -81,108 +82,74 @@ export async function POST(req: NextRequest) {
         }
       }
 
-    const cleanUtr = utr ? utr.trim() : "";
+      const cleanUtr = utr ? utr.trim() : "";
 
-    // 1. Strict 12-digit numeric check for Indian UPI UTR
-    if (!cleanUtr || !/^\d{12}$/.test(cleanUtr)) {
-      return NextResponse.json(
-        {
-          error:
-            "Invalid UTR number. Bank UTR / Transaction Reference must be exactly 12 numeric digits (e.g. 423456789012).",
-        },
-        { status: 400 }
-      );
-    }
-
-    // 2. Check for duplicate UTR reuse
-    let isUsed = false;
-    try {
-      isUsed = Boolean(await redis.sismember("used_bank_utrs", cleanUtr));
-    } catch (e) {
-      console.warn("Redis used_bank_utrs check error:", e);
-    }
-
-    if (isUsed) {
-      return NextResponse.json(
-        {
-          error: `This UTR (${cleanUtr}) has already been claimed for another transaction. Duplicate redemptions are rejected.`,
-        },
-        { status: 400 }
-      );
-    }
-
-    // 3. Strict Gateway Verification with FamGateway API
-    // Ensure payment actually settled in merchant bank account
-    const apiKey = process.env.FAMGATEWAY_API_KEY;
-    let gatewayVerified = false;
-    let fgUtr: string | undefined = undefined;
-    let fgSender: string | undefined = undefined;
-
-    if (apiKey) {
-      // Method A: Check authoritative verify-order endpoint
-      try {
-        const fgRes = await fetch(
-          `https://famgateway.in/api/verify-order.php?api_key=${encodeURIComponent(
-            apiKey
-          )}&order_id=${encodeURIComponent(orderId)}`,
+      // 1. Strict 12-digit numeric check for Indian UPI UTR
+      if (!cleanUtr || !/^\d{12}$/.test(cleanUtr)) {
+        return NextResponse.json(
           {
-            headers: { "Content-Type": "application/json", "X-Api-Key": apiKey },
-            cache: "no-store",
-          }
+            error:
+              "Invalid UTR number. Bank UTR / Transaction Reference must be exactly 12 numeric digits (e.g. 423456789012).",
+          },
+          { status: 400 }
         );
-        if (fgRes.ok) {
-          const fgData = await fgRes.json();
-          if (fgData.status === "success") {
-            gatewayVerified = true;
-            fgUtr = fgData.data?.utr || fgData.utr;
-            fgSender = fgData.data?.sender_name || fgData.sender_name;
-          }
-        }
+      }
+
+      // 2. Check for duplicate UTR reuse
+      let isUsed = false;
+      try {
+        isUsed = Boolean(await redis.sismember("used_bank_utrs", cleanUtr));
       } catch (e) {
-        console.warn("FamGateway verify error:", e);
+        console.warn("Redis used_bank_utrs check error:", e);
       }
 
-      // Method B: Fallback to checkout-status
-      if (!gatewayVerified) {
-        try {
-          const csRes = await fetch(
-            `https://famgateway.in/api/checkout-status.php?order_id=${encodeURIComponent(
-              orderId
-            )}`,
-            { cache: "no-store" }
-          );
-          if (csRes.ok) {
-            const csData = await csRes.json();
-            if (csData.status === "success") {
-              gatewayVerified = true;
-              fgUtr = csData.utr;
-              fgSender = csData.sender_name;
-            }
-          }
-        } catch (e) {
-          console.warn("FamGateway checkout-status error:", e);
+      if (isUsed) {
+        return NextResponse.json(
+          {
+            error: `This UTR (${cleanUtr}) has already been claimed for another transaction. Duplicate redemptions are rejected.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      // 3. Immediately persist submitted UTR to orders_history so admin sees it right away
+      try {
+        const history = (await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY)) ?? [];
+        const idx = history.findIndex((o) => o.orderId === orderId);
+        if (idx !== -1) {
+          history[idx].utr = cleanUtr;
+          if (senderName) history[idx].senderName = senderName;
+          await redis.set(ORDERS_HISTORY_KEY, history);
         }
+        await redis.hset(`order_meta:${orderId}`, { utr: cleanUtr });
+      } catch (e) {
+        console.warn("Could not record submitted UTR on order:", e);
       }
-    }
 
-    // Require genuine gateway bank verification
-    if (!gatewayVerified) {
-      return NextResponse.json(
-        {
-          error: `Payment verification failed: No matching bank settlement found on FamGateway for Order "${orderId}". Please ensure you completed payment in your UPI app and try again in 30 seconds.`,
-        },
-        { status: 400 }
-      );
-    }
+      // 4. Authoritatively verify with FamGateway live API
+      const fgStatus = await checkFamGatewayOrderStatus(orderId);
+      let gatewayVerified = fgStatus.status === "success";
+      let confirmedUtr = fgStatus.utr || cleanUtr;
+      let fgSender = fgStatus.senderName;
 
-    const confirmedUtr = fgUtr || cleanUtr;
+      if (!gatewayVerified) {
+        return NextResponse.json(
+          {
+            success: false,
+            pending: true,
+            utr: cleanUtr,
+            error: `UTR (${cleanUtr}) recorded. FamGateway is waiting for bank settlement detection. If you just paid, please allow 30-60 seconds for processing or check your email for credentials.`,
+          },
+          { status: 400 }
+        );
+      }
 
-    // Remember this UTR so it cannot be used again
-    try {
-      await redis.sadd("used_bank_utrs", cleanUtr);
-    } catch (e) {
-      console.warn("Failed to store in used_bank_utrs:", e);
-    }
+      // Remember this UTR so it cannot be used again
+      try {
+        await redis.sadd("used_bank_utrs", cleanUtr);
+      } catch (e) {
+        console.warn("Failed to store in used_bank_utrs:", e);
+      }
 
       const savedOrder = await getOrder(orderId);
       const resolvedAmount = Number(body.amount) || savedOrder?.amount || amount;
@@ -191,12 +158,13 @@ export async function POST(req: NextRequest) {
       const resolvedProductName = productName || savedOrder?.productName;
       const resolvedCartItems = cartItems || savedOrder?.cartItems;
 
-      // Fulfill order: Claim REAL credentials directly from product database inventory in Redis
+      // Fulfill order: Claim REAL credentials directly from product database inventory in Redis,
+      // dispatch automated customer email, merchant notification, and Discord sale embed
       const result = await fulfillOrder({
         orderId,
         email,
         utr: confirmedUtr,
-        senderName: senderName || "UPI Customer",
+        senderName: fgSender || senderName || "UPI Customer",
         amount: resolvedAmount,
         quantity: resolvedQuantity,
         productId: resolvedProductId,

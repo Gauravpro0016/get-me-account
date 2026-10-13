@@ -41,13 +41,14 @@ function maskEmail(email: string): string {
 export async function sendDiscordPurchaseNotification(
   opts: DiscordPurchaseNotificationOptions
 ): Promise<boolean> {
-  const webhookUrl =
+  const rawWebhookUrl =
     process.env.DISCORD_SALES_WEBHOOK_URL ||
     process.env.DISCORD_WEBHOOK_URL ||
     process.env.DISCORD_PURCHASE_WEBHOOK_URL;
+  const webhookUrl = rawWebhookUrl?.trim().replace(/^["']|["']$/g, "");
 
-  const botToken = process.env.DISCORD_BOT_TOKEN;
-  const channelId = process.env.DISCORD_CHANNEL_ID;
+  const botToken = process.env.DISCORD_BOT_TOKEN?.trim().replace(/^["']|["']$/g, "");
+  const channelId = process.env.DISCORD_CHANNEL_ID?.trim().replace(/^["']|["']$/g, "");
 
   if (!webhookUrl && (!botToken || !channelId)) {
     console.log(
@@ -203,15 +204,17 @@ export interface DiscordRestockNotificationOptions {
 export async function sendDiscordRestockNotification(
   opts: DiscordRestockNotificationOptions
 ): Promise<boolean> {
-  const webhookUrl =
+  const rawWebhookUrl =
     process.env.DISCORD_RESTOCK_WEBHOOK_URL ||
     process.env.DISCORD_SALES_WEBHOOK_URL ||
     process.env.DISCORD_WEBHOOK_URL ||
     process.env.DISCORD_PURCHASE_WEBHOOK_URL;
+  const webhookUrl = rawWebhookUrl?.trim().replace(/^["']|["']$/g, "");
 
-  const botToken = process.env.DISCORD_BOT_TOKEN;
-  const channelId =
-    process.env.DISCORD_RESTOCK_CHANNEL_ID || process.env.DISCORD_CHANNEL_ID;
+  const botToken = process.env.DISCORD_BOT_TOKEN?.trim().replace(/^["']|["']$/g, "");
+  const channelId = (
+    process.env.DISCORD_RESTOCK_CHANNEL_ID || process.env.DISCORD_CHANNEL_ID
+  )?.trim().replace(/^["']|["']$/g, "");
 
   if (!webhookUrl && (!botToken || !channelId)) {
     console.log(

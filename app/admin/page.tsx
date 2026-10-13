@@ -109,6 +109,15 @@ export default function AdminPage() {
   const [togglingManualReceipt, setTogglingManualReceipt] = useState(false);
   const [copiedAuditKey, setCopiedAuditKey] = useState<string>("");
 
+  // ── Order Direct Fulfillment & Gateway Verification state ────────────────
+  const [fulfillingOrderId, setFulfillingOrderId] = useState<string | null>(null);
+  const [checkingGatewayOrderId, setCheckingGatewayOrderId] = useState<string | null>(null);
+  const [showCustomInputs, setShowCustomInputs] = useState(false);
+  const [customLoginInput, setCustomLoginInput] = useState("");
+  const [customPasswordInput, setCustomPasswordInput] = useState("");
+  const [customTokenInput, setCustomTokenInput] = useState("");
+  const [custom2faInput, setCustom2faInput] = useState("");
+
   // ── Add form state ───────────────────────────────────────────────────────
   const [newEmail, setNewEmail] = useState("");
   const [newEmailPassword, setNewEmailPassword] = useState("");
@@ -501,6 +510,112 @@ export default function AdminPage() {
       });
     } finally {
       setResendingEmail(false);
+    }
+  };
+
+  const handleFulfillOrder = async (
+    orderId: string,
+    emailOverride?: string,
+    customCreds?: any,
+    utrOverride?: string
+  ) => {
+    setFulfillingOrderId(orderId);
+    setResendStatusMsg(null);
+    try {
+      const res = await fetch("/api/admin/orders/fulfill", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-password": password,
+        },
+        body: JSON.stringify({
+          orderId,
+          email: emailOverride?.trim() || undefined,
+          customCredentials: customCreds,
+          utr: utrOverride,
+          action: "fulfill",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to fulfill order");
+      }
+      setResendStatusMsg({
+        type: "success",
+        text: "✅ Order fulfilled successfully! Credentials assigned and email dispatched to customer.",
+      });
+      await fetchOrders();
+      setAuditModalOrder((prev) =>
+        prev && prev.orderId === orderId
+          ? {
+              ...prev,
+              status: "confirmed",
+              emailStatus: "sent",
+              emailSentAt: new Date().toISOString(),
+              deliveredCredentials: data.credentials,
+              deliveredCredential: data.credentials?.[0],
+            }
+          : prev
+      );
+      setTimeout(() => setResendStatusMsg(null), 5000);
+    } catch (err) {
+      setResendStatusMsg({
+        type: "error",
+        text: err instanceof Error ? err.message : "Failed to fulfill order",
+      });
+    } finally {
+      setFulfillingOrderId(null);
+    }
+  };
+
+  const handleCheckGatewayOrder = async (orderId: string) => {
+    setCheckingGatewayOrderId(orderId);
+    setResendStatusMsg(null);
+    try {
+      const res = await fetch("/api/admin/orders/fulfill", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-password": password,
+        },
+        body: JSON.stringify({
+          orderId,
+          action: "check_gateway",
+        }),
+      });
+      const data = await res.json();
+      if (data.verifiedOnGateway && data.success) {
+        setResendStatusMsg({
+          type: "success",
+          text: "✅ Payment verified on UPI Gateway! Order fulfilled & credentials emailed.",
+        });
+        await fetchOrders();
+        setAuditModalOrder((prev) =>
+          prev && prev.orderId === orderId
+            ? {
+                ...prev,
+                status: "confirmed",
+                emailStatus: "sent",
+                emailSentAt: new Date().toISOString(),
+                deliveredCredentials: data.credentials,
+                deliveredCredential: data.credentials?.[0],
+              }
+            : prev
+        );
+      } else {
+        setResendStatusMsg({
+          type: "error",
+          text: data.message || "Gateway reported pending. Use 'Fulfill from Stock' if UPI money arrived in your bank account.",
+        });
+      }
+      setTimeout(() => setResendStatusMsg(null), 6000);
+    } catch (err) {
+      setResendStatusMsg({
+        type: "error",
+        text: err instanceof Error ? err.message : "Gateway check error",
+      });
+    } finally {
+      setCheckingGatewayOrderId(null);
     }
   };
 
@@ -1425,10 +1540,35 @@ export default function AdminPage() {
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1.5 sm:pt-0 border-t border-[#262a33]/40 sm:border-t-0">
+                        <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0 pt-1.5 sm:pt-0 border-t border-[#262a33]/40 sm:border-t-0 flex-wrap">
                           <div className="hidden sm:block shrink-0">
                             {getStatusBadge(ord.status)}
                           </div>
+
+                          {/* Quick Fulfill & Check Buttons if Pending */}
+                          {ord.status === "pending" && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleFulfillOrder(ord.orderId, ord.email)}
+                                disabled={fulfillingOrderId === ord.orderId}
+                                className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 text-[11px] font-mono font-bold cursor-pointer transition-all active:scale-95 disabled:opacity-50 shrink-0"
+                                title="Instantly fulfill order and email credentials from database inventory"
+                              >
+                                {fulfillingOrderId === ord.orderId ? "Fulfilling…" : "⚡ Fulfill & Send"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleCheckGatewayOrder(ord.orderId)}
+                                disabled={checkingGatewayOrderId === ord.orderId}
+                                className="px-2 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-[11px] font-mono font-semibold cursor-pointer transition-all active:scale-95 disabled:opacity-50 shrink-0"
+                                title="Check UPI gateway for confirmed settlement"
+                              >
+                                {checkingGatewayOrderId === ord.orderId ? "Checking…" : "🔄 Check UPI"}
+                              </button>
+                            </>
+                          )}
+
                           <button
                             type="button"
                             onClick={() => {
@@ -1638,7 +1778,30 @@ export default function AdminPage() {
                             </p>
                           </div>
 
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {activeInspect.status === "pending" && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleFulfillOrder(activeInspect.orderId, activeInspect.email)}
+                                  disabled={fulfillingOrderId === activeInspect.orderId}
+                                  className="px-3.5 py-2 rounded-xl bg-linear-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white font-mono font-bold text-xs shadow-md shadow-emerald-500/20 transition-all cursor-pointer disabled:opacity-50"
+                                  title="Instantly fulfill order and email credentials from database inventory"
+                                >
+                                  {fulfillingOrderId === activeInspect.orderId ? "Fulfilling…" : "⚡ Fulfill & Send"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCheckGatewayOrder(activeInspect.orderId)}
+                                  disabled={checkingGatewayOrderId === activeInspect.orderId}
+                                  className="px-3 py-2 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white font-mono font-semibold text-xs border border-[#8083ff]/30 transition-all cursor-pointer disabled:opacity-50"
+                                  title="Check UPI gateway for confirmed settlement"
+                                >
+                                  {checkingGatewayOrderId === activeInspect.orderId ? "Checking…" : "🔄 Check UPI"}
+                                </button>
+                              </>
+                            )}
+
                             <button
                               type="button"
                               onClick={() => {
@@ -1830,17 +1993,30 @@ export default function AdminPage() {
 
                           {/* Actions */}
                           <td className="py-3.5 px-4 whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAuditModalOrder(ord);
-                                setResendCustomEmail(ord.email);
-                                setResendStatusMsg(null);
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-xs font-mono font-bold cursor-pointer transition-colors"
-                            >
-                              Audit / Resend
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              {ord.status === "pending" && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleFulfillOrder(ord.orderId, ord.email)}
+                                  disabled={fulfillingOrderId === ord.orderId}
+                                  className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 text-[11px] font-mono font-bold cursor-pointer transition-colors"
+                                  title="Fulfill order from stock & email credentials"
+                                >
+                                  {fulfillingOrderId === ord.orderId ? "…" : "⚡ Fulfill"}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAuditModalOrder(ord);
+                                  setResendCustomEmail(ord.email);
+                                  setResendStatusMsg(null);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-xs font-mono font-bold cursor-pointer transition-colors"
+                              >
+                                Audit / Resend
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -2026,6 +2202,137 @@ export default function AdminPage() {
                 </div>
               )}
             </div>
+
+            {/* Unfulfilled Order / Received Payment Alert & Fast Fulfill Banner */}
+            {(!auditModalOrder.deliveredCredential && (!auditModalOrder.deliveredCredentials || auditModalOrder.deliveredCredentials.length === 0)) && (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl shrink-0">⚡</span>
+                  <div className="space-y-1">
+                    <div className="font-bold text-sm text-amber-300">
+                      Payment Received on UPI? Fulfill Order Now
+                    </div>
+                    <p className="text-xs text-amber-200/80 leading-relaxed font-mono">
+                      If you received the UPI payment for this order, you can immediately fulfill it from database inventory or verify gateway settlement to send the credentials email to <strong>{auditModalOrder.email}</strong> right now.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleFulfillOrder(auditModalOrder.orderId, resendCustomEmail)}
+                    disabled={fulfillingOrderId === auditModalOrder.orderId}
+                    className="px-4 py-2 rounded-xl bg-linear-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-emerald-500/25 active:scale-95 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {fulfillingOrderId === auditModalOrder.orderId ? (
+                      <>
+                        <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Fulfilling…</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>⚡</span>
+                        <span>Fulfill from Stock &amp; Send Email</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCheckGatewayOrder(auditModalOrder.orderId)}
+                    disabled={checkingGatewayOrderId === auditModalOrder.orderId}
+                    className="px-3.5 py-2 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white font-mono font-semibold text-xs border border-[#8083ff]/30 active:scale-95 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {checkingGatewayOrderId === auditModalOrder.orderId ? (
+                      <>
+                        <span className="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        <span>Verifying Bank…</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>🔄</span>
+                        <span>Check UPI Gateway</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomInputs(!showCustomInputs)}
+                    className="px-3 py-2 rounded-xl bg-[#181c24] hover:bg-[#262a33] text-[#908fa0] hover:text-[#dfe2ee] font-mono text-xs border border-[#262a33] transition-colors cursor-pointer"
+                  >
+                    {showCustomInputs ? "Hide Custom Fields" : "+ Attach Custom Account"}
+                  </button>
+                </div>
+
+                {/* Custom Credential Fields (Accordion) */}
+                {showCustomInputs && (
+                  <div className="p-3.5 rounded-xl bg-[#090d16] border border-[#262a33] space-y-3 pt-3 animate-in fade-in duration-200">
+                    <span className="text-[11px] font-bold text-[#8083ff] uppercase tracking-wider block font-mono">
+                      Assign Specific Account Credentials to Customer
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={customLoginInput}
+                        onChange={(e) => setCustomLoginInput(e.target.value)}
+                        placeholder="Account ID / Email / Username"
+                        className="px-3 py-1.5 rounded-lg bg-[#181c24] border border-[#262a33] text-xs font-mono text-[#dfe2ee] placeholder-[#908fa0]/50 outline-none focus:border-[#8083ff]"
+                      />
+                      <input
+                        type="text"
+                        value={customPasswordInput}
+                        onChange={(e) => setCustomPasswordInput(e.target.value)}
+                        placeholder="Account Password"
+                        className="px-3 py-1.5 rounded-lg bg-[#181c24] border border-[#262a33] text-xs font-mono text-[#dfe2ee] placeholder-[#908fa0]/50 outline-none focus:border-[#8083ff]"
+                      />
+                      <input
+                        type="text"
+                        value={customTokenInput}
+                        onChange={(e) => setCustomTokenInput(e.target.value)}
+                        placeholder="Token / License Key (Optional)"
+                        className="px-3 py-1.5 rounded-lg bg-[#181c24] border border-[#262a33] text-xs font-mono text-[#dfe2ee] placeholder-[#908fa0]/50 outline-none focus:border-[#8083ff]"
+                      />
+                      <input
+                        type="text"
+                        value={custom2faInput}
+                        onChange={(e) => setCustom2faInput(e.target.value)}
+                        placeholder="2FA / PIN / Backup Code (Optional)"
+                        className="px-3 py-1.5 rounded-lg bg-[#181c24] border border-[#262a33] text-xs font-mono text-[#dfe2ee] placeholder-[#908fa0]/50 outline-none focus:border-[#8083ff]"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!customLoginInput.trim() && !customPasswordInput.trim() && !customTokenInput.trim()) {
+                          alert("Please enter at least an Account Login, Password, or Token.");
+                          return;
+                        }
+                        handleFulfillOrder(auditModalOrder.orderId, resendCustomEmail, [
+                          {
+                            email: customLoginInput.trim() || auditModalOrder.email,
+                            password: customPasswordInput.trim(),
+                            token: customTokenInput.trim(),
+                            twoFactorKey: custom2faInput.trim(),
+                            fields: {
+                              id: customLoginInput.trim() || auditModalOrder.email,
+                              password: customPasswordInput.trim(),
+                              token: customTokenInput.trim(),
+                              pin: custom2faInput.trim(),
+                            },
+                          },
+                        ]);
+                      }}
+                      disabled={fulfillingOrderId === auditModalOrder.orderId}
+                      className="w-full py-2 rounded-lg bg-linear-to-r from-[#6366f1] to-[#8b5cf6] text-white font-mono font-bold text-xs uppercase tracking-wider shadow hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+                    >
+                      Deliver These Custom Credentials &amp; Send Email Now &rarr;
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Resend Action Form */}
             <div className="p-4 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-3">
