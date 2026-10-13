@@ -106,6 +106,7 @@ export async function POST(req: NextRequest) {
       cartItems,
       couponCode,
       discountAmount,
+      paymentMethod: "upi",
     });
 
     return NextResponse.json({

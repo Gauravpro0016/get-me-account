@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { resendOrderEmail } from "@/lib/fulfillment";
 
 function checkAdmin(req: NextRequest): boolean {
-  const adminPassword = process.env.ADMIN_PASSWORD;
-  const provided = req.headers.get("x-admin-password");
+  const adminPassword = (process.env.ADMIN_PASSWORD || "").trim().replace(/^["']|["']$/g, "");
+  const authHeader = req.headers.get("authorization");
+  const bearer = authHeader?.replace(/^Bearer\s+/i, "");
+  const provided = (
+    req.headers.get("x-admin-password") ||
+    req.nextUrl.searchParams.get("password") ||
+    bearer ||
+    ""
+  ).trim().replace(/^["']|["']$/g, "");
   return !!adminPassword && provided === adminPassword;
 }
 

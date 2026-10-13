@@ -20,9 +20,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Trinitymart — Digital Keys & Gaming Accounts Marketplace",
+  title: "Trinitymart",
   description:
-    "India's #1 automated marketplace for Netflix keys, Steam CS2 Prime ID and passwords, Discord Nitro Boosters, Spotify, Minecraft, and PC game keys. Instant UPI & Crypto delivery with full replacement warranty.",
+    "India's #1 automated marketplace for Netflix keys, Prime ID and passwords, Discord Nitro Boosters, Spotify, Minecraft, and PC game keys. Instant UPI & Crypto delivery with full replacement warranty.",
   keywords: [
     "Trinitymart",
     "Digital Keys",

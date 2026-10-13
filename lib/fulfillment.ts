@@ -4,7 +4,16 @@ import path from "path";
 import { Redis } from "@upstash/redis";
 import { APP_CONFIG } from "@/lib/config";
 import { incrementCouponUsage } from "@/lib/coupons";
-import { sendDiscordPurchaseNotification } from "@/lib/discord";
+import {
+  sendDiscordPurchaseNotification,
+  sendDiscordLowStockAlert,
+  sendDiscordEmailFailureAlert,
+} from "@/lib/discord";
+import {
+  sendTelegramPurchaseNotification,
+  sendTelegramLowStockAlert,
+  sendTelegramEmailFailureAlert,
+} from "@/lib/telegram";
 
 export type Credential = {
   id: string;
@@ -1275,17 +1284,84 @@ export async function fulfillOrder({
 
   // Also dispatch automated Discord announcement to channel (e.g., "#orders" or "#vouches")
   try {
+    const isCryptoOrder =
+      Boolean(utr && (utr.startsWith("CRYPTO:") || utr.startsWith("0x"))) ||
+      orderId.startsWith("ORD-CR-") ||
+      orderId.startsWith("crypto_") ||
+      resolvedProductId === "crypto" ||
+      orderData?.productId === "crypto" ||
+      orderMeta?.paymentMethod === "crypto_atlos";
+    const paymentType = isCryptoOrder ? "Crypto" : "UPI";
+    const inrRate = APP_CONFIG.inrToUsdRate || 0.011;
+    const usdAmount = (Number(resolvedAmount) * inrRate).toFixed(2);
+
     await sendDiscordPurchaseNotification({
       orderId,
       email,
       senderName,
       amount: resolvedAmount,
+      usdAmount: isCryptoOrder ? usdAmount : undefined,
       productName: resolvedProductName,
       quantity: targetQty,
       utr,
+      paymentType,
+      cartItems: resolvedCartItems,
+      deliveredCount: claimedList.length,
+      credentialsDelivered: true,
     });
   } catch (err) {
     console.warn("Failed to dispatch Discord purchase notification:", err);
+  }
+
+  // Also dispatch automated Telegram notification to admin chat
+  try {
+    const inrRate = APP_CONFIG.inrToUsdRate || 0.011;
+    const isCryptoOrder =
+      Boolean(utr && (utr.startsWith("CRYPTO:") || utr.startsWith("0x"))) ||
+      orderId.startsWith("ORD-CR-") ||
+      orderId.startsWith("crypto_") ||
+      resolvedProductId === "crypto" ||
+      orderData?.productId === "crypto" ||
+      orderMeta?.paymentMethod === "crypto_atlos";
+    const paymentType = isCryptoOrder ? "Crypto" : "UPI";
+    const usdAmount = (Number(resolvedAmount) * inrRate).toFixed(2);
+
+    await sendTelegramPurchaseNotification({
+      orderId,
+      email,
+      amount: resolvedAmount,
+      usdAmount: isCryptoOrder ? usdAmount : undefined,
+      productName: resolvedProductName,
+      quantity: targetQty,
+      utr,
+      paymentType,
+    });
+  } catch (err) {
+    console.warn("Failed to dispatch Telegram purchase notification:", err);
+  }
+
+  // Check inventory levels and trigger low-stock alerts if stock drops <= 3
+  if (resolvedProductId) {
+    try {
+      const inv = (await redis.get<any[]>(`trinitymart_inventory_${resolvedProductId}`)) || [];
+      const remainingCount = Array.isArray(inv) ? inv.length : 0;
+      if (remainingCount <= 3) {
+        Promise.allSettled([
+          sendDiscordLowStockAlert({
+            productName: resolvedProductName,
+            productId: resolvedProductId,
+            remainingStock: remainingCount,
+          }),
+          sendTelegramLowStockAlert({
+            productName: resolvedProductName,
+            productId: resolvedProductId,
+            remainingStock: remainingCount,
+          }),
+        ]).catch(() => {});
+      }
+    } catch (e) {
+      console.warn("Failed to check inventory for low-stock alert:", e);
+    }
   }
 
   // Increment coupon usage count if coupon was used
@@ -1318,6 +1394,7 @@ export type StoredOrder = {
   confirmedAt?: string;
   utr?: string;
   senderName?: string;
+  paymentMethod?: "upi" | "crypto" | string;
   deliveredCredential?: {
     email: string;
     emailPassword?: string;
@@ -1348,6 +1425,9 @@ export type StoredOrder = {
   emailConfirmedManually?: boolean;
   emailResentCount?: number;
   emailLastResentAt?: string;
+  // ── Cart & Payment Recovery Reminders ──────────────────────────────────────
+  recoveryEmailSentAt?: string;
+  recoveryEmailCount?: number;
 };
 
 export const ORDERS_HISTORY_KEY = "orders_history";
@@ -1716,8 +1796,18 @@ export async function recordNewOrder(data: {
   cartItems?: CartOrderItem[];
   couponCode?: string;
   discountAmount?: number;
+  paymentMethod?: "upi" | "crypto" | string;
 }): Promise<void> {
   const quantity = Math.max(1, data.quantity || 1);
+  const resolvedPaymentMethod: "upi" | "crypto" =
+    data.paymentMethod === "crypto" ||
+    data.orderId.startsWith("ORD-CR-") ||
+    data.orderId.startsWith("crypto_") ||
+    data.productId === "crypto" ||
+    data.productId?.includes("crypto")
+      ? "crypto"
+      : "upi";
+
   const newOrder: StoredOrder = {
     orderId: data.orderId,
     email: data.email,
@@ -1729,6 +1819,7 @@ export async function recordNewOrder(data: {
     couponCode: data.couponCode,
     discountAmount: data.discountAmount,
     status: "pending",
+    paymentMethod: resolvedPaymentMethod,
     createdAt: new Date().toISOString(),
     emailStatus: "pending",
   };
@@ -1758,6 +1849,7 @@ export async function recordNewOrder(data: {
       cartItems: JSON.stringify(data.cartItems || []),
       couponCode: data.couponCode || "",
       discountAmount: String(data.discountAmount || 0),
+      paymentMethod: resolvedPaymentMethod,
       createdAt: new Date().toISOString(),
     });
   } catch (err) {
@@ -1782,7 +1874,7 @@ export async function recordNewOrder(data: {
     startBackgroundOrderWatcher(
       data.orderId,
       data.email,
-      data.productId?.includes("crypto") ? "crypto" : "upi"
+      resolvedPaymentMethod
     );
   } catch (e) {
     console.warn("Failed to launch background watcher:", e);
@@ -1796,6 +1888,7 @@ export async function markOrderConfirmedInHistory({
   credential,
   credentials,
   quantity,
+  paymentMethod,
 }: {
   orderId: string;
   utr?: string;
@@ -1803,6 +1896,7 @@ export async function markOrderConfirmedInHistory({
   credential?: Credential;
   credentials?: Credential[];
   quantity?: number;
+  paymentMethod?: "upi" | "crypto" | string;
 }): Promise<void> {
   try {
     const history = (await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY)) ?? [];
@@ -1814,6 +1908,16 @@ export async function markOrderConfirmedInHistory({
       if (utr) history[idx].utr = utr;
       if (senderName) history[idx].senderName = senderName;
       if (quantity) history[idx].quantity = quantity;
+      if (paymentMethod) {
+        history[idx].paymentMethod = paymentMethod;
+      } else if (!history[idx].paymentMethod) {
+        history[idx].paymentMethod =
+          (utr && (utr.startsWith("CRYPTO:") || utr.startsWith("0x"))) ||
+          orderId.startsWith("ORD-CR-") ||
+          orderId.startsWith("crypto_")
+            ? "crypto"
+            : "upi";
+      }
       if (credentials && credentials.length > 0) {
         history[idx].deliveredCredentials = credentials;
         history[idx].deliveredCredential = credentials[0];
@@ -1877,11 +1981,26 @@ export async function recordEmailFailed(orderId: string, error: string): Promise
   try {
     const history = (await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY)) ?? [];
     const idx = history.findIndex((o) => o.orderId === orderId);
+    let targetEmail = "";
     if (idx !== -1) {
       history[idx].emailStatus = "failed";
       history[idx].emailError = error;
+      targetEmail = history[idx].email;
       await redis.set(ORDERS_HISTORY_KEY, history);
     }
+    // Dispatch instant failure alerts to Discord & Telegram
+    Promise.allSettled([
+      sendDiscordEmailFailureAlert({
+        orderId,
+        email: targetEmail || "Customer",
+        error,
+      }),
+      sendTelegramEmailFailureAlert({
+        orderId,
+        email: targetEmail || "Customer",
+        error,
+      }),
+    ]).catch(() => {});
   } catch (err) {
     console.warn("Could not update email failure in orders_history:", err);
   }
@@ -2172,6 +2291,34 @@ export async function manualFulfillOrder({
         response: sentInfo?.response,
       });
 
+      // Also dispatch automated Discord announcement
+      try {
+        const isCryptoOrder =
+          Boolean(utr && (utr.startsWith("CRYPTO:") || utr.startsWith("0x"))) ||
+          orderId.startsWith("ORD-CR-") ||
+          orderId.startsWith("crypto_") ||
+          order?.productId === "crypto" ||
+          order?.paymentMethod === "crypto";
+        const inrRate = APP_CONFIG.inrToUsdRate || 0.011;
+        const ordAmount = order?.amount || APP_CONFIG.price;
+        await sendDiscordPurchaseNotification({
+          orderId,
+          email: targetEmail,
+          senderName: order?.senderName,
+          amount: ordAmount,
+          usdAmount: isCryptoOrder ? (ordAmount * inrRate).toFixed(2) : undefined,
+          productName: order?.productName || fullCreds[0]?.productName,
+          quantity: fullCreds.length,
+          utr: utr || order?.utr,
+          paymentType: isCryptoOrder ? "Crypto" : "UPI",
+          cartItems: order?.cartItems,
+          deliveredCount: fullCreds.length,
+          credentialsDelivered: true,
+        });
+      } catch (e) {
+        console.warn("Failed to dispatch Discord purchase notification in manual fulfillment:", e);
+      }
+
       return {
         success: true,
         credentials: fullCreds,
@@ -2211,6 +2358,210 @@ export async function manualFulfillOrder({
 export async function getAllOrders(): Promise<StoredOrder[]> {
   const history = await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY);
   return history ?? [];
+}
+
+/**
+ * Fast lookup of a single order by its unique Order ID.
+ */
+export async function getOrderById(orderId: string): Promise<StoredOrder | null> {
+  const cleanId = orderId.trim();
+  const history = await getAllOrders();
+  const match = history.find((o) => o.orderId.toLowerCase() === cleanId.toLowerCase());
+  if (match) return match;
+
+  // Fallback to individual redis key
+  const fallback = await getOrder(cleanId);
+  if (!fallback) return null;
+
+  return {
+    orderId: fallback.orderId,
+    email: fallback.email,
+    amount: fallback.amount,
+    quantity: fallback.quantity || 1,
+    productId: fallback.productId,
+    productName: fallback.productName,
+    cartItems: fallback.cartItems,
+    status: "pending",
+    createdAt: new Date(fallback.createdAt || Date.now()).toISOString(),
+  };
+}
+
+/**
+ * Fast lookup of all orders placed by a specific customer email.
+ */
+export async function getOrdersByEmail(email: string): Promise<StoredOrder[]> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail) return [];
+  const history = await getAllOrders();
+  return history.filter((o) => o.email.toLowerCase() === cleanEmail);
+}
+
+/**
+ * Retrieves abandoned orders eligible for payment recovery reminders.
+ * Criteria:
+ * - Status is 'pending'
+ * - Created between 15 minutes and 48 hours ago
+ * - Valid customer email provided
+ */
+export async function getAbandonedOrders(): Promise<StoredOrder[]> {
+  try {
+    const history = (await redis.get<StoredOrder[]>(ORDERS_HISTORY_KEY)) ?? [];
+    const now = Date.now();
+    const fifteenMinsAgo = now - 15 * 60 * 1000;
+    const fortyEightHoursAgo = now - 48 * 60 * 60 * 1000;
+
+    return history.filter((o) => {
+      if (o.status !== "pending") return false;
+      if (!o.email || !o.email.includes("@")) return false;
+      const createdTime = new Date(o.createdAt).getTime();
+      if (isNaN(createdTime) || createdTime > fifteenMinsAgo || createdTime < fortyEightHoursAgo) {
+        return false;
+      }
+      return true;
+    });
+  } catch (err) {
+    console.warn("Error fetching abandoned orders:", err);
+    return [];
+  }
+}
+
+/**
+ * Sends a high-converting, branded recovery reminder email to a customer with an abandoned cart/order.
+ */
+export async function sendRecoveryEmail({
+  orderId,
+  discountCode = "RECOVER5",
+  customNote,
+}: {
+  orderId: string;
+  discountCode?: string;
+  customNote?: string;
+}): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  const history = await getAllOrders();
+  const order = history.find((o) => o.orderId === orderId);
+  if (!order) {
+    return { success: false, error: "Order not found." };
+  }
+  if (!order.email || !order.email.includes("@")) {
+    return { success: false, error: "No valid email address found for this order." };
+  }
+
+  const baseUrl = (
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
+    "https://get-me-account.vercel.app"
+  ).replace(/\/+$/, "");
+
+  const resumeUrl = `${baseUrl}/orders/lookup?orderId=${encodeURIComponent(orderId)}`;
+  const prodName = order.productName || "TrinityMart Digital Asset";
+  const amountStr = `₹${order.amount}`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="UTF-8"/></head>
+    <body style="margin:0;padding:24px 10px;background:#0a0e16;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,sans-serif;color:#dfe2ee;">
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center">
+            <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#111524;border-radius:18px;border:1px solid #232b42;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.6);">
+              <!-- Top Banner -->
+              <tr>
+                <td style="background:linear-gradient(135deg, #4338ca 0%, #6366f1 100%);padding:28px 24px;text-align:center;">
+                  <h1 style="margin:0;font-size:22px;color:#ffffff;font-weight:900;letter-spacing:-0.5px;">
+                    Did something happen during checkout?
+                  </h1>
+                  <p style="margin:8px 0 0;font-size:13px;color:#e0e7ff;font-weight:500;">
+                    We temporarily reserved your item so you don't lose your stock!
+                  </p>
+                </td>
+              </tr>
+              <!-- Body Content -->
+              <tr>
+                <td style="padding:28px 24px;">
+                  <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#cbd5e1;">
+                    Hello <strong>${order.email.split("@")[0]}</strong>,
+                  </p>
+                  <p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#94a3b8;">
+                    We noticed you started an order on <strong>TrinityMart</strong>, but your payment was not finalized. Because high-demand virtual accounts sell out fast, we held your reservation:
+                  </p>
+
+                  <div style="background:#090d16;border:1px solid #1e293b;border-left:4px solid #6366f1;border-radius:10px;padding:16px;margin:16px 0;">
+                    <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;font-family:'Segoe UI',sans-serif;">
+                      <tr>
+                        <td style="color:#94a3b8;padding-bottom:6px;">Order ID:</td>
+                        <td align="right" style="color:#818cf8;font-weight:700;font-family:monospace;">#${order.orderId}</td>
+                      </tr>
+                      <tr>
+                        <td style="color:#94a3b8;padding-bottom:6px;">Reserved Product:</td>
+                        <td align="right" style="color:#f8fafc;font-weight:600;">${prodName} (x${order.quantity || 1})</td>
+                      </tr>
+                      <tr>
+                        <td style="color:#94a3b8;padding-bottom:6px;">Total Amount:</td>
+                        <td align="right" style="color:#4ade80;font-weight:700;font-size:15px;">${amountStr}</td>
+                      </tr>
+                      <tr>
+                        <td style="color:#94a3b8;">Payment Channel:</td>
+                        <td align="right" style="color:#cbd5e1;text-transform:uppercase;font-size:11px;font-weight:600;">${order.paymentMethod || "UPI / Crypto"}</td>
+                      </tr>
+                    </table>
+                  </div>
+
+                  ${discountCode ? `
+                  <div style="background:rgba(99,102,241,0.12);border:1px dashed #6366f1;border-radius:10px;padding:12px 16px;margin:18px 0;text-align:center;">
+                    <span style="font-size:12px;color:#c7d2fe;display:block;margin-bottom:4px;">Special perk to complete your order today:</span>
+                    <span style="font-size:15px;color:#a5b4fc;font-weight:800;letter-spacing:1px;background:#1e1b4b;padding:4px 12px;border-radius:6px;display:inline-block;">
+                      Use Coupon: ${discountCode} (5% OFF)
+                    </span>
+                  </div>
+                  ` : ""}
+
+                  ${customNote ? `<p style="font-size:13px;color:#38bdf8;font-style:italic;margin:14px 0;">Note from Admin: ${customNote}</p>` : ""}
+
+                  <div style="text-align:center;margin:28px 0 16px;">
+                    <a href="${resumeUrl}" style="background:linear-gradient(135deg, #10b981 0%, #059669 100%);color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:14px 28px;border-radius:10px;display:inline-block;box-shadow:0 4px 14px rgba(16,185,129,0.35);">
+                      ⚡ Resume &amp; Complete My Order &rarr;
+                    </a>
+                  </div>
+
+                  <p style="margin:20px 0 0;font-size:12px;color:#64748b;text-align:center;line-height:1.5;">
+                    If you already paid or have questions, you can verify your payment on our <a href="${resumeUrl}" style="color:#818cf8;text-decoration:none;">Order Lookup Portal</a> or reach out on <a href="https://discord.gg/trinitymart" style="color:#818cf8;text-decoration:none;">Discord Support</a>.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `;
+
+  try {
+    const transporter = createMailTransporter();
+    const adminEmail = (process.env.GMAIL_USER || "support@trinitymart.store").trim();
+
+    const info = await transporter.sendMail({
+      from: `"TrinityMart Order Desk" <${adminEmail}>`,
+      to: order.email,
+      subject: `⚠️ Did you forget your order? We reserved your ${prodName} for you!`,
+      html,
+    });
+
+    const nowIso = new Date().toISOString();
+    const idx = history.findIndex((o) => o.orderId === orderId);
+    if (idx !== -1) {
+      history[idx].recoveryEmailSentAt = nowIso;
+      history[idx].recoveryEmailCount = (history[idx].recoveryEmailCount || 0) + 1;
+      await redis.set(ORDERS_HISTORY_KEY, history);
+    }
+
+    return { success: true, messageId: info.messageId };
+  } catch (err: any) {
+    console.warn("Failed to send recovery email:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
 }
 
 

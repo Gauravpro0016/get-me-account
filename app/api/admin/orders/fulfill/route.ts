@@ -10,8 +10,15 @@ import {
 import { APP_CONFIG } from "@/lib/config";
 
 function checkAdmin(req: NextRequest): boolean {
-  const adminPassword = process.env.ADMIN_PASSWORD;
-  const provided = req.headers.get("x-admin-password");
+  const adminPassword = (process.env.ADMIN_PASSWORD || "").trim().replace(/^["']|["']$/g, "");
+  const authHeader = req.headers.get("authorization");
+  const bearer = authHeader?.replace(/^Bearer\s+/i, "");
+  const provided = (
+    req.headers.get("x-admin-password") ||
+    req.nextUrl.searchParams.get("password") ||
+    bearer ||
+    ""
+  ).trim().replace(/^["']|["']$/g, "");
   return !!adminPassword && provided === adminPassword;
 }
 
@@ -28,14 +35,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "orderId is required" }, { status: 400 });
     }
 
-    // Action 1: Query Gateway Authoritatively and auto-fulfill if confirmed
-    if (action === "check_gateway") {
+    // Action 1: Query Gateway Authoritatively (UPI or Crypto) and auto-fulfill if confirmed
+    if (action === "check_gateway" || action === "check_crypto" || action === "check_upi") {
       const history = await getAllOrders();
       const order = history.find((o) => o.orderId === orderId);
-      const isCrypto =
-        orderId.startsWith("ORD-CR-") ||
-        orderId.startsWith("crypto_") ||
-        order?.productId === "crypto";
+
+      const isCryptoRequested =
+        action === "check_crypto" ||
+        body.method === "crypto" ||
+        body.gateway === "crypto";
+
+      const isUpiRequested =
+        action === "check_upi" ||
+        body.method === "upi" ||
+        body.gateway === "upi";
+
+      const isCrypto = isCryptoRequested
+        ? true
+        : isUpiRequested
+        ? false
+        : orderId.startsWith("ORD-CR-") ||
+          orderId.startsWith("crypto_") ||
+          order?.productId === "crypto" ||
+          order?.paymentMethod === "crypto" ||
+          Boolean(order?.utr && (order.utr.startsWith("CRYPTO:") || order.utr.startsWith("0x")));
 
       let isPaid = false;
       let finalUtr: string | undefined = undefined;
@@ -43,11 +66,36 @@ export async function POST(req: NextRequest) {
       let amount: number | undefined = undefined;
 
       if (isCrypto) {
+        // 1. Check Atlos by orderId
         const cryptoCheck = await checkAtlosOrderStatus(orderId);
         if (cryptoCheck.status === "success") {
           isPaid = true;
           finalUtr = cryptoCheck.txid ? `CRYPTO:${cryptoCheck.txid}` : undefined;
-          amount = cryptoCheck.amount;
+        }
+
+        // 2. If not found by orderId, but a txHash was provided or present in order.utr
+        const passedHash = body.txHash || (order?.utr?.startsWith("CRYPTO:") ? order.utr.replace(/^CRYPTO:/i, "") : order?.utr);
+        if (!isPaid && passedHash && typeof passedHash === "string" && passedHash.length >= 20) {
+          try {
+            const atlosSecret = process.env.ATLOS_API_SECRET || "6UCqzHHDmb5f0NbXOGCmLKFc2PVIMEYB";
+            const merchantId = process.env.ATLOS_MERCHANT_ID || "ADK7QABYR0";
+            const atlosRes = await fetch("https://api.atlos.io/gateway/rest/Transaction/FindByHash", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ApiSecret: atlosSecret },
+              body: JSON.stringify({ MerchantId: merchantId, BlockchainHash: passedHash.trim() }),
+              cache: "no-store",
+              signal: AbortSignal.timeout(6000),
+            });
+            if (atlosRes.ok) {
+              const atlosData = await atlosRes.json();
+              if (atlosData && (atlosData.IsFound || atlosData.Transaction || atlosData.Txid)) {
+                isPaid = true;
+                finalUtr = `CRYPTO:${passedHash.trim()}`;
+              }
+            }
+          } catch (e) {
+            console.warn("Atlos FindByHash check error:", e);
+          }
         }
       } else {
         const fgCheck = await checkFamGatewayOrderStatus(orderId);
@@ -60,11 +108,15 @@ export async function POST(req: NextRequest) {
       }
 
       if (!isPaid) {
+        const failureMessage = isCrypto
+          ? "Crypto gateway (Atlos / Blockchain) reports order is still pending or not yet registered. You can still use 'Fulfill from Stock' if customer confirmed transaction on chain."
+          : "UPI gateway (FamGateway) reports order is still pending or awaiting bank settlement. You can still use 'Fulfill from Stock' if UPI money arrived in your bank account.";
+
         return NextResponse.json({
           success: false,
           verifiedOnGateway: false,
-          message:
-            "Gateway reports order is still pending or not yet registered. You can still use 'Force Fulfill' if you received the money directly in your UPI account.",
+          gateway: isCrypto ? "crypto" : "upi",
+          message: failureMessage,
         });
       }
 
@@ -79,7 +131,7 @@ export async function POST(req: NextRequest) {
       const fulfillRes = await fulfillOrder({
         orderId,
         email: targetEmail,
-        utr: finalUtr || utr,
+        utr: finalUtr || utr || order?.utr,
         senderName: senderName || order?.senderName,
         amount: amount || order?.amount || APP_CONFIG.price,
         quantity: order?.quantity || 1,
@@ -88,11 +140,16 @@ export async function POST(req: NextRequest) {
         cartItems: order?.cartItems,
       });
 
+      const successMessage = isCrypto
+        ? "✅ Payment verified on Crypto Gateway (Atlos / Blockchain)! Order fulfilled & credentials emailed."
+        : "✅ Payment verified on UPI Gateway (FamGateway)! Order fulfilled & credentials emailed.";
+
       return NextResponse.json({
         success: fulfillRes.success,
         verifiedOnGateway: true,
+        gateway: isCrypto ? "crypto" : "upi",
         message: fulfillRes.success
-          ? "Payment verified on UPI gateway! Order fulfilled and credentials emailed."
+          ? successMessage
           : fulfillRes.error || "Payment verified, but stock assignment failed.",
         credentials: fulfillRes.credentials || (fulfillRes.credential ? [fulfillRes.credential] : undefined),
       });

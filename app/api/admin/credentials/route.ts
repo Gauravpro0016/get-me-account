@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { randomUUID } from "crypto";
 import { sendDiscordRestockNotification } from "@/lib/discord";
+import { APP_CONFIG } from "@/lib/config";
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL!,
@@ -33,8 +34,15 @@ async function writePool(pool: Credential[]): Promise<void> {
 }
 
 function checkAdmin(req: NextRequest): boolean {
-  const adminPassword = process.env.ADMIN_PASSWORD;
-  const provided = req.headers.get("x-admin-password");
+  const adminPassword = (process.env.ADMIN_PASSWORD || "").trim().replace(/^["']|["']$/g, "");
+  const authHeader = req.headers.get("authorization");
+  const bearer = authHeader?.replace(/^Bearer\s+/i, "");
+  const provided = (
+    req.headers.get("x-admin-password") ||
+    req.nextUrl.searchParams.get("password") ||
+    bearer ||
+    ""
+  ).trim().replace(/^["']|["']$/g, "");
   return !!adminPassword && provided === adminPassword;
 }
 
@@ -92,14 +100,52 @@ export async function POST(req: NextRequest) {
     if (addedList.length > 0) {
       await writePool(pool);
 
-      // Automated Discord Restock Notification
+      // Resolve live price and sync with products manager & storefront
+      let activePrice = APP_CONFIG.price;
+      try {
+        const overrides = (await redis.get<Record<string, any>>("trinitymart_product_overrides")) || {};
+        if (overrides["discord-nitro-booster"]?.price !== undefined) {
+          activePrice = Number(overrides["discord-nitro-booster"].price);
+        }
+        // Update product overrides stock count so products tab & storefront match
+        overrides["discord-nitro-booster"] = {
+          ...(overrides["discord-nitro-booster"] || {}),
+          id: "discord-nitro-booster",
+          stockCount: pool.length,
+          inStock: pool.length > 0,
+          updatedAt: new Date().toISOString(),
+        };
+        await redis.set("trinitymart_product_overrides", overrides);
+
+        // Also sync into product inventory key
+        const nitroInv = pool.map((item, idx) => ({
+          id: item.id || `inv-nitro-${Date.now()}-${idx}`,
+          fields: {
+            id: item.email || "DiscordNitroUser",
+            email: item.email,
+            password: item.discordPassword || item.password || item.emailPassword,
+            emailPassword: item.emailPassword,
+            discordPassword: item.discordPassword,
+            token: item.token,
+            domain: item.domain || "Outlook.com",
+            twoFactorKey: item.twoFactorKey,
+            keyweb: item.keyweb,
+          },
+          addedAt: item.addedAt || new Date().toISOString(),
+        }));
+        await redis.set("trinitymart_inventory_discord-nitro-booster", nitroInv);
+      } catch (e) {
+        console.warn("Could not sync product overrides/inventory:", e);
+      }
+
+      // Automated Discord Restock Notification with exact live stock & price
       sendDiscordRestockNotification({
-        productName: "Discord Nitro Booster",
+        productName: APP_CONFIG.productName || "Discord Nitro Booster ID [with 2 Boosts]",
         productId: "discord-nitro-booster",
         category: "Discord",
         unitsAdded: addedList.length,
         totalStock: pool.length,
-        price: process.env.PRICE_INR || 25,
+        price: activePrice,
       }).catch((err) => {
         console.error("[DISCORD] Failed to send restock alert for credentials:", err);
       });
@@ -175,14 +221,50 @@ export async function POST(req: NextRequest) {
   pool.push(newCredential);
   await writePool(pool);
 
-  // Automated Discord Restock Notification
+  // Resolve live price and sync with products manager & storefront
+  let activePrice = APP_CONFIG.price;
+  try {
+    const overrides = (await redis.get<Record<string, any>>("trinitymart_product_overrides")) || {};
+    if (overrides["discord-nitro-booster"]?.price !== undefined) {
+      activePrice = Number(overrides["discord-nitro-booster"].price);
+    }
+    overrides["discord-nitro-booster"] = {
+      ...(overrides["discord-nitro-booster"] || {}),
+      id: "discord-nitro-booster",
+      stockCount: pool.length,
+      inStock: pool.length > 0,
+      updatedAt: new Date().toISOString(),
+    };
+    await redis.set("trinitymart_product_overrides", overrides);
+
+    const nitroInv = pool.map((item, idx) => ({
+      id: item.id || `inv-nitro-${Date.now()}-${idx}`,
+      fields: {
+        id: item.email || "DiscordNitroUser",
+        email: item.email,
+        password: item.discordPassword || item.password || item.emailPassword,
+        emailPassword: item.emailPassword,
+        discordPassword: item.discordPassword,
+        token: item.token,
+        domain: item.domain || "Outlook.com",
+        twoFactorKey: item.twoFactorKey,
+        keyweb: item.keyweb,
+      },
+      addedAt: item.addedAt || new Date().toISOString(),
+    }));
+    await redis.set("trinitymart_inventory_discord-nitro-booster", nitroInv);
+  } catch (e) {
+    console.warn("Could not sync product overrides/inventory:", e);
+  }
+
+  // Automated Discord Restock Notification with exact live stock & price
   sendDiscordRestockNotification({
-    productName: "Discord Nitro Booster",
+    productName: APP_CONFIG.productName || "Discord Nitro Booster ID [with 2 Boosts]",
     productId: "discord-nitro-booster",
     category: "Discord",
     unitsAdded: 1,
     totalStock: pool.length,
-    price: process.env.PRICE_INR || 25,
+    price: activePrice,
   }).catch((err) => {
     console.error("[DISCORD] Failed to send restock alert for credential:", err);
   });

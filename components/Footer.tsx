@@ -54,6 +54,13 @@ export function Footer() {
               <span>Telegram Desk</span>
             </a>
             <Link
+              href="/orders/lookup"
+              className="flex items-center gap-1.5 font-mono text-xs text-[#c7c4d7] hover:text-[#8083ff] transition-colors"
+            >
+              <Zap className="w-3.5 h-3.5 text-[#8083ff]" />
+              <span>Track Order</span>
+            </Link>
+            <Link
               href="/admin"
               className="flex items-center gap-1.5 font-mono text-xs text-[#908fa0] hover:text-[#dfe2ee] transition-colors"
             >

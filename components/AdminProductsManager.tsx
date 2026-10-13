@@ -190,6 +190,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
     "100% Full Replacement Warranty",
     "24/7 Discord Live Support",
   ]);
+  const [newAddFeatureText, setNewAddFeatureText] = useState("");
   const [bannerGradient, setBannerGradient] = useState("from-blue-600/25 via-cyan-950/40 to-zinc-900");
   const [iconType, setIconType] = useState("key");
   const [customLogoUrl, setCustomLogoUrl] = useState("");
@@ -1073,14 +1074,14 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 const activeUnits = (prod.inventory ? prod.inventory.filter((i: any) => !i.claimedAt).length : prod.stockCount) ?? 0;
                 return (
                   <div className="p-3 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-1.5 text-xs font-mono">
-                    <div className="flex justify-between text-[#908fa0]">
-                      <span>Delivery:</span>
-                      <span className="font-semibold text-[#4edea3]">{prod.deliveryType}</span>
+                    <div className="flex justify-between items-center text-[#908fa0] gap-2 min-w-0">
+                      <span className="shrink-0">Delivery:</span>
+                      <span className="font-semibold text-[#4edea3] truncate text-right">{prod.deliveryType}</span>
                     </div>
-                    <div className="flex justify-between items-center text-[#908fa0]">
-                      <span>Database Stock:</span>
+                    <div className="flex justify-between items-center text-[#908fa0] gap-2 min-w-0">
+                      <span className="shrink-0">Database Stock:</span>
                       <span
-                        className={`font-black text-[11px] px-2 py-0.5 rounded-md border flex items-center gap-1 ${
+                        className={`font-black text-[11px] px-2 py-0.5 rounded-md border flex items-center gap-1 shrink-0 ${
                           activeUnits > 0
                             ? "text-[#4edea3] bg-[#00a572]/15 border-[#00a572]/30"
                             : "text-[#ffb4ab] bg-[#93000a]/20 border-[#ffb4ab]/30"
@@ -1091,9 +1092,9 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                       </span>
                     </div>
                     {prod.customFields && prod.customFields.length > 0 && (
-                      <div className="pt-1 border-t border-[#262a33] flex flex-wrap gap-1">
+                      <div className="pt-1 border-t border-[#262a33] flex flex-wrap gap-1 max-w-full overflow-hidden">
                         {prod.customFields.map((f: any, i: number) => (
-                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-[#262a33] text-[#c7c4d7] border border-[#31353e]">
+                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-[#262a33] text-[#c7c4d7] border border-[#31353e] max-w-full truncate break-all">
                             {f.name}
                           </span>
                         ))}
@@ -1103,46 +1104,46 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 );
               })()}
 
-              {/* Action Buttons for this product */}
+              {/* Action Buttons for this product (Responsive 3-column grid that never overflows) */}
               {(() => {
                 const activeUnits = (prod.inventory ? prod.inventory.filter((i: any) => !i.claimedAt).length : prod.stockCount) ?? 0;
                 return (
-                  <div className="pt-2 flex items-center gap-2 font-mono">
+                  <div className="pt-2 font-mono text-xs">
                     {viewMode === "active" ? (
-                      <>
+                      <div className="grid grid-cols-3 gap-1.5 w-full">
                         <button
                           onClick={() => openEditModal(prod)}
-                          className="flex-1 py-2 px-2.5 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#dfe2ee] font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#31353e]"
+                          className="py-2 px-1.5 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#dfe2ee] font-bold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1 cursor-pointer border border-[#31353e] min-w-0"
                           title="Edit product details"
                         >
-                          <Pencil className="w-3.5 h-3.5 text-[#8083ff]" />
-                          <span>Edit</span>
+                          <Pencil className="w-3.5 h-3.5 text-[#8083ff] shrink-0" />
+                          <span className="truncate">Edit</span>
                         </button>
 
                         <button
                           onClick={() => openStockModal(prod)}
-                          className="flex-1 py-2 px-2.5 rounded-lg bg-[#00a572]/15 hover:bg-[#00a572]/25 text-[#4edea3] font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#00a572]/30"
+                          className="py-2 px-1.5 rounded-lg bg-[#00a572]/15 hover:bg-[#00a572]/25 text-[#4edea3] font-bold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1 cursor-pointer border border-[#00a572]/30 min-w-0"
                           title="View and manage available accounts & credentials in database"
                         >
-                          <Layers className="w-3.5 h-3.5" />
-                          <span>Stock ({activeUnits})</span>
+                          <Layers className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">Stock ({activeUnits})</span>
                         </button>
 
                         <button
                           onClick={() => handleRemoveProduct(prod.id, prod.name)}
-                          className="py-2 px-2.5 rounded-lg bg-[#93000a]/20 hover:bg-[#93000a]/40 text-[#ffb4ab] font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#ffb4ab]/30"
+                          className="py-2 px-1.5 rounded-lg bg-[#93000a]/20 hover:bg-[#93000a]/40 text-[#ffb4ab] font-bold text-[11px] sm:text-xs transition-all flex items-center justify-center gap-1 cursor-pointer border border-[#ffb4ab]/30 min-w-0"
                           title="Remove product from store"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Remove</span>
+                          <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">Remove</span>
                         </button>
-                      </>
+                      </div>
                     ) : (
                       <button
                         onClick={() => handleRestoreProduct(prod.id, prod.name)}
                         className="w-full py-2.5 px-3 rounded-lg bg-[#00a572]/20 hover:bg-[#00a572]/40 text-[#4edea3] font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#00a572]/40"
                       >
-                        <RotateCcw className="w-3.5 h-3.5" />
+                        <RotateCcw className="w-3.5 h-3.5 shrink-0" />
                         <span>Restore Product to Store</span>
                       </button>
                     )}
@@ -1774,23 +1775,53 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                   </div>
                 )}
 
-                {/* Display added items in batch */}
+                {/* Display added items in batch (Responsive container that never overflows) */}
                 {inventoryList.length > 0 && (
-                  <div className="max-h-28 overflow-y-auto space-y-1 p-2 bg-[#0f131c] rounded-xl border border-[#262a33] text-[11px] font-mono">
-                    {inventoryList.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-[#c7c4d7]">
-                        <span className="truncate">
-                          #{idx + 1}: {Object.entries(item).map(([k, v]) => `${k}: ${v}`).join(" | ")}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setInventoryList(inventoryList.filter((_, i) => i !== idx))}
-                          className="text-[#ffb4ab] hover:underline ml-2 font-bold cursor-pointer"
+                  <div className="space-y-1.5 p-2.5 bg-[#0f131c] rounded-xl border border-[#262a33] text-[11px] font-mono">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-[#262a33]/60 px-0.5">
+                      <span className="text-[10px] uppercase font-bold text-[#8083ff] flex items-center gap-1.5">
+                        <span>📦</span>
+                        <span>Pending Stock Batch ({inventoryList.length} accounts ready)</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setInventoryList([])}
+                        className="text-[10px] text-[#ffb4ab] hover:underline cursor-pointer font-bold"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                    <div className="max-h-36 overflow-y-auto space-y-1.5 pr-0.5">
+                      {inventoryList.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between gap-2 p-2 rounded-lg bg-[#141822] border border-[#262a33] text-[#c7c4d7] min-w-0"
                         >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
+                            <span className="px-1.5 py-0.5 rounded bg-[#8083ff]/20 text-[#8083ff] font-bold text-[10px] shrink-0">
+                              #{idx + 1}
+                            </span>
+                            {Object.entries(item).map(([k, v]) => (
+                              <span
+                                key={k}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#0f131c] text-[#dfe2ee] border border-[#262a33] text-[10px] max-w-full truncate"
+                              >
+                                <span className="text-[#908fa0] uppercase text-[9px] font-semibold">{k}:</span>
+                                <span className="font-bold truncate select-all">{v}</span>
+                              </span>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setInventoryList(inventoryList.filter((_, i) => i !== idx))}
+                            className="p-1 text-[#ffb4ab] hover:text-white hover:bg-[#93000a]/20 rounded font-bold cursor-pointer shrink-0 transition-colors"
+                            title="Remove item from batch"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1805,6 +1836,66 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                   onChange={(e) => setShortDescription(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff]"
                 />
+              </div>
+
+              {/* Product Features / Highlights */}
+              <div className="p-3.5 rounded-2xl bg-[#10141d] border border-[#262a33] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-mono font-bold text-[#8083ff] uppercase tracking-wider">
+                    Product Features / Highlights ({featureInputs.length})
+                  </label>
+                  <span className="text-[10px] text-[#908fa0] font-mono">Store card badges</span>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. Instant Delivery, Full Replacement Warranty"
+                    value={newAddFeatureText}
+                    onChange={(e) => setNewAddFeatureText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (newAddFeatureText.trim()) {
+                          setFeatureInputs([...featureInputs, newAddFeatureText.trim()]);
+                          setNewAddFeatureText("");
+                        }
+                      }
+                    }}
+                    className="flex-1 px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newAddFeatureText.trim()) {
+                        setFeatureInputs([...featureInputs, newAddFeatureText.trim()]);
+                        setNewAddFeatureText("");
+                      }
+                    }}
+                    className="px-4 py-2 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white font-mono font-bold text-xs cursor-pointer transition-all shrink-0"
+                  >
+                    + Add
+                  </button>
+                </div>
+                {featureInputs.length > 0 && (
+                  <div className="space-y-1.5 max-h-32 overflow-y-auto pt-1 font-mono">
+                    {featureInputs.map((feat, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between gap-2 p-1.5 px-2.5 rounded-lg bg-[#0f131c] border border-[#262a33] text-xs text-[#c7c4d7] min-w-0"
+                      >
+                        <span className="truncate flex-1 min-w-0">{feat}</span>
+                        <button
+                          type="button"
+                          onClick={() => setFeatureInputs(featureInputs.filter((_, i) => i !== idx))}
+                          className="text-[#ffb4ab] hover:text-white shrink-0 p-1 rounded hover:bg-[#93000a]/20 cursor-pointer font-bold"
+                          title="Remove feature"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="pt-2">
@@ -3001,12 +3092,13 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
                 <div className="space-y-1.5 max-h-36 overflow-y-auto pt-1 font-mono">
                   {editFeatures.map((feat, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#c7c4d7]">
-                      <span className="truncate">{feat}</span>
+                    <div key={idx} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#c7c4d7] min-w-0">
+                      <span className="truncate flex-1 min-w-0">{feat}</span>
                       <button
                         type="button"
                         onClick={() => setEditFeatures(editFeatures.filter((_, i) => i !== idx))}
-                        className="text-[#ffb4ab] hover:text-white ml-2 cursor-pointer"
+                        className="text-[#ffb4ab] hover:text-white shrink-0 p-1 rounded hover:bg-[#93000a]/20 cursor-pointer font-bold"
+                        title="Remove feature"
                       >
                         ✕
                       </button>

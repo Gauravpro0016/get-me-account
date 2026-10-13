@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
 import { AdminProductsManager } from "@/components/AdminProductsManager";
 import { AdminCouponsManager } from "@/components/AdminCouponsManager";
 import { AdminEmailSettings } from "@/components/AdminEmailSettings";
+import { AdminPaymentLookupModal } from "@/components/AdminPaymentLookupModal";
+import { AdminRecoveryManager } from "@/components/AdminRecoveryManager";
+import { AdminBotManager } from "@/components/AdminBotManager";
 import { APP_CONFIG } from "@/lib/config";
 
 type Credential = {
@@ -32,6 +35,7 @@ type StoredOrder = {
   confirmedAt?: string;
   utr?: string;
   senderName?: string;
+  paymentMethod?: "upi" | "crypto" | string;
   deliveredCredential?: {
     email: string;
     emailPassword?: string;
@@ -71,6 +75,45 @@ type StoredOrder = {
 };
 
 type Status = "idle" | "loading" | "error" | "success";
+type DateFilterType = "all" | "today" | "yesterday" | "last7days" | "last30days" | "thisMonth" | "custom";
+
+function getLocalDateKey(dateInput: string | number | Date): string {
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return "Unknown Date";
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateHeader(dateKey: string): string {
+  if (dateKey === "Unknown Date") return "Unknown Date";
+  const now = new Date();
+  const todayKey = getLocalDateKey(now);
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const yesterdayKey = getLocalDateKey(yesterday);
+
+  if (dateKey === todayKey) {
+    return "Today — " + now.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+  }
+  if (dateKey === yesterdayKey) {
+    return "Yesterday — " + yesterday.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+  }
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const targetDate = new Date(y, m - 1, d);
+  return targetDate.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+
+type DateGroup = {
+  dateKey: string;
+  label: string;
+  orders: StoredOrder[];
+  totalAmount: number;
+  confirmedCount: number;
+  pendingCount: number;
+  failedCount: number;
+};
 
 export default function AdminPage() {
   // ── Auth state ───────────────────────────────────────────────────────────
@@ -80,12 +123,19 @@ export default function AdminPage() {
   const [authenticated, setAuthenticated] = useState(false);
 
   // ── Navigation Tab ───────────────────────────────────────────────────────
-  const [tab, setTab] = useState<"orders" | "products" | "coupons" | "email">("orders");
+  const [tab, setTab] = useState<"orders" | "recovery" | "products" | "coupons" | "email" | "bot">("orders");
+  const [isNavExpanded, setIsNavExpanded] = useState(false);
 
   // ── Search & Filter state ────────────────────────────────────────────────
   const [orderSearch, setOrderSearch] = useState("");
   const [orderStatusFilter, setOrderStatusFilter] = useState<"all" | "confirmed" | "pending" | "failed">("all");
   const [orderEmailFilter, setOrderEmailFilter] = useState<"all" | "opened" | "sent" | "failed" | "pending">("all");
+  const [orderMethodFilter, setOrderMethodFilter] = useState<"all" | "upi" | "crypto">("all");
+  const [orderDateFilter, setOrderDateFilter] = useState<DateFilterType>("all");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
+  const [orderSortDirection, setOrderSortDirection] = useState<"desc" | "asc">("desc");
+  const [groupByDate, setGroupByDate] = useState(true);
   const [stockSearch, setStockSearch] = useState("");
 
   // ── Credential pool state ────────────────────────────────────────────────
@@ -112,6 +162,9 @@ export default function AdminPage() {
   // ── Order Direct Fulfillment & Gateway Verification state ────────────────
   const [fulfillingOrderId, setFulfillingOrderId] = useState<string | null>(null);
   const [checkingGatewayOrderId, setCheckingGatewayOrderId] = useState<string | null>(null);
+  const [checkingGatewayMethod, setCheckingGatewayMethod] = useState<"upi" | "crypto" | null>(null);
+  const [showPaymentLookupModal, setShowPaymentLookupModal] = useState(false);
+  const [paymentLookupInitialQuery, setPaymentLookupInitialQuery] = useState("");
   const [showCustomInputs, setShowCustomInputs] = useState(false);
   const [customLoginInput, setCustomLoginInput] = useState("");
   const [customPasswordInput, setCustomPasswordInput] = useState("");
@@ -151,37 +204,68 @@ export default function AdminPage() {
 
   // On mount, try to restore session password
   useEffect(() => {
-    const saved = sessionStorage.getItem("adminPwd");
-    if (saved) {
-      setPassword(saved);
-      setAuthenticated(true);
-    }
+    try {
+      const saved = sessionStorage.getItem("adminPwd");
+      if (saved && saved.trim()) {
+        setPassword(saved.trim());
+        setAuthenticated(true);
+      }
+    } catch {}
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    try {
+      sessionStorage.removeItem("adminPwd");
+    } catch {}
+    setPassword("");
+    setAuthenticated(false);
+    setAuthInput("");
+    setAuthError("");
+    setOrders([]);
+    setCredentials([]);
   }, []);
 
   const handleLogin = async () => {
     setAuthError("");
-    if (!authInput.trim()) {
+    const cleanInput = authInput.trim();
+    if (!cleanInput) {
       setAuthError("Please enter your admin password.");
       return;
     }
-    const res = await fetch("/api/admin/credentials", {
-      headers: { "x-admin-password": authInput },
-    });
-    if (res.status === 401) {
-      setAuthError("Wrong password. Try again.");
-      return;
+    try {
+      const res = await fetch("/api/admin/credentials", {
+        headers: { "x-admin-password": cleanInput },
+      });
+      if (res.status === 401) {
+        setAuthError("Wrong password. Try again.");
+        return;
+      }
+      if (!res.ok) {
+        setAuthError(`Unable to authenticate (status ${res.status}). Try again.`);
+        return;
+      }
+      try {
+        sessionStorage.setItem("adminPwd", cleanInput);
+      } catch {}
+      setPassword(cleanInput);
+      setAuthenticated(true);
+    } catch {
+      setAuthError("Connection error while authenticating. Check your server.");
     }
-    sessionStorage.setItem("adminPwd", authInput);
-    setPassword(authInput);
-    setAuthenticated(true);
   };
 
   const fetchCredentials = useCallback(async () => {
+    if (!password) return;
     setFetchStatus("loading");
     try {
       const res = await fetch("/api/admin/credentials", {
         headers: { "x-admin-password": password },
       });
+      if (res.status === 401) {
+        handleLogout();
+        setAuthError("Session expired or invalid admin password. Please log in again.");
+        return;
+      }
       if (!res.ok) throw new Error("Fetch failed");
       const data = await res.json();
       setCredentials(data.credentials || []);
@@ -189,14 +273,20 @@ export default function AdminPage() {
     } catch {
       setFetchStatus("error");
     }
-  }, [password]);
+  }, [password, handleLogout]);
 
   const fetchOrders = useCallback(async () => {
+    if (!password) return;
     setOrdersLoading(true);
     try {
       const res = await fetch("/api/admin/orders", {
         headers: { "x-admin-password": password },
       });
+      if (res.status === 401) {
+        handleLogout();
+        setAuthError("Session expired or invalid admin password. Please log in again.");
+        return;
+      }
       if (!res.ok) throw new Error("Fetch failed");
       const data = await res.json();
       setOrders(data.orders || []);
@@ -205,14 +295,14 @@ export default function AdminPage() {
     } finally {
       setOrdersLoading(false);
     }
-  }, [password]);
+  }, [password, handleLogout]);
 
   useEffect(() => {
-    if (authenticated) {
+    if (authenticated && password) {
       fetchCredentials();
       fetchOrders();
     }
-  }, [authenticated, fetchCredentials, fetchOrders]);
+  }, [authenticated, password, fetchCredentials, fetchOrders]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -439,15 +529,6 @@ export default function AdminPage() {
     });
   };
 
-  const handleLogout = () => {
-    sessionStorage.removeItem("adminPwd");
-    setAuthenticated(false);
-    setPassword("");
-    setAuthInput("");
-    setCredentials([]);
-    setOrders([]);
-  };
-
   // Metrics
   const inrToUsdRate = APP_CONFIG.inrToUsdRate || 0.0118;
   const confirmedOrders = useMemo(() => orders.filter((o) => o.status === "confirmed"), [orders]);
@@ -568,8 +649,44 @@ export default function AdminPage() {
     }
   };
 
-  const handleCheckGatewayOrder = async (orderId: string) => {
+  const getOrderPaymentMethod = useCallback((ord: StoredOrder): "crypto" | "upi" => {
+    if (ord.paymentMethod === "crypto") return "crypto";
+    if (ord.paymentMethod === "upi") return "upi";
+    if (
+      ord.orderId.startsWith("ORD-CR-") ||
+      ord.orderId.startsWith("crypto_") ||
+      ord.productId === "crypto" ||
+      Boolean(ord.utr && (ord.utr.startsWith("CRYPTO:") || ord.utr.startsWith("0x") || ord.utr.length > 20))
+    ) {
+      return "crypto";
+    }
+    return "upi";
+  }, []);
+
+  const getPaymentMethodBadge = (ord: StoredOrder) => {
+    const isCrypto = getOrderPaymentMethod(ord) === "crypto";
+    if (isCrypto) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-[#8083ff]/15 text-[#8083ff] border border-[#8083ff]/30 shadow-xs whitespace-nowrap">
+          <span>🪙</span>
+          <span>Crypto (Atlos)</span>
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-xs whitespace-nowrap">
+        <span>💳</span>
+        <span>UPI (Instant)</span>
+      </span>
+    );
+  };
+
+  const handleCheckGatewayOrder = async (
+    orderId: string,
+    gatewayType: "auto" | "upi" | "crypto" = "auto"
+  ) => {
     setCheckingGatewayOrderId(orderId);
+    setCheckingGatewayMethod(gatewayType === "auto" ? null : gatewayType);
     setResendStatusMsg(null);
     try {
       const res = await fetch("/api/admin/orders/fulfill", {
@@ -580,14 +697,15 @@ export default function AdminPage() {
         },
         body: JSON.stringify({
           orderId,
-          action: "check_gateway",
+          action: gatewayType === "crypto" ? "check_crypto" : gatewayType === "upi" ? "check_upi" : "check_gateway",
+          method: gatewayType,
         }),
       });
       const data = await res.json();
       if (data.verifiedOnGateway && data.success) {
         setResendStatusMsg({
           type: "success",
-          text: "✅ Payment verified on UPI Gateway! Order fulfilled & credentials emailed.",
+          text: data.message || "✅ Payment verified on gateway! Order fulfilled & credentials emailed.",
         });
         await fetchOrders();
         setAuditModalOrder((prev) =>
@@ -605,7 +723,7 @@ export default function AdminPage() {
       } else {
         setResendStatusMsg({
           type: "error",
-          text: data.message || "Gateway reported pending. Use 'Fulfill from Stock' if UPI money arrived in your bank account.",
+          text: data.message || "Gateway reported pending. Use 'Fulfill from Stock' if payment arrived.",
         });
       }
       setTimeout(() => setResendStatusMsg(null), 6000);
@@ -616,6 +734,7 @@ export default function AdminPage() {
       });
     } finally {
       setCheckingGatewayOrderId(null);
+      setCheckingGatewayMethod(null);
     }
   };
 
@@ -650,12 +769,26 @@ export default function AdminPage() {
 
   // Filtered Orders
   const filteredOrders = useMemo(() => {
-    return orders.filter((o) => {
+    const now = new Date();
+    const todayKey = getLocalDateKey(now);
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const yesterdayKey = getLocalDateKey(yesterday);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const filtered = orders.filter((o) => {
       const matchesStatus =
         orderStatusFilter === "all" ||
         (orderStatusFilter === "failed" ? o.status === "failed" || o.status === "expired" : o.status === orderStatusFilter);
 
       if (!matchesStatus) return false;
+
+      // Filter by payment method (UPI vs Crypto)
+      if (orderMethodFilter !== "all") {
+        const method = getOrderPaymentMethod(o);
+        if (method !== orderMethodFilter) return false;
+      }
 
       // Filter by email receipt status
       if (orderEmailFilter === "opened") {
@@ -668,15 +801,180 @@ export default function AdminPage() {
         if (o.status !== "pending" && o.emailStatus !== "pending") return false;
       }
 
+      // Filter by Date
+      if (orderDateFilter !== "all") {
+        const oDate = new Date(o.createdAt);
+        const oKey = getLocalDateKey(oDate);
+
+        if (orderDateFilter === "today") {
+          if (oKey !== todayKey) return false;
+        } else if (orderDateFilter === "yesterday") {
+          if (oKey !== yesterdayKey) return false;
+        } else if (orderDateFilter === "last7days") {
+          if (oDate < sevenDaysAgo) return false;
+        } else if (orderDateFilter === "last30days") {
+          if (oDate < thirtyDaysAgo) return false;
+        } else if (orderDateFilter === "thisMonth") {
+          if (oDate.getFullYear() !== now.getFullYear() || oDate.getMonth() !== now.getMonth()) return false;
+        } else if (orderDateFilter === "custom") {
+          if (customStartDate) {
+            const start = new Date(customStartDate + "T00:00:00");
+            if (oDate < start) return false;
+          }
+          if (customEndDate) {
+            const end = new Date(customEndDate + "T23:59:59");
+            if (oDate > end) return false;
+          }
+        }
+      }
+
       if (!orderSearch.trim()) return true;
       const q = orderSearch.toLowerCase().trim();
       const matchId = o.orderId.toLowerCase().includes(q);
       const matchEmail = o.email.toLowerCase().includes(q);
       const matchUtr = o.utr ? o.utr.toLowerCase().includes(q) : false;
       const matchEmailStatus = o.emailStatus ? o.emailStatus.toLowerCase().includes(q) : false;
-      return matchId || matchEmail || matchUtr || matchEmailStatus;
+      const matchMethod = (o.paymentMethod || "").toLowerCase().includes(q);
+      const matchProduct = (o.productName || "").toLowerCase().includes(q);
+      return matchId || matchEmail || matchUtr || matchEmailStatus || matchMethod || matchProduct;
     });
-  }, [orders, orderStatusFilter, orderEmailFilter, orderSearch]);
+
+    filtered.sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime() || 0;
+      const timeB = new Date(b.createdAt).getTime() || 0;
+      return orderSortDirection === "desc" ? timeB - timeA : timeA - timeB;
+    });
+
+    return filtered;
+  }, [
+    orders,
+    orderStatusFilter,
+    orderMethodFilter,
+    orderEmailFilter,
+    orderDateFilter,
+    customStartDate,
+    customEndDate,
+    orderSortDirection,
+    orderSearch,
+    getOrderPaymentMethod,
+  ]);
+
+  // Date-wise Grouping
+  const dateGroupedOrders = useMemo((): DateGroup[] => {
+    const map = new Map<string, StoredOrder[]>();
+
+    for (const ord of filteredOrders) {
+      const key = getLocalDateKey(ord.createdAt);
+      const list = map.get(key) || [];
+      list.push(ord);
+      map.set(key, list);
+    }
+
+    const groups: DateGroup[] = [];
+    for (const [dateKey, groupOrders] of map.entries()) {
+      let totalAmount = 0;
+      let confirmedCount = 0;
+      let pendingCount = 0;
+      let failedCount = 0;
+
+      for (const o of groupOrders) {
+        if (o.status === "confirmed") {
+          confirmedCount++;
+          totalAmount += Number(o.amount) || 0;
+        } else if (o.status === "pending") {
+          pendingCount++;
+        } else {
+          failedCount++;
+        }
+      }
+
+      groups.push({
+        dateKey,
+        label: formatDateHeader(dateKey),
+        orders: groupOrders,
+        totalAmount,
+        confirmedCount,
+        pendingCount,
+        failedCount,
+      });
+    }
+
+    return groups;
+  }, [filteredOrders]);
+
+  // Window Summary Metrics
+  const dateMetrics = useMemo(() => {
+    let totalRev = 0;
+    let confirmedCount = 0;
+    let pendingCount = 0;
+    let failedCount = 0;
+
+    for (const o of filteredOrders) {
+      if (o.status === "confirmed") {
+        totalRev += Number(o.amount) || 0;
+        confirmedCount++;
+      } else if (o.status === "pending") {
+        pendingCount++;
+      } else {
+        failedCount++;
+      }
+    }
+
+    return {
+      totalRev,
+      confirmedCount,
+      pendingCount,
+      failedCount,
+      totalCount: filteredOrders.length,
+    };
+  }, [filteredOrders]);
+
+  // Export filtered orders as CSV
+  const exportOrdersCsv = useCallback(() => {
+    if (filteredOrders.length === 0) {
+      alert("No orders available to export for the current filters.");
+      return;
+    }
+    const headers = [
+      "Order ID",
+      "Created At",
+      "Customer Email",
+      "Amount (INR)",
+      "Product Name",
+      "Quantity",
+      "Payment Method",
+      "Status",
+      "Bank UTR / TxID",
+      "Email Delivery Status",
+    ];
+
+    const rows = filteredOrders.map((o) => [
+      `"${o.orderId}"`,
+      `"${new Date(o.createdAt).toLocaleString()}"`,
+      `"${o.email}"`,
+      o.amount,
+      `"${(o.productName || "TrinityMart Asset").replace(/"/g, '""')}"`,
+      o.quantity || 1,
+      `"${getOrderPaymentMethod(o).toUpperCase()}"`,
+      `"${o.status}"`,
+      `"${(o.utr || "").replace(/"/g, '""')}"`,
+      `"${o.emailStatus || "pending"}"`,
+    ]);
+
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `trinitymart_orders_${orderDateFilter}_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [filteredOrders, orderDateFilter, getOrderPaymentMethod]);
 
   // Filtered Stock Credentials
   const filteredCredentials = useMemo(() => {
@@ -1033,6 +1331,406 @@ export default function AdminPage() {
     );
   };
 
+  const renderOrderCard = (ord: StoredOrder) => (
+    <div
+      key={ord.orderId}
+      className="rounded-xl sm:rounded-2xl bg-[#0f131c] border border-[#262a33] hover:border-[#31353e] p-3 sm:p-5 shadow-lg transition-all space-y-3.5 sm:space-y-4 flex flex-col justify-between min-w-0 overflow-hidden"
+    >
+      {/* Top Bar: Order ID, Timestamp, Status & Audit Button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-[#262a33]">
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+            <span className="font-mono text-xs sm:text-sm font-bold text-[#8083ff] truncate max-w-[170px] xs:max-w-none">
+              #{ord.orderId}
+            </span>
+            <button
+              type="button"
+              onClick={() => copyVal(ord.orderId, `card-id-${ord.orderId}`)}
+              className="text-[#908fa0] hover:text-[#dfe2ee] p-1 rounded bg-[#181c24] hover:bg-[#262a33] text-[11px] cursor-pointer transition-colors shrink-0"
+              title="Copy Order ID"
+            >
+              {copiedKey === `card-id-${ord.orderId}` ? "✓ Copied" : "📋 Copy"}
+            </button>
+            <span className="text-[10px] sm:text-[11px] font-mono text-[#908fa0] shrink-0">
+              {new Date(ord.createdAt).toLocaleDateString([], {
+                month: "short",
+                day: "numeric",
+              })}{" "}
+              at{" "}
+              {new Date(ord.createdAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </div>
+          {/* Mobile-only status badge & payment method */}
+          <div className="sm:hidden shrink-0 flex items-center gap-1.5 flex-wrap">
+            {getStatusBadge(ord.status)}
+            {getPaymentMethodBadge(ord)}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0 pt-1.5 sm:pt-0 border-t border-[#262a33]/40 sm:border-t-0 flex-wrap">
+          <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+            {getStatusBadge(ord.status)}
+            {getPaymentMethodBadge(ord)}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setAuditModalOrder(ord);
+              setResendCustomEmail(ord.email);
+              setResendStatusMsg(null);
+            }}
+            className="px-2.5 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-xs font-mono font-bold cursor-pointer transition-colors shrink-0"
+            title="Audit email delivery and resend credentials"
+          >
+            Audit &amp; Resend
+          </button>
+        </div>
+      </div>
+
+      {/* Pending Order Quick Actions Bar */}
+      {ord.status === "pending" && (
+        <div className="p-2 sm:p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+          <div className="flex items-center gap-1.5 text-amber-300 font-bold text-[11px]">
+            <span>⏳</span>
+            <span>Pending Payment Settlement</span>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => handleFulfillOrder(ord.orderId, ord.email)}
+              disabled={fulfillingOrderId === ord.orderId}
+              className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 text-[11px] font-mono font-bold cursor-pointer transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1"
+              title="Instantly fulfill order and email credentials from database inventory"
+            >
+              <span>⚡</span>
+              <span>{fulfillingOrderId === ord.orderId ? "Fulfilling…" : "Fulfill & Deliver"}</span>
+            </button>
+            {getOrderPaymentMethod(ord) === "crypto" ? (
+              <button
+                type="button"
+                onClick={() => handleCheckGatewayOrder(ord.orderId, "crypto")}
+                disabled={checkingGatewayOrderId === ord.orderId}
+                className="px-2.5 py-1 rounded-lg bg-[#8083ff]/20 hover:bg-[#8083ff]/30 text-[#8083ff] hover:text-white border border-[#8083ff]/40 text-[11px] font-mono font-semibold cursor-pointer transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1"
+                title="Check Atlos Crypto gateway for blockchain confirmation"
+              >
+                <span>💎</span>
+                <span>{checkingGatewayOrderId === ord.orderId && checkingGatewayMethod === "crypto" ? "Checking…" : "Check Crypto"}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleCheckGatewayOrder(ord.orderId, "upi")}
+                disabled={checkingGatewayOrderId === ord.orderId}
+                className="px-2.5 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-[11px] font-mono font-semibold cursor-pointer transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1"
+                title="Check UPI gateway for confirmed settlement"
+              >
+                <span>🔄</span>
+                <span>{checkingGatewayOrderId === ord.orderId && checkingGatewayMethod === "upi" ? "Checking…" : "Check UPI"}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Main Details Grid: Customer Email, Product, Amount, Payment UTR, Email Status */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 text-xs">
+        {/* Customer Email */}
+        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1 min-w-0 overflow-hidden">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
+            Customer Email
+          </span>
+          <div className="flex items-center justify-between gap-1 font-mono text-[#dfe2ee] font-medium min-w-0">
+            <span className="truncate select-all text-xs break-all sm:break-normal">{ord.email}</span>
+            <button
+              type="button"
+              onClick={() => copyVal(ord.email, `card-em-${ord.orderId}`)}
+              className="text-[#908fa0] hover:text-[#dfe2ee] p-0.5 rounded cursor-pointer shrink-0"
+              title="Copy Email"
+            >
+              {copiedKey === `card-em-${ord.orderId}` ? "✓" : "📋"}
+            </button>
+          </div>
+        </div>
+
+        {/* Amount & Dual Currency */}
+        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1 min-w-0 overflow-hidden">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
+            Total Order Value
+          </span>
+          <div className="flex items-baseline gap-2 font-mono flex-wrap">
+            <span className="text-base font-extrabold text-[#dfe2ee]">₹{ord.amount}</span>
+            <span className="text-[11px] text-[#908fa0]">
+              (~${((Number(ord.amount) || 0) * inrToUsdRate).toFixed(2)} USD)
+            </span>
+            {ord.quantity && ord.quantity > 1 && (
+              <span className="text-[10px] font-bold text-[#8083ff] bg-[#8083ff]/15 px-1.5 py-0.5 rounded">
+                {ord.quantity}x
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Product / Item Bought */}
+        {ord.productName && (
+          <div className="col-span-1 sm:col-span-2 p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] flex items-center justify-between gap-2 min-w-0 overflow-hidden">
+            <div className="min-w-0">
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
+                Item Purchased
+              </span>
+              <span className="font-mono text-xs font-bold text-[#dfe2ee] truncate block">
+                {ord.productName}
+              </span>
+            </div>
+            {ord.quantity && ord.quantity > 1 && (
+              <span className="text-[10px] font-bold text-[#8083ff] bg-[#8083ff]/15 px-2 py-0.5 rounded shrink-0">
+                {ord.quantity}x Units
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Payment Reference / UTR */}
+        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1 min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
+              {getOrderPaymentMethod(ord) === "crypto" ? "Blockchain TxID / Atlos" : "Bank UTR / UPI Ref"}
+            </span>
+            <span className="text-[10px] font-mono text-[#908fa0]">
+              {getOrderPaymentMethod(ord) === "crypto" ? "🪙 Crypto" : "💳 UPI"}
+            </span>
+          </div>
+          {ord.utr ? (
+            <div className="flex items-center justify-between gap-1 font-mono text-[#4edea3] font-semibold min-w-0">
+              <span className="truncate select-all text-xs">{ord.utr}</span>
+              <button
+                type="button"
+                onClick={() => copyVal(ord.utr, `card-utr-${ord.orderId}`)}
+                className="text-[#908fa0] hover:text-[#dfe2ee] p-0.5 rounded cursor-pointer shrink-0"
+                title="Copy UTR / TxID"
+              >
+                {copiedKey === `card-utr-${ord.orderId}` ? "✓" : "📋"}
+              </button>
+            </div>
+          ) : (
+            <span className="font-mono text-[#908fa0]/60 block text-xs truncate">— Pending Verification</span>
+          )}
+        </div>
+
+        {/* Email Tracking Badge */}
+        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1 min-w-0 overflow-hidden">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
+            Delivery Telemetry
+          </span>
+          <div className="flex items-start xs:items-center justify-between gap-1.5 flex-wrap min-w-0">
+            <div>{getEmailStatusBadge(ord)}</div>
+            {ord.emailOpenedAt ? (
+              <span className="text-[10px] font-mono text-[#4edea3] shrink-0">
+                Opened: {new Date(ord.emailOpenedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            ) : ord.emailSentAt ? (
+              <span className="text-[10px] font-mono text-[#908fa0] shrink-0">
+                Sent: {new Date(ord.emailSentAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      {/* Delivered Credentials Box */}
+      <div className="pt-1 min-w-0">
+        <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0]">
+            Delivered Account &amp; Keys
+          </span>
+          <span className="text-[10px] font-mono text-[#8083ff]">
+            Instant Auto-Assigned
+          </span>
+        </div>
+        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] min-w-0 overflow-hidden">
+          {renderOrderCredentials(ord)}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderSplitItem = (ord: StoredOrder) => {
+    const isSelected = (selectedOrderId || filteredOrders[0]?.orderId) === ord.orderId;
+    return (
+      <div
+        key={ord.orderId}
+        onClick={() => setSelectedOrderId(ord.orderId)}
+        className={`p-3 rounded-xl border transition-all cursor-pointer space-y-2 ${
+          isSelected
+            ? "bg-[#181c24] border-[#8083ff] shadow-md shadow-[#8083ff]/10"
+            : "bg-[#0f131c] border-[#262a33] hover:border-[#31353e] hover:bg-[#181c24]/50"
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-mono text-xs font-bold text-[#8083ff] truncate">
+            #{ord.orderId}
+          </span>
+          <div className="shrink-0 flex items-center gap-1">
+            {getStatusBadge(ord.status)}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between text-xs font-mono">
+          <span className="text-[#dfe2ee] truncate max-w-[170px]">
+            {ord.email}
+          </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {getPaymentMethodBadge(ord)}
+            <span className="font-bold text-[#dfe2ee]">₹{ord.amount}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between text-[11px] font-mono text-[#908fa0]">
+          <span>
+            {new Date(ord.createdAt).toLocaleDateString([], {
+              month: "short",
+              day: "numeric",
+            })}{" "}
+            {new Date(ord.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </span>
+          <div>{getEmailStatusBadge(ord)}</div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderTableRow = (ord: StoredOrder) => (
+    <tr key={ord.orderId} className="hover:bg-[#262a33]/30 transition-colors">
+      {/* Order ID */}
+      <td className="py-3.5 px-4 font-mono text-[#8083ff] font-semibold whitespace-nowrap">
+        <div className="flex items-center gap-1.5">
+          <span>#{ord.orderId}</span>
+          <button
+            type="button"
+            onClick={() => copyVal(ord.orderId, `ord-id-tbl-${ord.orderId}`)}
+            className="text-[#908fa0] hover:text-[#dfe2ee] p-1 rounded hover:bg-[#262a33] cursor-pointer"
+            title="Copy Order ID"
+          >
+            {copiedKey === `ord-id-tbl-${ord.orderId}` ? "✓" : "📋"}
+          </button>
+        </div>
+      </td>
+
+      {/* Customer Email */}
+      <td className="py-3.5 px-4 font-mono font-medium text-[#dfe2ee] max-w-[180px] truncate select-all">
+        {ord.email}
+      </td>
+
+      {/* Amount (Dual Currency) */}
+      <td className="py-3.5 px-4 whitespace-nowrap">
+        <div className="font-bold font-mono text-[#dfe2ee] text-sm">₹{ord.amount}</div>
+        <div className="text-[10px] font-mono text-[#908fa0]">
+          ~${((Number(ord.amount) || 0) * inrToUsdRate).toFixed(2)} USD
+        </div>
+      </td>
+
+      {/* Payment Method */}
+      <td className="py-3.5 px-4 whitespace-nowrap">
+        {getPaymentMethodBadge(ord)}
+      </td>
+
+      {/* Status */}
+      <td className="py-3.5 px-4 whitespace-nowrap">
+        {getStatusBadge(ord.status)}
+      </td>
+
+      {/* Email Receipt Status */}
+      <td className="py-3.5 px-4 whitespace-nowrap">
+        <div className="flex flex-col gap-1 items-start">
+          {getEmailStatusBadge(ord)}
+          {ord.emailOpenedAt && (
+            <span className="text-[10px] text-[#4edea3] font-mono">
+              Opened: {new Date(ord.emailOpenedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
+        </div>
+      </td>
+
+      {/* Bank UTR / Tx */}
+      <td className="py-3.5 px-4 font-mono text-xs">
+        {ord.utr ? (
+          <div className="flex items-center gap-1 text-[#4edea3] max-w-[150px]">
+            <span className="truncate select-all">{ord.utr}</span>
+            <button
+              type="button"
+              onClick={() => copyVal(ord.utr || "", `ord-utr-tbl-${ord.orderId}`)}
+              className="text-[#908fa0] hover:text-[#dfe2ee] p-1 rounded hover:bg-[#262a33] cursor-pointer shrink-0"
+              title="Copy Bank UTR"
+            >
+              {copiedKey === `ord-utr-tbl-${ord.orderId}` ? "✓" : "📋"}
+            </button>
+          </div>
+        ) : (
+          <span className="text-[#908fa0]/60">—</span>
+        )}
+      </td>
+
+      {/* Delivered Accounts */}
+      <td className="py-3.5 px-4 max-w-[220px]">
+        {renderOrderCredentials(ord)}
+      </td>
+
+      {/* Actions */}
+      <td className="py-3.5 px-4 whitespace-nowrap">
+        <div className="flex items-center gap-1.5">
+          {ord.status === "pending" && (
+            <>
+              <button
+                type="button"
+                onClick={() => handleFulfillOrder(ord.orderId, ord.email)}
+                disabled={fulfillingOrderId === ord.orderId}
+                className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 text-[11px] font-mono font-bold cursor-pointer transition-colors"
+                title="Fulfill order from stock & email credentials"
+              >
+                {fulfillingOrderId === ord.orderId ? "…" : "⚡ Fulfill"}
+              </button>
+              {getOrderPaymentMethod(ord) === "crypto" ? (
+                <button
+                  type="button"
+                  onClick={() => handleCheckGatewayOrder(ord.orderId, "crypto")}
+                  disabled={checkingGatewayOrderId === ord.orderId}
+                  className="px-2 py-1 rounded-lg bg-[#8083ff]/20 hover:bg-[#8083ff]/30 text-[#8083ff] hover:text-white border border-[#8083ff]/40 text-[11px] font-mono font-semibold cursor-pointer transition-colors"
+                  title="Check Atlos Crypto gateway"
+                >
+                  {checkingGatewayOrderId === ord.orderId && checkingGatewayMethod === "crypto" ? "…" : "💎 Crypto"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleCheckGatewayOrder(ord.orderId, "upi")}
+                  disabled={checkingGatewayOrderId === ord.orderId}
+                  className="px-2 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-[11px] font-mono font-semibold cursor-pointer transition-colors"
+                  title="Check UPI gateway"
+                >
+                  {checkingGatewayOrderId === ord.orderId && checkingGatewayMethod === "upi" ? "…" : "🔄 UPI"}
+                </button>
+              )}
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setAuditModalOrder(ord);
+              setResendCustomEmail(ord.email);
+              setResendStatusMsg(null);
+            }}
+            className="px-2.5 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-xs font-mono font-bold cursor-pointer transition-colors"
+          >
+            Audit / Resend
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+
   // ── Login Gate ────────────────────────────────────────────────────────────
   if (!authenticated) {
     return (
@@ -1097,141 +1795,208 @@ export default function AdminPage() {
     <div className="min-h-screen w-full bg-[#0f131c] text-[#dfe2ee] font-sans antialiased selection:bg-[#6366f1] selection:text-white">
       {/* ── Top Header ── */}
       <header className="sticky top-0 z-30 bg-[#0a0e16]/95 backdrop-blur-xl border-b border-[#262a33]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-            {/* Brand & Status */}
-            <div className="flex items-center justify-between sm:justify-start gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-[#262a33] border border-[#31353e] flex items-center justify-center text-lg shadow-sm">
-                  ⚡
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-base sm:text-lg font-bold text-[#dfe2ee] tracking-tight">
-                      Trinitymart <span className="text-[#8083ff]">Operations</span>
-                    </h1>
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#00a572]/20 text-[#4edea3] border border-[#00a572]/30 font-mono text-[10px] font-bold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#4edea3] animate-pulse" />
-                      VAULT-EAST-01
-                    </span>
-                  </div>
-                  <p className="font-mono text-[10px] text-[#908fa0] hidden sm:block">
-                    ENCRYPTION: AES-256-GCM • DISPATCH ENGINE ACTIVE
-                  </p>
-                </div>
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3.5">
+          <div className="flex items-center justify-between gap-2.5 sm:gap-4 flex-wrap">
+            {/* Brand Title & Status */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#262a33] border border-[#31353e] flex items-center justify-center text-base sm:text-lg shadow-sm shrink-0">
+                ⚡
               </div>
-
-              {/* Action Buttons for Mobile */}
-              <div className="flex sm:hidden items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    fetchOrders();
-                    fetchCredentials();
-                  }}
-                  disabled={ordersLoading || fetchStatus === "loading"}
-                  className="p-2 rounded-lg bg-[#181c24] hover:bg-[#262a33] border border-[#262a33] text-[#dfe2ee] text-xs transition-colors cursor-pointer"
-                  title="Refresh Database"
-                >
-                  <span className={ordersLoading || fetchStatus === "loading" ? "inline-block animate-spin" : ""}>
-                    🔄
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-sm sm:text-base md:text-lg font-bold text-[#dfe2ee] tracking-tight truncate">
+                    Trinitymart <span className="text-[#8083ff]">Operations</span>
+                  </h1>
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#00a572]/20 text-[#4edea3] border border-[#00a572]/30 font-mono text-[9px] sm:text-[10px] font-bold shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#4edea3] animate-pulse" />
+                    VAULT-EAST-01
                   </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="px-2.5 py-1.5 rounded-lg bg-[#93000a]/20 hover:bg-[#93000a]/40 border border-[#ffb4ab]/30 text-[#ffb4ab] text-xs font-mono font-semibold transition-colors cursor-pointer"
-                >
-                  Logout
-                </button>
+                </div>
+                <p className="font-mono text-[9px] sm:text-[10px] text-[#908fa0] hidden sm:block">
+                  ENCRYPTION: AES-256-GCM • DISPATCH ENGINE ACTIVE
+                </p>
               </div>
             </div>
 
-            {/* Navigation Tabs (Full width on mobile, auto on desktop) */}
-            <div className="flex items-center gap-2">
-              <div className="flex w-full sm:w-auto p-1 bg-[#181c24] rounded-xl border border-[#262a33]">
-                <button
-                  type="button"
-                  onClick={() => setTab("orders")}
-                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer font-mono ${
-                    tab === "orders"
-                      ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-md"
-                      : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33]"
-                  }`}
-                >
-                  <span>Orders &amp; Payments</span>
-                  <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                      tab === "orders" ? "bg-[#0d0096]/20 text-[#0d0096]" : "bg-[#262a33] text-[#c7c4d7]"
-                    }`}
-                  >
+            {/* Navigation Controls & Action Buttons */}
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {/* Desktop Direct Navigation Tabs (Guaranteed never to overflow or overlap) */}
+              <div className="hidden xl:flex items-center gap-1 bg-[#181c24] p-1 rounded-xl border border-[#262a33] shrink-0 font-mono text-xs">
+                {[
+                  { id: "orders", label: "Orders", icon: "🧾", count: orders.length },
+                  { id: "recovery", label: "Cart Recovery", icon: "🧲" },
+                  { id: "products", label: "Stock", icon: "📦" },
+                  { id: "coupons", label: "Coupons", icon: "🎟️" },
+                  { id: "email", label: "Branding", icon: "🎨" },
+                  { id: "bot", label: "Bots & Alerts", icon: "🤖" },
+                ].map((item) => {
+                  const isActive = tab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setTab(item.id as any)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-bold transition-all whitespace-nowrap cursor-pointer ${
+                        isActive
+                          ? "bg-[#8083ff] text-[#0d0096] shadow-sm font-black"
+                          : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33]"
+                      }`}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.label}</span>
+                      {item.count !== undefined && (
+                        <span
+                          className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                            isActive ? "bg-[#0d0096]/20 text-[#0d0096]" : "bg-[#262a33] text-[#8083ff]"
+                          }`}
+                        >
+                          {item.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Expand Button to Choose Navbar Option in Admin */}
+              <button
+                type="button"
+                onClick={() => setIsNavExpanded(!isNavExpanded)}
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-3 sm:py-2 rounded-xl border text-xs sm:text-sm font-mono font-bold transition-all cursor-pointer shadow-sm ${
+                  isNavExpanded
+                    ? "bg-[#8083ff] text-[#0d0096] border-[#8083ff] shadow-md shadow-[#8083ff]/20"
+                    : "bg-[#181c24] hover:bg-[#262a33] text-[#dfe2ee] border-[#262a33] hover:border-[#8083ff]/40"
+                }`}
+                aria-expanded={isNavExpanded}
+                title="Expand then choose option of navbar in admin"
+              >
+                <span>
+                  {tab === "orders" ? "🧾" : tab === "recovery" ? "🧲" : tab === "products" ? "📦" : tab === "coupons" ? "🎟️" : tab === "email" ? "🎨" : "🤖"}
+                </span>
+                <span className="font-bold xl:hidden">
+                  {tab === "orders" ? "Orders" : tab === "recovery" ? "Recovery" : tab === "products" ? "Products" : tab === "coupons" ? "Coupons" : tab === "email" ? "Branding" : "Bots"}
+                </span>
+                <span className="hidden xl:inline font-bold">
+                  {isNavExpanded ? "Close Drawer" : "Choose Section"}
+                </span>
+                {tab === "orders" && (
+                  <span className={`xl:hidden text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    isNavExpanded ? "bg-[#0d0096]/20 text-[#0d0096]" : "bg-[#8083ff]/20 text-[#8083ff]"
+                  }`}>
                     {orders.length}
                   </span>
-                </button>
+                )}
+                <span className={`text-[10px] opacity-70 transition-transform duration-200 ${isNavExpanded ? "rotate-180" : ""}`}>
+                  ▼
+                </span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => setTab("products")}
-                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer font-mono ${
-                    tab === "products"
-                      ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-md"
-                      : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33]"
-                  }`}
-                >
-                  <span>Stock &amp; Products</span>
-                </button>
+              {/* Direct Quick Payment Tool Button */}
+              <button
+                type="button"
+                onClick={() => setShowPaymentLookupModal(true)}
+                className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-[#8083ff]/15 hover:bg-[#8083ff]/25 border border-[#8083ff]/40 text-[#8083ff] hover:text-white text-xs font-mono font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                title="Lookup Crypto or UPI Payment"
+              >
+                <span>💎</span>
+                <span className="hidden xs:inline">Check Pay</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => setTab("coupons")}
-                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer font-mono ${
-                    tab === "coupons"
-                      ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-md"
-                      : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33]"
-                  }`}
-                >
-                  <span>🎟️ Coupons</span>
-                </button>
+              {/* Refresh Database Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  fetchOrders();
+                  fetchCredentials();
+                }}
+                disabled={ordersLoading || fetchStatus === "loading"}
+                className="p-1.5 sm:px-2.5 sm:py-2 rounded-xl bg-[#181c24] hover:bg-[#262a33] border border-[#262a33] text-[#dfe2ee] text-xs font-mono font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                title="Refresh Database"
+              >
+                <span className={ordersLoading || fetchStatus === "loading" ? "inline-block animate-spin" : ""}>
+                  🔄
+                </span>
+                <span className="hidden md:inline">Refresh</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => setTab("email")}
-                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer font-mono ${
-                    tab === "email"
-                      ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-md"
-                      : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33]"
-                  }`}
-                >
-                  <span>🎨 Email &amp; Profile</span>
-                </button>
-              </div>
-
-              {/* Action Buttons for Tablet / Desktop */}
-              <div className="hidden sm:flex items-center gap-2 ml-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    fetchOrders();
-                    fetchCredentials();
-                  }}
-                  disabled={ordersLoading || fetchStatus === "loading"}
-                  className="px-3 py-2 rounded-lg bg-[#181c24] hover:bg-[#262a33] border border-[#262a33] text-[#dfe2ee] text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <span className={ordersLoading || fetchStatus === "loading" ? "inline-block animate-spin" : ""}>
-                    🔄
-                  </span>
-                  <span>Refresh</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="px-3.5 py-2 rounded-lg bg-[#93000a]/20 hover:bg-[#93000a]/40 border border-[#ffb4ab]/30 text-[#ffb4ab] text-xs font-mono font-semibold transition-colors cursor-pointer"
-                >
-                  Logout
-                </button>
-              </div>
+              {/* Logout Button */}
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-[#93000a]/20 hover:bg-[#93000a]/40 border border-[#ffb4ab]/30 text-[#ffb4ab] text-xs font-mono font-semibold transition-colors cursor-pointer"
+              >
+                Logout
+              </button>
             </div>
           </div>
+
+          {/* Expandable Navigation Drawer (Opens cleanly when user clicks expand button) */}
+          {isNavExpanded && (
+            <div className="mt-3 p-3 sm:p-4 rounded-2xl bg-[#10141d] border border-[#262a33] shadow-2xl animate-in fade-in slide-in-from-top-2 duration-150">
+              <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-[#262a33]">
+                <span className="font-mono text-xs font-bold text-[#8083ff] uppercase tracking-wider">
+                  Select Dashboard Navigation
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsNavExpanded(false)}
+                  className="text-[#908fa0] hover:text-[#dfe2ee] text-xs font-mono p-1 rounded hover:bg-[#181c24] cursor-pointer"
+                >
+                  ✕ Close Menu
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-2.5">
+                {[
+                  { id: "orders", label: "Customer Orders", icon: "🧾", desc: "Live receipts, telemetry & date audit", count: orders.length },
+                  { id: "recovery", label: "Cart Recovery", icon: "🧲", desc: "Recover abandoned checkouts & lost sales" },
+                  { id: "products", label: "Products & Stock", icon: "📦", desc: "Product catalog & inventory pool" },
+                  { id: "coupons", label: "Promo Coupons", icon: "🎟️", desc: "Discount codes & volume perks" },
+                  { id: "email", label: "Email & Branding", icon: "🎨", desc: "SMTP telemetry & store profile" },
+                  { id: "bot", label: "Telegram & Discord Bots", icon: "🤖", desc: "Webhook alerts & remote bot commands" },
+                ].map((item) => {
+                  const isActive = tab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setTab(item.id as any);
+                        setIsNavExpanded(false);
+                      }}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                        isActive
+                          ? "bg-[#8083ff]/15 border-[#8083ff] text-white shadow-md shadow-[#8083ff]/10"
+                          : "bg-[#181c24] border-[#262a33] text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33] hover:border-[#31353e]"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-2xl shrink-0 p-1 rounded-lg bg-[#0f131c] border border-[#262a33]">
+                          {item.icon}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs sm:text-sm text-[#dfe2ee] truncate">
+                            {item.label}
+                          </div>
+                          <div className="text-[10px] text-[#908fa0] font-mono truncate">
+                            {item.desc}
+                          </div>
+                        </div>
+                      </div>
+
+                      {item.count !== undefined ? (
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#8083ff]/20 text-[#8083ff] border border-[#8083ff]/30 font-bold shrink-0">
+                          {item.count}
+                        </span>
+                      ) : isActive ? (
+                        <span className="text-[#4edea3] text-xs font-bold shrink-0 font-mono">● Active</span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
@@ -1324,10 +2089,10 @@ export default function AdminPage() {
         {/* ── TAB 1: ORDERS & TRANSACTIONS ── */}
         {tab === "orders" && (
           <div className="space-y-4">
-            {/* Search & Filter Toolbar */}
-            <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-[#181c24] border border-[#262a33] shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            {/* Search & Filter Toolbar (Single unified card like previous layout) */}
+            <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-[#181c24] border border-[#262a33] shadow-sm flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
               {/* Search Bar */}
-              <div className="relative flex-1">
+              <div className="relative flex-1 min-w-[280px]">
                 <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-[#908fa0] text-xs">
                   🔍
                 </span>
@@ -1349,8 +2114,8 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* Status Filters & Email Filters */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none flex-wrap">
+              {/* Status Filters, Method, Email & Quick Check in Single Row */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 xl:pb-0 scrollbar-none flex-wrap">
                 {/* Order Status Filters */}
                 <div className="flex items-center gap-1 bg-[#0f131c] p-1 rounded-xl border border-[#262a33]">
                   {(["all", "confirmed", "pending", "failed"] as const).map((filterStatus) => (
@@ -1369,9 +2134,33 @@ export default function AdminPage() {
                   ))}
                 </div>
 
+                {/* Payment Method Filter */}
+                <div className="flex items-center gap-1 bg-[#0f131c] p-1 rounded-xl border border-[#262a33]">
+                  {(
+                    [
+                      { id: "all", label: "All" },
+                      { id: "upi", label: "💳 UPI" },
+                      { id: "crypto", label: "🪙 Crypto" },
+                    ] as const
+                  ).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setOrderMethodFilter(m.id)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                        orderMethodFilter === m.id
+                          ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-xs"
+                          : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33]"
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+
                 {/* Email Delivery Status Filter */}
                 <div className="flex items-center gap-1 bg-[#0f131c] p-1 rounded-xl border border-[#262a33]">
-                  <span className="font-mono text-[10px] font-bold text-[#908fa0] px-1.5 hidden xl:inline uppercase tracking-wider">
+                  <span className="font-mono text-[10px] font-bold text-[#908fa0] px-1 hidden 2xl:inline uppercase tracking-wider">
                     Email:
                   </span>
                   {(
@@ -1396,6 +2185,127 @@ export default function AdminPage() {
                     </button>
                   ))}
                 </div>
+
+                {/* Direct Gateway Check Tool Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentLookupInitialQuery("");
+                    setShowPaymentLookupModal(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-[#8083ff]/15 hover:bg-[#8083ff]/25 border border-[#8083ff]/40 text-[#8083ff] hover:text-white text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shadow-xs"
+                  title="Open live payment verification tool for crypto or UPI"
+                >
+                  <span>💎</span>
+                  <span>Check Pay</span>
+                </button>
+              </div>
+            </div>
+
+            {/* ── Date Range, Sorting & Grouping Toolbar ── */}
+            <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-[#181c24] border border-[#262a33] shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs font-mono">
+              {/* Left: Date Presets & Custom Picker */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] uppercase font-bold text-[#8083ff] px-1 flex items-center gap-1 shrink-0">
+                  <span>📅</span>
+                  <span>Timeline:</span>
+                </span>
+
+                <div className="flex items-center gap-1 bg-[#0f131c] p-1 rounded-xl border border-[#262a33] overflow-x-auto scrollbar-none flex-wrap">
+                  {(
+                    [
+                      { id: "all", label: "All Time" },
+                      { id: "today", label: "Today" },
+                      { id: "yesterday", label: "Yesterday" },
+                      { id: "last7days", label: "7 Days" },
+                      { id: "last30days", label: "30 Days" },
+                      { id: "thisMonth", label: "This Month" },
+                      { id: "custom", label: "Custom 📆" },
+                    ] as const
+                  ).map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => setOrderDateFilter(d.id)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                        orderDateFilter === d.id
+                          ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-xs"
+                          : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#262a33]"
+                      }`}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom Date Pickers (Shown when custom is selected) */}
+                {orderDateFilter === "custom" && (
+                  <div className="flex items-center gap-1.5 bg-[#0f131c] p-1.5 rounded-xl border border-[#8083ff]/40 animate-in fade-in duration-150 flex-wrap">
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(e) => setCustomStartDate(e.target.value)}
+                      className="bg-[#181c24] text-[#dfe2ee] px-2 py-1 rounded-lg border border-[#262a33] text-xs outline-none focus:border-[#8083ff]"
+                      title="From Date"
+                    />
+                    <span className="text-[#908fa0]">to</span>
+                    <input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(e) => setCustomEndDate(e.target.value)}
+                      className="bg-[#181c24] text-[#dfe2ee] px-2 py-1 rounded-lg border border-[#262a33] text-xs outline-none focus:border-[#8083ff]"
+                      title="To Date"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Right: Date-wise grouping toggle, Sorting direction, & CSV Export */}
+              <div className="flex items-center gap-2 flex-wrap justify-between sm:justify-end">
+                {/* Selected Range Stats pill */}
+                <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-[11px]">
+                  <span className="text-[#908fa0]">Period Rev:</span>
+                  <span className="text-emerald-400 font-bold">₹{dateMetrics.totalRev}</span>
+                  <span className="text-[#908fa0]">
+                    ({dateMetrics.confirmedCount} paid / {dateMetrics.totalCount} orders)
+                  </span>
+                </div>
+
+                {/* Group by Date Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setGroupByDate(!groupByDate)}
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    groupByDate
+                      ? "bg-[#8083ff]/20 text-[#8083ff] border-[#8083ff]/40 shadow-xs"
+                      : "bg-[#0f131c] text-[#908fa0] border-[#262a33] hover:text-[#dfe2ee]"
+                  }`}
+                  title="Toggle grouping orders by calendar date"
+                >
+                  <span>🗓️</span>
+                  <span>{groupByDate ? "Date Groups: ON" : "Date Groups: OFF"}</span>
+                </button>
+
+                {/* Sort Direction Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setOrderSortDirection(orderSortDirection === "desc" ? "asc" : "desc")}
+                  className="px-3 py-1.5 rounded-xl bg-[#0f131c] hover:bg-[#262a33] text-[#dfe2ee] border border-[#262a33] text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1"
+                  title="Toggle chronological sort"
+                >
+                  <span>{orderSortDirection === "desc" ? "⬇️ Newest First" : "⬆️ Oldest First"}</span>
+                </button>
+
+                {/* Export CSV Button */}
+                <button
+                  type="button"
+                  onClick={exportOrdersCsv}
+                  className="px-3 py-1.5 rounded-xl bg-[#00a572]/15 hover:bg-[#00a572]/25 text-[#4edea3] border border-[#00a572]/30 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                  title="Download orders in this date range as CSV file"
+                >
+                  <span>📥</span>
+                  <span>Export CSV</span>
+                </button>
               </div>
             </div>
 
@@ -1501,204 +2411,42 @@ export default function AdminPage() {
                 </div>
               ) : orderViewMode === "cards" ? (
                 /* ── 1. MODERN CARDS FEED VIEW (NO HORIZONTAL SCROLL REQUIRED) ── */
-                <div className="p-2.5 sm:p-5 grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4">
-                  {filteredOrders.map((ord) => (
-                    <div
-                      key={ord.orderId}
-                      className="rounded-xl sm:rounded-2xl bg-[#0f131c] border border-[#262a33] hover:border-[#31353e] p-3 sm:p-5 shadow-lg transition-all space-y-3.5 sm:space-y-4 flex flex-col justify-between min-w-0 overflow-hidden"
-                    >
-                      {/* Top Bar: Order ID, Timestamp, Status & Audit Button */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-[#262a33]">
-                        <div className="flex items-center justify-between gap-2 min-w-0">
-                          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                            <span className="font-mono text-xs sm:text-sm font-bold text-[#8083ff] truncate max-w-[170px] xs:max-w-none">
-                              #{ord.orderId}
+                <div className="p-2.5 sm:p-5 space-y-6">
+                  {groupByDate ? (
+                    dateGroupedOrders.map((group) => (
+                      <div key={group.dateKey} className="space-y-3">
+                        {/* Date Group Header */}
+                        <div className="sticky top-14 z-20 flex items-center justify-between py-2 px-3.5 sm:px-4 rounded-xl bg-[#0a0e16]/95 backdrop-blur-md border border-[#262a33] text-xs font-mono shadow-sm">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="w-2 h-2 rounded-full bg-[#8083ff] animate-pulse shrink-0" />
+                            <span className="font-bold text-[#dfe2ee] text-xs sm:text-sm">
+                              {group.label}
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => copyVal(ord.orderId, `card-id-${ord.orderId}`)}
-                              className="text-[#908fa0] hover:text-[#dfe2ee] p-1 rounded bg-[#181c24] hover:bg-[#262a33] text-[11px] cursor-pointer transition-colors shrink-0"
-                              title="Copy Order ID"
-                            >
-                              {copiedKey === `card-id-${ord.orderId}` ? "✓ Copied" : "📋 Copy"}
-                            </button>
-                            <span className="text-[10px] sm:text-[11px] font-mono text-[#908fa0] shrink-0">
-                              {new Date(ord.createdAt).toLocaleDateString([], {
-                                month: "short",
-                                day: "numeric",
-                              })}{" "}
-                              at{" "}
-                              {new Date(ord.createdAt).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
+                            <span className="text-[10px] sm:text-[11px] text-[#8083ff] font-semibold px-2 py-0.5 rounded-full bg-[#8083ff]/15 border border-[#8083ff]/30">
+                              {group.orders.length} {group.orders.length === 1 ? "order" : "orders"}
                             </span>
                           </div>
-                          {/* Mobile-only status badge */}
-                          <div className="sm:hidden shrink-0">
-                            {getStatusBadge(ord.status)}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0 pt-1.5 sm:pt-0 border-t border-[#262a33]/40 sm:border-t-0 flex-wrap">
-                          <div className="hidden sm:block shrink-0">
-                            {getStatusBadge(ord.status)}
-                          </div>
-
-                          {/* Quick Fulfill & Check Buttons if Pending */}
-                          {ord.status === "pending" && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleFulfillOrder(ord.orderId, ord.email)}
-                                disabled={fulfillingOrderId === ord.orderId}
-                                className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 text-[11px] font-mono font-bold cursor-pointer transition-all active:scale-95 disabled:opacity-50 shrink-0"
-                                title="Instantly fulfill order and email credentials from database inventory"
-                              >
-                                {fulfillingOrderId === ord.orderId ? "Fulfilling…" : "⚡ Fulfill & Send"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleCheckGatewayOrder(ord.orderId)}
-                                disabled={checkingGatewayOrderId === ord.orderId}
-                                className="px-2 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-[11px] font-mono font-semibold cursor-pointer transition-all active:scale-95 disabled:opacity-50 shrink-0"
-                                title="Check UPI gateway for confirmed settlement"
-                              >
-                                {checkingGatewayOrderId === ord.orderId ? "Checking…" : "🔄 Check UPI"}
-                              </button>
-                            </>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAuditModalOrder(ord);
-                              setResendCustomEmail(ord.email);
-                              setResendStatusMsg(null);
-                            }}
-                            className="w-full sm:w-auto text-center px-2.5 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-xs font-mono font-bold cursor-pointer transition-colors shrink-0"
-                            title="Audit email delivery and resend credentials"
-                          >
-                            Audit &amp; Resend
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Main Details Grid: Customer Email, Product, Amount, Payment UTR, Email Status */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 text-xs">
-                        {/* Customer Email */}
-                        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1 min-w-0 overflow-hidden">
-                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
-                            Customer Email
-                          </span>
-                          <div className="flex items-center justify-between gap-1 font-mono text-[#dfe2ee] font-medium min-w-0">
-                            <span className="truncate select-all text-xs break-all sm:break-normal">{ord.email}</span>
-                            <button
-                              type="button"
-                              onClick={() => copyVal(ord.email, `card-em-${ord.orderId}`)}
-                              className="text-[#908fa0] hover:text-[#dfe2ee] p-0.5 rounded cursor-pointer shrink-0"
-                              title="Copy Email"
-                            >
-                              {copiedKey === `card-em-${ord.orderId}` ? "✓" : "📋"}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Amount & Dual Currency */}
-                        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1 min-w-0 overflow-hidden">
-                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
-                            Total Order Value
-                          </span>
-                          <div className="flex items-baseline gap-2 font-mono flex-wrap">
-                            <span className="text-base font-extrabold text-[#dfe2ee]">₹{ord.amount}</span>
-                            <span className="text-[11px] text-[#908fa0]">
-                              (~${((Number(ord.amount) || 0) * inrToUsdRate).toFixed(2)} USD)
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-0.5 rounded-lg border border-emerald-500/25">
+                              ₹{group.totalAmount} (~${(group.totalAmount * inrToUsdRate).toFixed(2)})
                             </span>
-                            {ord.quantity && ord.quantity > 1 && (
-                              <span className="text-[10px] font-bold text-[#8083ff] bg-[#8083ff]/15 px-1.5 py-0.5 rounded">
-                                {ord.quantity}x
-                              </span>
-                            )}
+                            <span className="text-[#908fa0] hidden sm:inline">
+                              {group.confirmedCount} paid
+                              {group.pendingCount > 0 ? ` • ${group.pendingCount} pending` : ""}
+                            </span>
                           </div>
                         </div>
 
-                        {/* Product / Item Bought (if available) */}
-                        {ord.productName && (
-                          <div className="col-span-1 sm:col-span-2 p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] flex items-center justify-between gap-2 min-w-0 overflow-hidden">
-                            <div className="min-w-0">
-                              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
-                                Item Purchased
-                              </span>
-                              <span className="font-mono text-xs font-bold text-[#dfe2ee] truncate block">
-                                {ord.productName}
-                              </span>
-                            </div>
-                            {ord.quantity && ord.quantity > 1 && (
-                              <span className="text-[10px] font-bold text-[#8083ff] bg-[#8083ff]/15 px-2 py-0.5 rounded shrink-0">
-                                {ord.quantity}x Units
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Payment Reference / UTR */}
-                        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1 min-w-0 overflow-hidden">
-                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
-                            Bank UTR / Blockchain TxID
-                          </span>
-                          {ord.utr ? (
-                            <div className="flex items-center justify-between gap-1 font-mono text-[#4edea3] font-semibold min-w-0">
-                              <span className="truncate select-all text-xs">{ord.utr}</span>
-                              <button
-                                type="button"
-                                onClick={() => copyVal(ord.utr, `card-utr-${ord.orderId}`)}
-                                className="text-[#908fa0] hover:text-[#dfe2ee] p-0.5 rounded cursor-pointer shrink-0"
-                                title="Copy UTR"
-                              >
-                                {copiedKey === `card-utr-${ord.orderId}` ? "✓" : "📋"}
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="font-mono text-[#908fa0]/60 block text-xs truncate">— Pending Verification</span>
-                          )}
-                        </div>
-
-                        {/* Email Tracking Badge */}
-                        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] space-y-1 min-w-0 overflow-hidden">
-                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0] block">
-                            Delivery Telemetry
-                          </span>
-                          <div className="flex items-start xs:items-center justify-between gap-1.5 flex-wrap min-w-0">
-                            <div>{getEmailStatusBadge(ord)}</div>
-                            {ord.emailOpenedAt ? (
-                              <span className="text-[10px] font-mono text-[#4edea3] shrink-0">
-                                Opened: {new Date(ord.emailOpenedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                              </span>
-                            ) : ord.emailSentAt ? (
-                              <span className="text-[10px] font-mono text-[#908fa0] shrink-0">
-                                Sent: {new Date(ord.emailSentAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                              </span>
-                            ) : null}
-                          </div>
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4">
+                          {group.orders.map((ord) => renderOrderCard(ord))}
                         </div>
                       </div>
-
-                      {/* Delivered Credentials Box */}
-                      <div className="pt-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
-                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#908fa0]">
-                            Delivered Account &amp; Keys
-                          </span>
-                          <span className="text-[10px] font-mono text-[#8083ff]">
-                            Instant Auto-Assigned
-                          </span>
-                        </div>
-                        <div className="p-2.5 sm:p-3 rounded-xl bg-[#181c24] border border-[#262a33] min-w-0 overflow-hidden">
-                          {renderOrderCredentials(ord)}
-                        </div>
-                      </div>
+                    ))
+                  ) : (
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4">
+                      {filteredOrders.map((ord) => renderOrderCard(ord))}
                     </div>
-                  ))}
+                  )}
                 </div>
               ) : orderViewMode === "split" ? (
                 /* ── 2. DUAL-PANE MASTER-DETAIL SPLIT INSPECTOR (ZERO HORIZONTAL SCROLL) ── */
@@ -1708,45 +2456,19 @@ export default function AdminPage() {
                     <div className="px-2 py-1 text-[11px] font-mono font-bold text-[#908fa0] uppercase tracking-wider">
                       Select Order to Inspect ({filteredOrders.length})
                     </div>
-                    {filteredOrders.map((ord) => {
-                      const isSelected =
-                        (selectedOrderId || filteredOrders[0]?.orderId) === ord.orderId;
-                      return (
-                        <div
-                          key={ord.orderId}
-                          onClick={() => setSelectedOrderId(ord.orderId)}
-                          className={`p-3 rounded-xl border transition-all cursor-pointer space-y-2 ${
-                            isSelected
-                              ? "bg-[#181c24] border-[#8083ff] shadow-md shadow-[#8083ff]/10"
-                              : "bg-[#0f131c] border-[#262a33] hover:border-[#31353e] hover:bg-[#181c24]/50"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-mono text-xs font-bold text-[#8083ff] truncate">
-                              #{ord.orderId}
-                            </span>
-                            <div className="shrink-0">{getStatusBadge(ord.status)}</div>
+                    {groupByDate ? (
+                      dateGroupedOrders.map((group) => (
+                        <div key={group.dateKey} className="space-y-1.5 mb-3">
+                          <div className="sticky top-0 z-10 bg-[#0a0e16]/95 backdrop-blur-md text-[10px] font-mono font-bold uppercase tracking-wider text-[#8083ff] px-2 py-1 flex items-center justify-between border-b border-[#262a33]/60 rounded-md">
+                            <span>📅 {group.label}</span>
+                            <span className="text-emerald-400 font-normal">₹{group.totalAmount}</span>
                           </div>
-
-                          <div className="flex items-center justify-between text-xs font-mono">
-                            <span className="text-[#dfe2ee] truncate max-w-[170px]">
-                              {ord.email}
-                            </span>
-                            <span className="font-bold text-[#dfe2ee]">₹{ord.amount}</span>
-                          </div>
-
-                          <div className="flex items-center justify-between text-[11px] font-mono text-[#908fa0]">
-                            <span>
-                              {new Date(ord.createdAt).toLocaleDateString([], {
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </span>
-                            <div>{getEmailStatusBadge(ord)}</div>
-                          </div>
+                          {group.orders.map((ord) => renderSplitItem(ord))}
                         </div>
-                      );
-                    })}
+                      ))
+                    ) : (
+                      filteredOrders.map((ord) => renderSplitItem(ord))
+                    )}
                   </div>
 
                   {/* Right Column: Deep Order Record Inspector */}
@@ -1771,6 +2493,7 @@ export default function AdminPage() {
                                 #{activeInspect.orderId}
                               </span>
                               {getStatusBadge(activeInspect.status)}
+                              {getPaymentMethodBadge(activeInspect)}
                               {getEmailStatusBadge(activeInspect)}
                             </div>
                             <p className="font-mono text-xs text-[#908fa0] mt-1">
@@ -1790,15 +2513,27 @@ export default function AdminPage() {
                                 >
                                   {fulfillingOrderId === activeInspect.orderId ? "Fulfilling…" : "⚡ Fulfill & Send"}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleCheckGatewayOrder(activeInspect.orderId)}
-                                  disabled={checkingGatewayOrderId === activeInspect.orderId}
-                                  className="px-3 py-2 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white font-mono font-semibold text-xs border border-[#8083ff]/30 transition-all cursor-pointer disabled:opacity-50"
-                                  title="Check UPI gateway for confirmed settlement"
-                                >
-                                  {checkingGatewayOrderId === activeInspect.orderId ? "Checking…" : "🔄 Check UPI"}
-                                </button>
+                                {getOrderPaymentMethod(activeInspect) === "crypto" ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCheckGatewayOrder(activeInspect.orderId, "crypto")}
+                                    disabled={checkingGatewayOrderId === activeInspect.orderId}
+                                    className="px-3 py-2 rounded-xl bg-[#8083ff]/20 hover:bg-[#8083ff]/30 text-[#8083ff] hover:text-white font-mono font-semibold text-xs border border-[#8083ff]/40 transition-all cursor-pointer disabled:opacity-50"
+                                    title="Check Atlos Crypto gateway for confirmed transaction"
+                                  >
+                                    {checkingGatewayOrderId === activeInspect.orderId && checkingGatewayMethod === "crypto" ? "Checking…" : "💎 Check Crypto"}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCheckGatewayOrder(activeInspect.orderId, "upi")}
+                                    disabled={checkingGatewayOrderId === activeInspect.orderId}
+                                    className="px-3 py-2 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white font-mono font-semibold text-xs border border-[#8083ff]/30 transition-all cursor-pointer disabled:opacity-50"
+                                    title="Check UPI gateway for confirmed settlement"
+                                  >
+                                    {checkingGatewayOrderId === activeInspect.orderId && checkingGatewayMethod === "upi" ? "Checking…" : "🔄 Check UPI"}
+                                  </button>
+                                )}
                               </>
                             )}
 
@@ -1852,9 +2587,12 @@ export default function AdminPage() {
                           </div>
 
                           <div className="p-4 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-2">
-                            <span className="text-[10px] font-mono font-bold uppercase text-[#908fa0] block">
-                              Payment Gateway Reference (UTR / TxID)
-                            </span>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-mono font-bold uppercase text-[#908fa0] block">
+                                Payment Gateway Reference (UTR / TxID)
+                              </span>
+                              {getPaymentMethodBadge(activeInspect)}
+                            </div>
                             {activeInspect.utr ? (
                               <div className="flex items-center justify-between font-mono text-sm text-[#4edea3] font-semibold">
                                 <span className="select-all truncate">{activeInspect.utr}</span>
@@ -1867,7 +2605,7 @@ export default function AdminPage() {
                                 </button>
                               </div>
                             ) : (
-                              <span className="font-mono text-xs text-[#908fa0]/60">— No UTR submitted yet</span>
+                              <span className="font-mono text-xs text-[#908fa0]/60">— No UTR or TxID submitted yet</span>
                             )}
                           </div>
 
@@ -1913,6 +2651,7 @@ export default function AdminPage() {
                         <th className="py-3 px-4">Order ID</th>
                         <th className="py-3 px-4">Customer</th>
                         <th className="py-3 px-4">Amount</th>
+                        <th className="py-3 px-4">Method</th>
                         <th className="py-3 px-4">Status</th>
                         <th className="py-3 px-4">Email Receipt</th>
                         <th className="py-3 px-4">Bank UTR / Tx</th>
@@ -1921,105 +2660,36 @@ export default function AdminPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#262a33]/60 bg-[#181c24]/50">
-                      {filteredOrders.map((ord) => (
-                        <tr key={ord.orderId} className="hover:bg-[#262a33]/30 transition-colors">
-                          {/* Order ID */}
-                          <td className="py-3.5 px-4 font-mono text-[#8083ff] font-semibold whitespace-nowrap">
-                            <div className="flex items-center gap-1.5">
-                              <span>#{ord.orderId}</span>
-                              <button
-                                type="button"
-                                onClick={() => copyVal(ord.orderId, `ord-id-tbl-${ord.orderId}`)}
-                                className="text-[#908fa0] hover:text-[#dfe2ee] p-1 rounded hover:bg-[#262a33] cursor-pointer"
-                                title="Copy Order ID"
-                              >
-                                {copiedKey === `ord-id-tbl-${ord.orderId}` ? "✓" : "📋"}
-                              </button>
-                            </div>
-                          </td>
-
-                          {/* Customer Email */}
-                          <td className="py-3.5 px-4 font-mono font-medium text-[#dfe2ee] max-w-[180px] truncate select-all">
-                            {ord.email}
-                          </td>
-
-                          {/* Amount (Dual Currency) */}
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <div className="font-bold font-mono text-[#dfe2ee] text-sm">₹{ord.amount}</div>
-                            <div className="text-[10px] font-mono text-[#908fa0]">
-                              ~${((Number(ord.amount) || 0) * inrToUsdRate).toFixed(2)} USD
-                            </div>
-                          </td>
-
-                          {/* Status */}
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            {getStatusBadge(ord.status)}
-                          </td>
-
-                          {/* Email Receipt Status */}
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <div className="flex flex-col gap-1 items-start">
-                              {getEmailStatusBadge(ord)}
-                              {ord.emailOpenedAt && (
-                                <span className="text-[10px] text-[#4edea3] font-mono">
-                                  Opened: {new Date(ord.emailOpenedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Bank UTR */}
-                          <td className="py-3.5 px-4 font-mono whitespace-nowrap">
-                            {ord.utr ? (
-                              <div className="flex items-center gap-1.5 text-[#4edea3] font-semibold">
-                                <span>{ord.utr}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => copyVal(ord.utr, `ord-utr-tbl-${ord.orderId}`)}
-                                  className="text-[#908fa0] hover:text-[#dfe2ee] p-0.5 rounded cursor-pointer"
-                                >
-                                  {copiedKey === `ord-utr-tbl-${ord.orderId}` ? "✓" : "📋"}
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-[#908fa0]/60">—</span>
-                            )}
-                          </td>
-
-                          {/* Delivered Account */}
-                          <td className="py-3.5 px-4 min-w-[240px] max-w-[320px]">
-                            {renderOrderCredentials(ord)}
-                          </td>
-
-                          {/* Actions */}
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <div className="flex items-center gap-1.5">
-                              {ord.status === "pending" && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleFulfillOrder(ord.orderId, ord.email)}
-                                  disabled={fulfillingOrderId === ord.orderId}
-                                  className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 text-[11px] font-mono font-bold cursor-pointer transition-colors"
-                                  title="Fulfill order from stock & email credentials"
-                                >
-                                  {fulfillingOrderId === ord.orderId ? "…" : "⚡ Fulfill"}
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAuditModalOrder(ord);
-                                  setResendCustomEmail(ord.email);
-                                  setResendStatusMsg(null);
-                                }}
-                                className="px-2.5 py-1 rounded-lg bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white border border-[#8083ff]/30 text-xs font-mono font-bold cursor-pointer transition-colors"
-                              >
-                                Audit / Resend
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {groupByDate ? (
+                        dateGroupedOrders.map((group) => (
+                          <Fragment key={group.dateKey}>
+                            <tr className="bg-[#0f131c]/90 border-y border-[#262a33] font-mono text-xs">
+                              <td colSpan={9} className="py-2.5 px-4 text-[#dfe2ee]">
+                                <div className="flex items-center justify-between flex-wrap gap-2">
+                                  <div className="flex items-center gap-2 font-bold">
+                                    <span className="text-base">📅</span>
+                                    <span className="text-sm text-[#8083ff]">{group.label}</span>
+                                    <span className="text-[10px] text-[#908fa0] bg-[#181c24] px-2 py-0.5 rounded-full border border-[#262a33]">
+                                      {group.orders.length} {group.orders.length === 1 ? "order" : "orders"}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-3 text-xs">
+                                    <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-0.5 rounded-lg border border-emerald-500/20">
+                                      Revenue: ₹{group.totalAmount} (~${(group.totalAmount * inrToUsdRate).toFixed(2)})
+                                    </span>
+                                    <span className="text-[#908fa0] hidden sm:inline">
+                                      {group.confirmedCount} Paid • {group.pendingCount} Pending
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                            {group.orders.map((ord) => renderTableRow(ord))}
+                          </Fragment>
+                        ))
+                      ) : (
+                        filteredOrders.map((ord) => renderTableRow(ord))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -2041,6 +2711,16 @@ export default function AdminPage() {
         {/* ── TAB 5: EMAIL BRANDING & ADMIN PROFILE ── */}
         {tab === "email" && (
           <AdminEmailSettings adminPassword={password} />
+        )}
+
+        {/* ── TAB 6: ABANDONED CART RECOVERY ── */}
+        {tab === "recovery" && (
+          <AdminRecoveryManager adminPassword={password} />
+        )}
+
+        {/* ── TAB 7: TELEGRAM & DISCORD BOT CENTER ── */}
+        {tab === "bot" && (
+          <AdminBotManager adminPassword={password} />
         )}
       </main>
 
@@ -2133,6 +2813,12 @@ export default function AdminPage() {
               <div className="p-3 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-1">
                 <span className="font-mono text-[10px] uppercase font-bold text-[#908fa0] block">Order ID</span>
                 <span className="font-mono text-[#8083ff] text-xs font-semibold">{auditModalOrder.orderId}</span>
+              </div>
+
+              {/* Payment Method */}
+              <div className="p-3 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-1">
+                <span className="font-mono text-[10px] uppercase font-bold text-[#908fa0] block">Payment Gateway</span>
+                <div>{getPaymentMethodBadge(auditModalOrder)}</div>
               </div>
 
               {/* Customer Email */}
@@ -2240,11 +2926,30 @@ export default function AdminPage() {
 
                   <button
                     type="button"
-                    onClick={() => handleCheckGatewayOrder(auditModalOrder.orderId)}
+                    onClick={() => handleCheckGatewayOrder(auditModalOrder.orderId, "crypto")}
+                    disabled={checkingGatewayOrderId === auditModalOrder.orderId}
+                    className="px-3.5 py-2 rounded-xl bg-[#8083ff]/20 hover:bg-[#8083ff]/30 text-[#8083ff] hover:text-white font-mono font-semibold text-xs border border-[#8083ff]/40 active:scale-95 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {checkingGatewayOrderId === auditModalOrder.orderId && checkingGatewayMethod === "crypto" ? (
+                      <>
+                        <span className="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        <span>Verifying Atlos…</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>💎</span>
+                        <span>Check Crypto Gateway</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCheckGatewayOrder(auditModalOrder.orderId, "upi")}
                     disabled={checkingGatewayOrderId === auditModalOrder.orderId}
                     className="px-3.5 py-2 rounded-xl bg-[#262a33] hover:bg-[#31353e] text-[#8083ff] hover:text-white font-mono font-semibold text-xs border border-[#8083ff]/30 active:scale-95 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
                   >
-                    {checkingGatewayOrderId === auditModalOrder.orderId ? (
+                    {checkingGatewayOrderId === auditModalOrder.orderId && checkingGatewayMethod === "upi" ? (
                       <>
                         <span className="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                         <span>Verifying Bank…</span>
@@ -2443,6 +3148,15 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* ── PAYMENT LOOKUP & VERIFY MODAL (CRYPTO & UPI) ── */}
+      <AdminPaymentLookupModal
+        adminPassword={password}
+        isOpen={showPaymentLookupModal}
+        onClose={() => setShowPaymentLookupModal(false)}
+        onOrderFulfilled={fetchOrders}
+        initialQuery={paymentLookupInitialQuery}
+      />
     </div>
   );
 }

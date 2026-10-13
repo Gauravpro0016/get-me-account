@@ -6,6 +6,7 @@ import {
   getOrder,
   isAlreadySent,
   checkFamGatewayOrderStatus,
+  checkAtlosOrderStatus,
   redis,
   ORDERS_HISTORY_KEY,
   StoredOrder,
@@ -66,8 +67,80 @@ export async function POST(req: NextRequest) {
     }
 
     const targetOrderId = matchedByUtr?.orderId || queryId;
+    const isCrypto =
+      targetOrderId.startsWith("ORD-CR-") ||
+      targetOrderId.startsWith("crypto_") ||
+      queryId.startsWith("0x") ||
+      queryId.startsWith("CRYPTO:") ||
+      matchedByUtr?.paymentMethod === "crypto" ||
+      matchedByUtr?.productId === "crypto";
 
-    // 3. Check FamGateway status using unified helper
+    // 3. Check Crypto Gateway (Atlos) if crypto order or blockchain hash
+    if (isCrypto) {
+      const cryptoStatus = await checkAtlosOrderStatus(targetOrderId);
+      let isCryptoPaid = cryptoStatus.status === "success";
+      let cryptoTxid = cryptoStatus.txid;
+
+      if (!isCryptoPaid && (queryId.startsWith("0x") || queryId.length >= 64)) {
+        try {
+          const atlosSecret = process.env.ATLOS_API_SECRET || "6UCqzHHDmb5f0NbXOGCmLKFc2PVIMEYB";
+          const merchantId = process.env.ATLOS_MERCHANT_ID || "ADK7QABYR0";
+          const cleanHash = queryId.replace(/^CRYPTO:/i, "").trim();
+          const atlosRes = await fetch("https://api.atlos.io/gateway/rest/Transaction/FindByHash", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ApiSecret: atlosSecret },
+            body: JSON.stringify({ MerchantId: merchantId, BlockchainHash: cleanHash }),
+            cache: "no-store",
+            signal: AbortSignal.timeout(6000),
+          });
+          if (atlosRes.ok) {
+            const atlosData = await atlosRes.json();
+            if (atlosData && (atlosData.IsFound || atlosData.Transaction || atlosData.Txid)) {
+              isCryptoPaid = true;
+              cryptoTxid = cleanHash;
+            }
+          }
+        } catch (e) {
+          console.warn("Atlos verify-tx FindByHash error:", e);
+        }
+      }
+
+      if (isCryptoPaid) {
+        const orderData = await getOrder(targetOrderId);
+        const finalUtr = cryptoTxid ? `CRYPTO:${cryptoTxid}` : matchedByUtr?.utr || `CRYPTO:${queryId}`;
+
+        const result = await fulfillOrder({
+          orderId: targetOrderId,
+          email,
+          utr: finalUtr,
+          senderName: "Crypto Customer",
+          amount: orderData?.amount || matchedByUtr?.amount || APP_CONFIG.price,
+          quantity: orderData?.quantity || matchedByUtr?.quantity || 1,
+          productId: orderData?.productId || matchedByUtr?.productId,
+          productName: orderData?.productName || matchedByUtr?.productName,
+          cartItems: orderData?.cartItems || matchedByUtr?.cartItems,
+        });
+
+        const creds = result.credentials || (result.credential ? [result.credential] : []);
+
+        return NextResponse.json({
+          status: "confirmed",
+          gateway: "crypto",
+          credential: creds[0] || undefined,
+          credentials: creds,
+          utr: finalUtr,
+        });
+      }
+
+      return NextResponse.json({
+        status: "pending",
+        gateway: "crypto",
+        message:
+          "Cryptocurrency payment not yet confirmed on blockchain/Atlos. Please allow 1-2 minutes for network block confirmation.",
+      });
+    }
+
+    // 4. Check FamGateway UPI status
     const fgStatus = await checkFamGatewayOrderStatus(targetOrderId);
 
     if (fgStatus.status === "success") {
@@ -90,6 +163,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         status: "confirmed",
+        gateway: "upi",
         credential: creds[0] || undefined,
         credentials: creds,
         utr: finalUtr,
@@ -98,6 +172,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       status: "pending",
+      gateway: "upi",
       message:
         "Payment not yet confirmed on FamGateway. Please allow 1-2 minutes for bank receipt detection or check your Order ID.",
     });

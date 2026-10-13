@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
       cartItems,
       couponCode,
       discountAmount,
+      paymentMethod: "crypto",
     });
 
     // Save crypto-specific meta info

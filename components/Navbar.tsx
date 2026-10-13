@@ -66,6 +66,16 @@ export function Navbar() {
           >
             Storefront
           </Link>
+          <Link
+            href="/orders/lookup"
+            className={`px-3.5 py-1.5 rounded transition-all text-xs font-semibold ${
+              pathname?.startsWith("/orders/lookup")
+                ? "bg-[#262a33] text-[#dfe2ee] border border-[#31353e] shadow-sm"
+                : "text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#1c2028]"
+            }`}
+          >
+            Track Order
+          </Link>
           <button
             onClick={handleInstantCheckout}
             className="px-3.5 py-1.5 rounded text-[#c7c4d7] hover:text-[#dfe2ee] hover:bg-[#1c2028] transition-all text-xs font-semibold cursor-pointer"
@@ -149,6 +159,13 @@ export function Navbar() {
             className="block px-3 py-2 rounded-lg bg-[#181c24] text-sm font-semibold text-[#dfe2ee]"
           >
             Storefront
+          </Link>
+          <Link
+            href="/orders/lookup"
+            onClick={() => setMobileMenuOpen(false)}
+            className="block px-3 py-2 rounded-lg bg-[#181c24] text-sm font-semibold text-[#dfe2ee]"
+          >
+            Track Order
           </Link>
           <button
             onClick={(e) => {
