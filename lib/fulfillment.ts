@@ -1124,7 +1124,7 @@ export async function sendOrderInitiatedEmail({
   const adminUser = smtp.user || (process.env.GMAIL_USER || "").trim().replace(/^["']|["']$/g, "");
   const mailTransporter = createMailTransporter(smtp);
 
-  return await mailTransporter.sendMail({
+  const info = await mailTransporter.sendMail({
     from: `"Trinitymart Store" <${adminUser}>`,
     to: email,
     subject: `📦 Order #${orderId} Initiated — Track Your Order Status`,
