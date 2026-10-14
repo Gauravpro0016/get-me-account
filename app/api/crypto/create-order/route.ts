@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { recordNewOrder, redis } from "@/lib/fulfillment";
+import { recordNewOrder, redis, sendOrderInitiatedEmail } from "@/lib/fulfillment";
 import { APP_CONFIG } from "@/lib/config";
+import { sendDiscordOrderInitiatedNotification } from "@/lib/discord";
 
 export const maxDuration = 30;
 
@@ -51,6 +52,35 @@ export async function POST(req: NextRequest) {
       discountAmount,
       paymentMethod: "crypto",
     });
+
+    // Send order ID and live tracking link to customer email
+    try {
+      sendOrderInitiatedEmail({
+        orderId,
+        email,
+        amount: amountInr,
+        quantity,
+        productName: productName || APP_CONFIG.productName,
+        cartItems,
+        paymentMethod: "crypto",
+      }).catch((e) => console.warn("[CRYPTO INITIATED EMAIL ERROR]:", e));
+    } catch (e) {
+      console.warn("Could not dispatch crypto initiated order email:", e);
+    }
+
+    // Also dispatch Discord Order Initiated Alert
+    try {
+      sendDiscordOrderInitiatedNotification({
+        orderId,
+        email,
+        amount: amountInr,
+        quantity,
+        productName: productName || APP_CONFIG.productName,
+        paymentMethod: "crypto",
+      }).catch((e) => console.warn("[DISCORD CRYPTO INITIATED ALERT ERROR]:", e));
+    } catch (e) {
+      console.warn("Could not dispatch Discord crypto order initiated alert:", e);
+    }
 
     // Save crypto-specific meta info
     try {

@@ -34,6 +34,8 @@ export function AdminBotManager({ adminPassword }: { adminPassword: string }) {
   const [notifyOnEmailError, setNotifyOnEmailError] = useState(true);
   const [lowStockThreshold, setLowStockThreshold] = useState(3);
   const [discordConfigured, setDiscordConfigured] = useState(false);
+  const [salesWebhookUrl, setSalesWebhookUrl] = useState("");
+  const [restockWebhookUrl, setRestockWebhookUrl] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -59,6 +61,10 @@ export function AdminBotManager({ adminPassword }: { adminPassword: string }) {
       setNotifyOnEmailError(tg.notifyOnEmailError ?? true);
       setLowStockThreshold(tg.lowStockThreshold ?? 3);
       setDiscordConfigured(Boolean(data.discordWebhookConfigured));
+      if (data.discord) {
+        setSalesWebhookUrl(data.discord.salesWebhookUrl || "");
+        setRestockWebhookUrl(data.discord.restockWebhookUrl || "");
+      }
     } catch (err: any) {
       setFeedback({ type: "error", text: err.message || "Failed to load settings." });
     } finally {
@@ -89,11 +95,14 @@ export function AdminBotManager({ adminPassword }: { adminPassword: string }) {
           notifyOnLowStock,
           notifyOnEmailError,
           lowStockThreshold: Number(lowStockThreshold) || 3,
+          salesWebhookUrl: salesWebhookUrl.trim(),
+          restockWebhookUrl: restockWebhookUrl.trim(),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save settings");
-      setFeedback({ type: "success", text: "✅ Bot & Alert settings saved successfully!" });
+      setFeedback({ type: "success", text: "✅ Bot & Discord Webhook settings saved successfully!" });
+      setDiscordConfigured(Boolean(salesWebhookUrl.trim() || restockWebhookUrl.trim()));
     } catch (err: any) {
       setFeedback({ type: "error", text: err.message || "Save failed." });
     } finally {
@@ -101,7 +110,7 @@ export function AdminBotManager({ adminPassword }: { adminPassword: string }) {
     }
   };
 
-  const handleTest = async (testType: "telegram" | "discord" | "low_stock") => {
+  const handleTest = async (testType: "telegram" | "discord" | "discord_restock" | "low_stock") => {
     setTestingType(testType);
     setFeedback(null);
     try {
@@ -190,6 +199,16 @@ export function AdminBotManager({ adminPassword }: { adminPassword: string }) {
           >
             <MessageSquare className="w-3.5 h-3.5" />
             <span>{testingType === "discord" ? "Sending…" : "Test Discord Purchase Alert"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTest("discord_restock")}
+            disabled={testingType !== null}
+            className="px-3.5 py-2 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/40 font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>{testingType === "discord_restock" ? "Sending…" : "Test Discord Restock Alert"}</span>
           </button>
 
           <button
@@ -358,41 +377,70 @@ export function AdminBotManager({ adminPassword }: { adminPassword: string }) {
 
         {/* Right Column: Discord Webhook Status & Bot Commands Guide */}
         <div className="space-y-6">
-          {/* Discord Status Card */}
+          {/* Discord Webhook Configuration Card */}
           <div className="p-5 sm:p-6 rounded-2xl bg-[#181c24] border border-[#262a33] space-y-4 font-mono text-xs">
             <div className="flex items-center justify-between border-b border-[#262a33] pb-3">
               <div className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4 text-[#8083ff]" />
-                <h3 className="font-bold text-sm text-[#dfe2ee]">Discord Webhook Status</h3>
+                <h3 className="font-bold text-sm text-[#dfe2ee]">Discord Webhook Integration</h3>
               </div>
               <span
                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                  discordConfigured
+                  discordConfigured || Boolean(salesWebhookUrl || restockWebhookUrl)
                     ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                     : "bg-amber-500/15 text-amber-400 border border-amber-500/30"
                 }`}
               >
-                {discordConfigured ? "Connected" : "Check .env.local"}
+                {discordConfigured || Boolean(salesWebhookUrl || restockWebhookUrl) ? "Connected" : "Not Set"}
               </span>
             </div>
 
-            <p className="text-[#908fa0] leading-relaxed">
-              Configured via <code className="text-[#8083ff]">DISCORD_SALES_WEBHOOK_URL</code> and{" "}
-              <code className="text-[#8083ff]">DISCORD_RESTOCK_WEBHOOK_URL</code> in your <code className="text-[#dfe2ee]">.env.local</code>.
-            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[#dfe2ee] font-bold mb-1">
+                  Sales Webhook URL (Purchases &amp; Orders)
+                </label>
+                <input
+                  type="url"
+                  value={salesWebhookUrl}
+                  onChange={(e) => setSalesWebhookUrl(e.target.value)}
+                  placeholder="https://discord.com/api/webhooks/..."
+                  className="w-full px-3 py-2 rounded-xl bg-[#0a0e16] border border-[#262a33] text-[#dfe2ee] focus:border-[#8083ff] focus:outline-none"
+                />
+                <p className="text-[10px] text-[#908fa0] mt-1">
+                  Announces new paid orders to customer-facing vouches/orders channels.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[#dfe2ee] font-bold mb-1">
+                  Restock Webhook URL (Restock &amp; Inventory Alerts)
+                </label>
+                <input
+                  type="url"
+                  value={restockWebhookUrl}
+                  onChange={(e) => setRestockWebhookUrl(e.target.value)}
+                  placeholder="https://discord.com/api/webhooks/... (leave blank to use sales webhook)"
+                  className="w-full px-3 py-2 rounded-xl bg-[#0a0e16] border border-[#262a33] text-[#dfe2ee] focus:border-[#8083ff] focus:outline-none"
+                />
+                <p className="text-[10px] text-[#908fa0] mt-1">
+                  Announces when new stock is loaded or restocked into the store.
+                </p>
+              </div>
+            </div>
 
             <div className="p-3 rounded-xl bg-[#0a0e16] border border-[#262a33] space-y-1">
               <span className="text-[10px] uppercase font-bold text-[#908fa0] block">
-                Active Features:
+                Automatic Features:
               </span>
               <p className="text-emerald-400 text-[11px]">
                 ✓ Instant rich embed announcements on paid orders (#vouches/orders)
               </p>
               <p className="text-emerald-400 text-[11px]">
-                ✓ Low stock warnings to merchant team
+                ✓ Instant rich embed alerts when new accounts/stock are uploaded
               </p>
               <p className="text-emerald-400 text-[11px]">
-                ✓ SMTP delivery bounce / failure alerts
+                ✓ Low stock warnings to merchant team
               </p>
             </div>
           </div>

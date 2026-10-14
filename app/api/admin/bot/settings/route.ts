@@ -7,7 +7,10 @@ import {
 } from "@/lib/telegram";
 import {
   sendDiscordPurchaseNotification,
+  sendDiscordRestockNotification,
   sendDiscordLowStockAlert,
+  getDiscordConfig,
+  setDiscordConfig,
 } from "@/lib/discord";
 
 function checkAdmin(req: NextRequest): boolean {
@@ -29,14 +32,14 @@ export async function GET(req: NextRequest) {
   }
 
   const config = await getTelegramConfig();
+  const discordConfig = await getDiscordConfig();
   const discordWebhookConfigured = Boolean(
-    process.env.DISCORD_SALES_WEBHOOK_URL ||
-    process.env.DISCORD_ORDERS_WEBHOOK_URL ||
-    process.env.DISCORD_WEBHOOK_URL
+    discordConfig.salesWebhookUrl || discordConfig.restockWebhookUrl
   );
 
   return NextResponse.json({
     telegram: config,
+    discord: discordConfig,
     discordWebhookConfigured,
   });
 }
@@ -78,11 +81,28 @@ export async function POST(req: NextRequest) {
       });
       if (!ok) {
         return NextResponse.json(
-          { error: "Could not send Discord webhook. Check DISCORD_SALES_WEBHOOK_URL in .env.local." },
+          { error: "Could not send Discord webhook. Check DISCORD_SALES_WEBHOOK_URL." },
           { status: 400 }
         );
       }
       return NextResponse.json({ success: true, message: "Test purchase embed sent to Discord!" });
+    }
+
+    if (body.test === "discord_restock") {
+      const ok = await sendDiscordRestockNotification({
+        productName: "Discord Nitro 3-Month (TEST RESTOCK)",
+        unitsAdded: 5,
+        totalStock: 10,
+        price: 149,
+        category: "Discord",
+      });
+      if (!ok) {
+        return NextResponse.json(
+          { error: "Could not send Discord restock webhook. Check DISCORD_RESTOCK_WEBHOOK_URL." },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({ success: true, message: "Test restock embed sent to Discord!" });
     }
 
     if (body.test === "low_stock") {
@@ -110,9 +130,16 @@ export async function POST(req: NextRequest) {
       lowStockThreshold: Number(body.lowStockThreshold) || 3,
     });
 
+    if (body.salesWebhookUrl !== undefined || body.restockWebhookUrl !== undefined) {
+      await setDiscordConfig({
+        salesWebhookUrl: body.salesWebhookUrl,
+        restockWebhookUrl: body.restockWebhookUrl,
+      });
+    }
+
     return NextResponse.json({
       success: true,
-      message: "Telegram Bot & Alert preferences saved successfully!",
+      message: "Bot & Alert preferences saved successfully!",
     });
   } catch (err: any) {
     console.error("[BOT SETTINGS ERROR]:", err);

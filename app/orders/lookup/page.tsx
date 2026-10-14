@@ -52,7 +52,7 @@ type OrderItem = {
 
 function OrderLookupContent() {
   const searchParams = useSearchParams();
-  const initialQuery = searchParams.get("query") || searchParams.get("orderId") || searchParams.get("email") || "";
+  const initialQuery = searchParams.get("query") || searchParams.get("orderId") || searchParams.get("order_id") || searchParams.get("email") || "";
 
   const [inputQuery, setInputQuery] = useState(initialQuery);
   const [loading, setLoading] = useState(false);

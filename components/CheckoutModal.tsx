@@ -1255,6 +1255,51 @@ export function CheckoutModal() {
                 </span>
               </div>
 
+              {/* Order ID & Live Tracking Card */}
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-[#141923] border border-[#262f40] flex items-center justify-between gap-3 text-left shadow-lg">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#908fa0] uppercase tracking-wider">
+                    <Tag className="w-3 h-3 text-[#8083ff]" />
+                    <span>Order ID (Save to Track)</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="font-mono font-black text-xs sm:text-sm text-[#8083ff] truncate select-all">
+                      {order.order_id}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(order.order_id, "active-order-id")}
+                    className="px-2.5 py-1.5 rounded-lg bg-[#1f2430] hover:bg-[#2b3242] text-xs font-bold text-[#dfe2ee] flex items-center gap-1 border border-[#2e374a] transition-all cursor-pointer"
+                    title="Copy Order ID"
+                  >
+                    {copiedField === "active-order-id" ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-[#4edea3]" />
+                        <span className="text-[#4edea3]">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-[#908fa0]" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                  <a
+                    href={`/orders/lookup?orderId=${encodeURIComponent(order.order_id)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1.5 rounded-lg bg-[#8083ff]/15 hover:bg-[#8083ff]/25 text-[#8083ff] text-xs font-bold flex items-center gap-1 border border-[#8083ff]/30 transition-all"
+                    title="Track order status in live lookup dashboard"
+                  >
+                    <span>Track</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+
               {paymentMethod === "crypto" ? (
                 <>
                   {/* Auto-email on confirmation banner */}
@@ -1267,7 +1312,7 @@ export function CheckoutModal() {
                         <span>⚡ Safe to close window: Auto-email delivery guaranteed</span>
                       </p>
                       <p className="text-[11px] text-[#dfe2ee]/90 leading-snug">
-                        Even if you close or switch this tab, once payment is detected on-chain, your credentials &amp; invoice will <strong className="text-emerald-400">automatically be sent to {email || "your email"}</strong>.
+                        Order confirmation &amp; tracking ID <span className="font-mono font-bold text-amber-300">#{order.order_id}</span> has been dispatched to <strong className="text-emerald-400">{email || "your email"}</strong>. Once on-chain payment settles, your credentials deliver automatically.
                       </p>
                     </div>
                   </div>
@@ -1421,7 +1466,7 @@ export function CheckoutModal() {
                         <span>⚡ Safe to close window: Auto-email delivery guaranteed</span>
                       </p>
                       <p className="text-[11px] text-[#dfe2ee]/90 leading-snug">
-                        Even if you close this window or switch to your UPI app, once payment is completed, your account credentials &amp; invoice will <strong className="text-emerald-400">automatically be sent to {email || "your email"}</strong>.
+                        Order confirmation &amp; tracking ID <span className="font-mono font-bold text-emerald-300">#{order.order_id}</span> has been dispatched to <strong className="text-emerald-400">{email || "your email"}</strong>. Once UPI payment settles, your credentials deliver automatically.
                       </p>
                     </div>
                   </div>
@@ -1474,6 +1519,9 @@ export function CheckoutModal() {
                         </span>
                         <span className="text-[11px] text-[#908fa0] font-mono">
                           {order.upi_id || "trinitymart@upi"}
+                        </span>
+                        <span className="text-[10px] text-[#8083ff] font-mono mt-1">
+                          Ref Order: #{order.order_id}
                         </span>
                       </div>
                     )}
@@ -1568,6 +1616,55 @@ export function CheckoutModal() {
                   </span>
                 </p>
               </div>
+
+              {/* Order ID & Live Tracking Reference on Success */}
+              {(order?.order_id || cryptoOrder?.order_id) && (
+                <div className="p-3.5 rounded-2xl bg-[#141923] border border-[#262f40] flex items-center justify-between gap-3 text-left">
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] uppercase font-bold text-[#908fa0] tracking-wider block">
+                      Order ID (Save for Tracking &amp; Warranty)
+                    </span>
+                    <span className="font-mono font-bold text-xs sm:text-sm text-[#4edea3] truncate block mt-0.5 select-all">
+                      {order?.order_id || cryptoOrder?.order_id}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyToClipboard(
+                          order?.order_id || cryptoOrder?.order_id || "",
+                          "success-order-id",
+                        )
+                      }
+                      className="px-2.5 py-1.5 rounded-lg bg-[#1f2430] hover:bg-[#2b3242] text-xs font-bold text-[#dfe2ee] flex items-center gap-1 border border-[#2e374a] transition-all cursor-pointer"
+                      title="Copy Order ID"
+                    >
+                      {copiedField === "success-order-id" ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-[#4edea3]" />
+                          <span className="text-[#4edea3]">Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5 text-[#908fa0]" />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
+                    <a
+                      href={`/orders/lookup?orderId=${encodeURIComponent(order?.order_id || cryptoOrder?.order_id || "")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-bold flex items-center gap-1 border border-emerald-500/30 transition-all"
+                      title="Open Track Order page"
+                    >
+                      <span>Track Order</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                </div>
+              )}
 
               {/* Delivered Credentials Card */}
               {((deliveredList && deliveredList.length > 0) ||
@@ -1791,6 +1888,18 @@ export function CheckoutModal() {
 
               {/* Action buttons */}
               <div className="space-y-2">
+                {(order?.order_id || cryptoOrder?.order_id) && (
+                  <a
+                    href={`/orders/lookup?orderId=${encodeURIComponent(order?.order_id || cryptoOrder?.order_id || "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#1c2230] hover:bg-[#262e40] border border-[#2e394e] text-[#dfe2ee] text-xs font-bold transition-all"
+                  >
+                    <span>🔍 View Order Details &amp; Track Status</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-[#8083ff]" />
+                  </a>
+                )}
+
                 <a
                   href={APP_CONFIG.discordLink || "/discord"}
                   target="_blank"

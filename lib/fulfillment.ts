@@ -513,9 +513,70 @@ export async function setAdminProfilePic(picUrl: string): Promise<void> {
   await redis.set(ADMIN_PROFILE_PIC_KEY, picUrl.trim());
 }
 
-export function createMailTransporter() {
-  const user = (process.env.GMAIL_USER || "").trim();
-  const pass = (process.env.GMAIL_APP_PASSWORD || "").replace(/\s+/g, "");
+export function readEnvLocalValue(key: string): string | undefined {
+  try {
+    const envPath = path.join(process.cwd(), ".env.local");
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, "utf-8");
+      for (const line of content.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith("#")) {
+          const idx = trimmed.indexOf("=");
+          if (idx !== -1) {
+            const k = trimmed.substring(0, idx).trim();
+            if (k === key) {
+              const val = trimmed.substring(idx + 1).trim();
+              return val.replace(/^["']|["']$/g, "");
+            }
+          }
+        }
+      }
+    }
+  } catch {}
+  return undefined;
+}
+
+export const ADMIN_SMTP_CONFIG_KEY = "trinitymart_smtp_config";
+
+export async function getAdminSmtpConfig(): Promise<{ user: string; pass: string }> {
+  try {
+    const raw = await redis.get<{ user: string; pass: string }>(ADMIN_SMTP_CONFIG_KEY);
+    if (raw && raw.user && raw.pass) {
+      return {
+        user: raw.user.trim().replace(/^["']|["']$/g, ""),
+        pass: raw.pass.trim().replace(/^["']|["']$/g, "").replace(/\s+/g, ""),
+      };
+    }
+  } catch (err) {
+    console.warn("Could not read ADMIN_SMTP_CONFIG_KEY from Redis:", err);
+  }
+
+  const fileUser = readEnvLocalValue("GMAIL_USER");
+  const filePass = readEnvLocalValue("GMAIL_APP_PASSWORD");
+
+  return {
+    user: (fileUser || process.env.GMAIL_USER || "").trim().replace(/^["']|["']$/g, ""),
+    pass: (filePass || process.env.GMAIL_APP_PASSWORD || "").trim().replace(/^["']|["']$/g, "").replace(/\s+/g, ""),
+  };
+}
+
+export async function setAdminSmtpConfig(config: { user: string; pass: string }): Promise<void> {
+  const cleanUser = config.user.trim().replace(/^["']|["']$/g, "");
+  const cleanPass = config.pass.trim().replace(/^["']|["']$/g, "").replace(/\s+/g, "");
+  await redis.set(ADMIN_SMTP_CONFIG_KEY, { user: cleanUser, pass: cleanPass });
+}
+
+export function createMailTransporter(customCreds?: { user?: string; pass?: string }) {
+  const fileUser = readEnvLocalValue("GMAIL_USER");
+  const filePass = readEnvLocalValue("GMAIL_APP_PASSWORD");
+
+  const user = (customCreds?.user || fileUser || process.env.GMAIL_USER || "")
+    .trim()
+    .replace(/^["']|["']$/g, "");
+  const pass = (customCreds?.pass || filePass || process.env.GMAIL_APP_PASSWORD || "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/\s+/g, "");
 
   return nodemailer.createTransport({
     host: "smtp.gmail.com",
@@ -525,13 +586,11 @@ export function createMailTransporter() {
       user,
       pass,
     },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
   });
 }
-
-const transporter = createMailTransporter();
 
 export async function sendCredentialEmail({
   email,
@@ -565,6 +624,7 @@ export async function sendCredentialEmail({
 
   const trackingPixelUrl = `${baseUrl}/api/track-email?orderId=${encodeURIComponent(orderId)}`;
   const confirmReceiptUrl = `${baseUrl}/api/track-email/confirm?orderId=${encodeURIComponent(orderId)}`;
+  const orderTrackingUrl = `${baseUrl}/orders/lookup?orderId=${encodeURIComponent(orderId)}`;
   const emailDiscordUrl =
     process.env.DISCORD_LINK ||
     process.env.NEXT_PUBLIC_DISCORD_LINK ||
@@ -741,14 +801,15 @@ export async function sendCredentialEmail({
     })
     .join("");
 
-  const adminUser = (process.env.GMAIL_USER || "").trim();
-  const mailTransporter = createMailTransporter();
+  const smtp = await getAdminSmtpConfig();
+  const adminUser = smtp.user || (process.env.GMAIL_USER || "").trim().replace(/^["']|["']$/g, "");
+  const mailTransporter = createMailTransporter(smtp);
 
   return await mailTransporter.sendMail({
     from: `"Trinitymart Store" <${adminUser}>`,
     to: email,
     bcc: adminUser && adminUser.toLowerCase() !== email.toLowerCase() ? adminUser : undefined,
-    subject: `✅ Your ${primaryTitle} [${qty} Delivered] — Payment Confirmed`,
+    subject: `✅ Your ${primaryTitle} [Order #${orderId}] — Payment Confirmed & Delivered`,
     attachments,
     html: `
       <!DOCTYPE html>
@@ -819,6 +880,43 @@ export async function sendCredentialEmail({
                         </span>
                       </div>
                       ${credentialsHtml}
+                    </div>
+
+                    <!-- ── LIVE ORDER TRACKING & MANAGEMENT CARD ── -->
+                    <div style="background:linear-gradient(135deg,rgba(16,24,39,0.95) 0%,rgba(30,41,59,0.95) 100%);border:1.5px solid #06b6d4;border-radius:18px;padding:22px;margin:24px 0;box-shadow:0 8px 30px rgba(6,182,212,0.18);">
+                      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px;">
+                        <tr>
+                          <td>
+                            <span style="font-size:11px;font-weight:800;color:#38bdf8;text-transform:uppercase;letter-spacing:1px;background:rgba(6,182,212,0.15);padding:4px 10px;border-radius:6px;border:1px solid rgba(6,182,212,0.3);">
+                              📦 ORDER TRACKING &amp; LOOKUP
+                            </span>
+                          </td>
+                          <td align="right">
+                            <span style="font-size:11px;font-weight:700;color:#34d399;">
+                              ● Delivered &amp; Active
+                            </span>
+                          </td>
+                        </tr>
+                      </table>
+
+                      <p style="margin:8px 0 14px 0;font-size:13px;color:#cbd5e1;line-height:1.5;">
+                        Save your <strong>Order ID</strong>! You can track warranty status, view transaction history, or re-access credentials anytime:
+                      </p>
+
+                      <div style="background:#090d16;border:1px solid #1e293b;border-radius:10px;padding:12px 16px;margin-bottom:16px;text-align:center;">
+                        <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">
+                          YOUR OFFICIAL ORDER ID
+                        </div>
+                        <div style="font-family:'Courier New',Courier,monospace;font-size:18px;font-weight:800;color:#38bdf8;letter-spacing:1px;word-break:break-all;">
+                          ${orderId}
+                        </div>
+                      </div>
+
+                      <div style="text-align:center;">
+                        <a href="${orderTrackingUrl}" target="_blank" style="display:inline-block;background:linear-gradient(135deg,#06b6d4 0%,#3b82f6 100%);color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:800;font-size:13px;letter-spacing:0.3px;box-shadow:0 4px 16px rgba(6,182,212,0.35);">
+                          🔍 Track Your Order &amp; Access Dashboard &rarr;
+                        </a>
+                      </div>
                     </div>
 
                     <!-- ── OFFICIAL INVOICE & WEB RECEIPT (GRADIENT BUTTON) ── -->
@@ -899,7 +997,7 @@ export async function sendCredentialEmail({
                       Trinitymart &bull; Automated Digital Goods Dispatch &bull; 24/7 Support
                     </p>
                     <p style="margin:0;color:#475569;font-size:11px;">
-                      This email contains your confidential credentials. If you did not make this purchase, contact support immediately.
+                      Track this order anytime at <a href="${orderTrackingUrl}" style="color:#38bdf8;text-decoration:none;">${baseUrl}/orders/lookup</a> with Order ID: ${orderId}
                     </p>
                   </td>
                 </tr>
@@ -914,6 +1012,272 @@ export async function sendCredentialEmail({
       </html>
     `,
   });
+}
+
+/**
+ * Sends Order Initiated / Tracking Link email to customer as soon as order is created.
+ * Provides the Order ID and direct link to /orders/lookup?orderId=... so the buyer
+ * can easily track their payment confirmation and credentials delivery in real time.
+ */
+export async function sendOrderInitiatedEmail({
+  orderId,
+  email,
+  amount = APP_CONFIG.price,
+  quantity = 1,
+  productName,
+  cartItems,
+  paymentMethod = "upi",
+}: {
+  orderId: string;
+  email: string;
+  amount?: number | string;
+  quantity?: number;
+  productName?: string;
+  cartItems?: CartOrderItem[];
+  paymentMethod?: "upi" | "crypto" | string;
+}): Promise<SentMessageInfo | null> {
+  if (!email || !email.includes("@")) {
+    return null;
+  }
+
+  // Deduplicate using Redis to avoid sending multiple emails for the same order
+  const lockKey = `email_initiated_sent:${orderId}`;
+  try {
+    const alreadySent = await redis.get(lockKey);
+    if (alreadySent) {
+      console.log(`[INITIATED EMAIL] Already sent for order ${orderId}, skipping.`);
+      return null;
+    }
+  } catch (err) {
+    console.warn("Could not check email_initiated_sent lock:", err);
+  }
+
+  const primaryTitle =
+    productName ||
+    (cartItems && cartItems.length > 0
+      ? `${cartItems.length} Products`
+      : "Trinitymart Digital Asset");
+
+  const baseUrl = (
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
+    "https://get-me-account.vercel.app"
+  ).replace(/\/+$/, "");
+
+  const orderTrackingUrl = `${baseUrl}/orders/lookup?orderId=${encodeURIComponent(orderId)}`;
+  const emailDiscordUrl =
+    process.env.DISCORD_LINK ||
+    process.env.NEXT_PUBLIC_DISCORD_LINK ||
+    (APP_CONFIG.discordLink && APP_CONFIG.discordLink.startsWith("http")
+      ? APP_CONFIG.discordLink
+      : `${baseUrl}/discord`);
+
+  const configuredPic = await getAdminProfilePic();
+  const attachments: Array<{
+    filename?: string;
+    path?: string;
+    content?: Buffer;
+    contentType?: string;
+    cid?: string;
+  }> = [];
+
+  let avatarImgSrc = "";
+  const publicJpgPath = path.join(process.cwd(), "public", "admin-profile.jpg");
+
+  if (configuredPic && configuredPic.startsWith("data:image/")) {
+    const match = configuredPic.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      attachments.push({
+        filename: "admin-avatar.png",
+        content: Buffer.from(match[2], "base64"),
+        contentType: match[1],
+        cid: "admin-profile-avatar",
+      });
+      avatarImgSrc = "cid:admin-profile-avatar";
+    } else {
+      avatarImgSrc = `${baseUrl}/admin-profile.jpg`;
+    }
+  } else if (configuredPic && (configuredPic.startsWith("http://") || configuredPic.startsWith("https://"))) {
+    avatarImgSrc = configuredPic;
+  } else if (fs.existsSync(publicJpgPath)) {
+    attachments.push({
+      filename: "admin-profile.jpg",
+      path: publicJpgPath,
+      cid: "admin-profile-avatar",
+    });
+    avatarImgSrc = "cid:admin-profile-avatar";
+  } else {
+    avatarImgSrc = `${baseUrl}/admin-profile.jpg`;
+  }
+
+  const isCrypto =
+    paymentMethod === "crypto" ||
+    orderId.startsWith("ORD-CR-") ||
+    orderId.startsWith("crypto_");
+
+  const methodLabel = isCrypto
+    ? "Cryptocurrency (USDT/USDC/BTC/ETH/SOL)"
+    : "UPI (Google Pay / PhonePe / Paytm)";
+
+  const smtp = await getAdminSmtpConfig();
+  const adminUser = smtp.user || (process.env.GMAIL_USER || "").trim().replace(/^["']|["']$/g, "");
+  const mailTransporter = createMailTransporter(smtp);
+
+  return await mailTransporter.sendMail({
+    from: `"Trinitymart Store" <${adminUser}>`,
+    to: email,
+    subject: `📦 Order #${orderId} Initiated — Track Your Order Status`,
+    attachments,
+    html: `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <title>Order #${orderId} Initiated</title>
+      </head>
+      <body style="margin:0;padding:0;background:#0b0f19;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;color:#dfe2ee;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#0b0f19;padding:40px 12px;">
+          <tr>
+            <td align="center">
+              <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#111524;border-radius:24px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,0.6);border:1px solid #232b42;">
+                
+                <!-- ── HEADER ── -->
+                <tr>
+                  <td style="background:linear-gradient(135deg,#1e1b4b 0%,#2e1065 50%,#0f172a 100%);padding:40px 32px 32px 32px;text-align:center;border-bottom:1px solid #2e3856;">
+                    <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 16px auto;">
+                      <tr>
+                        <td align="center">
+                          <div style="width:76px;height:76px;border-radius:50%;background:linear-gradient(135deg,#06b6d4,#8b5cf6,#ec4899);padding:3px;box-shadow:0 0 25px rgba(6,182,212,0.45);display:inline-block;">
+                            <img src="${avatarImgSrc}" width="76" height="76" alt="Admin" style="width:76px;height:76px;border-radius:50%;object-fit:cover;display:block;background:#0f172a;" />
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <div style="text-align:center;margin-bottom:12px;">
+                      <span style="display:inline-block;background:linear-gradient(135deg,rgba(6,182,212,0.2),rgba(139,92,246,0.2));border:1px solid rgba(56,189,248,0.4);border-radius:24px;padding:5px 16px;font-size:11px;font-weight:800;color:#38bdf8;letter-spacing:0.8px;text-transform:uppercase;">
+                        🛡️ TRINITYMART DISPATCH &bull; ORDER CREATED
+                      </span>
+                    </div>
+
+                    <h1 style="margin:0 0 8px 0;color:#ffffff;font-size:24px;font-weight:800;letter-spacing:-0.5px;">
+                      Your Order is Registered! 📦
+                    </h1>
+                    <p style="margin:0 auto;color:#cbd5e1;font-size:14px;line-height:1.6;max-width:480px;">
+                      We've created your order session. Keep your <strong>Order ID</strong> below to track payment verification and instant delivery.
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- ── BODY ── -->
+                <tr>
+                  <td style="padding:32px 28px;">
+                    
+                    <!-- ORDER ID PROMINENT CARD -->
+                    <div style="background:linear-gradient(135deg,rgba(16,24,39,0.95) 0%,rgba(30,41,59,0.95) 100%);border:1.5px solid #06b6d4;border-radius:18px;padding:22px;margin:0 0 24px 0;box-shadow:0 8px 30px rgba(6,182,212,0.2);text-align:center;">
+                      <div style="font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">
+                        YOUR TRACKING ORDER ID
+                      </div>
+                      <div style="background:#090d16;border:1px solid #1e293b;border-radius:10px;padding:12px 16px;margin:8px auto 16px auto;display:inline-block;max-width:90%;">
+                        <span style="font-family:'Courier New',Courier,monospace;font-size:18px;font-weight:800;color:#38bdf8;letter-spacing:1px;word-break:break-all;">
+                          ${orderId}
+                        </span>
+                      </div>
+
+                      <div>
+                        <a href="${orderTrackingUrl}" target="_blank" style="display:inline-block;background:linear-gradient(135deg,#06b6d4 0%,#2563eb 50%,#7c3aed 100%);color:#ffffff;text-decoration:none;padding:13px 32px;border-radius:12px;font-weight:800;font-size:14px;letter-spacing:0.4px;box-shadow:0 6px 24px rgba(6,182,212,0.45);border:1px solid rgba(255,255,255,0.25);">
+                          🔍 Track Your Order Status Live &rarr;
+                        </a>
+                      </div>
+                      <p style="margin:10px 0 0 0;font-size:12px;color:#94a3b8;">
+                        Click anytime to check real-time settlement and view your digital credentials.
+                      </p>
+                    </div>
+
+                    <!-- ORDER SUMMARY TABLE -->
+                    <div style="background:#0f131c;border:1px solid #1e293b;border-radius:16px;padding:20px;margin-bottom:24px;">
+                      <div style="font-size:12px;font-weight:800;color:#818cf8;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px;">
+                        📋 Order Summary
+                      </div>
+                      <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+                        <tr>
+                          <td style="color:#94a3b8;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">Product</td>
+                          <td style="color:#ffffff;font-weight:700;text-align:right;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">${primaryTitle}</td>
+                        </tr>
+                        <tr>
+                          <td style="color:#94a3b8;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">Quantity</td>
+                          <td style="color:#38bdf8;font-weight:700;text-align:right;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">${quantity} Unit(s)</td>
+                        </tr>
+                        <tr>
+                          <td style="color:#94a3b8;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">Total Amount</td>
+                          <td style="color:#34d399;font-weight:800;font-size:15px;text-align:right;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">₹${amount}</td>
+                        </tr>
+                        <tr>
+                          <td style="color:#94a3b8;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">Payment Channel</td>
+                          <td style="color:#e2e8f0;font-weight:600;text-align:right;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">${methodLabel}</td>
+                        </tr>
+                        <tr>
+                          <td style="color:#94a3b8;padding:6px 0;">Current Status</td>
+                          <td style="color:#fbbf24;font-weight:700;text-align:right;padding:6px 0;">● Awaiting Payment Confirmation</td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <!-- WHAT HAPPENS NEXT BANNER -->
+                    <div style="background:rgba(56,189,248,0.08);border-left:3px solid #38bdf8;border-radius:0 12px 12px 0;padding:14px 18px;margin-bottom:24px;">
+                      <div style="font-size:13px;font-weight:700;color:#38bdf8;margin-bottom:4px;">
+                        ⚡ How delivery works:
+                      </div>
+                      <p style="margin:0;font-size:12px;color:#cbd5e1;line-height:1.6;">
+                        1. Complete the payment in your UPI app or crypto wallet.<br/>
+                        2. Our automated system detects the incoming settlement in 15–60 seconds.<br/>
+                        3. Your digital credentials &amp; warranty receipt will be emailed immediately and unlocked on your Order Tracking page.
+                      </p>
+                    </div>
+
+                    <!-- 24/7 SUPPORT -->
+                    <div style="background:linear-gradient(135deg,rgba(88,101,242,0.12) 0%,rgba(124,58,237,0.1) 100%);border:1px solid rgba(88,101,242,0.3);border-radius:16px;padding:20px;text-align:center;margin-bottom:10px;">
+                      <p style="margin:0 0 6px;font-weight:800;color:#818cf8;font-size:14px;">💬 Need Help or Have Questions?</p>
+                      <p style="margin:0 0 12px;color:#94a3b8;font-size:12px;">Our team is available 24/7 on Discord to help with payment verification and instant delivery.</p>
+                      <a href="${emailDiscordUrl}" target="_blank" style="display:inline-block;background:linear-gradient(135deg,#5865F2,#7c3aed);color:#ffffff;text-decoration:none;padding:10px 24px;border-radius:10px;font-weight:700;font-size:12px;">
+                        Join Discord Support &rarr;
+                      </a>
+                    </div>
+
+                  </td>
+                </tr>
+
+                <!-- ── FOOTER ── -->
+                <tr>
+                  <td style="background:#090d16;border-top:1px solid #1e293b;padding:22px 36px;text-align:center;">
+                    <p style="margin:0 0 6px;color:#64748b;font-size:12px;font-weight:600;">
+                      Trinitymart &bull; Automated Digital Goods Dispatch &bull; 24/7 Support
+                    </p>
+                    <p style="margin:0;color:#475569;font-size:11px;">
+                      Track your order anytime at <a href="${orderTrackingUrl}" style="color:#38bdf8;text-decoration:none;">${baseUrl}/orders/lookup</a> with your Order ID: ${orderId}
+                    </p>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `,
+  });
+
+  try {
+    await redis.set(lockKey, "1", { ex: 86400 }); // 24 hours TTL
+    console.log(`[INITIATED EMAIL] ✅ Order initiated tracking email delivered to ${email} for #${orderId}`);
+  } catch (err) {
+    console.warn("Could not set email_initiated_sent lock:", err);
+  }
+
+  return info;
 }
 
 /**
@@ -938,11 +1302,12 @@ export async function sendMerchantSaleNotification({
   productName?: string;
   credentials: Credential[];
 }): Promise<void> {
-  const adminEmail = (process.env.GMAIL_USER || "").trim();
+  const smtp = await getAdminSmtpConfig();
+  const adminEmail = smtp.user || (process.env.GMAIL_USER || "").trim().replace(/^["']|["']$/g, "");
   if (!adminEmail) return;
 
   try {
-    const mailTransporter = createMailTransporter();
+    const mailTransporter = createMailTransporter(smtp);
     const primaryTitle = productName || credentials[0]?.productName || "Digital Asset";
     const qty = credentials.length;
 
@@ -2373,6 +2738,9 @@ export async function getOrderById(orderId: string): Promise<StoredOrder | null>
   const fallback = await getOrder(cleanId);
   if (!fallback) return null;
 
+  const delivered = await isAlreadySent(cleanId);
+  const deliveredCreds = await getFulfilledCredentials(cleanId);
+
   return {
     orderId: fallback.orderId,
     email: fallback.email,
@@ -2381,7 +2749,8 @@ export async function getOrderById(orderId: string): Promise<StoredOrder | null>
     productId: fallback.productId,
     productName: fallback.productName,
     cartItems: fallback.cartItems,
-    status: "pending",
+    status: delivered ? "confirmed" : "pending",
+    deliveredCredentials: deliveredCreds.length > 0 ? deliveredCreds : undefined,
     createdAt: new Date(fallback.createdAt || Date.now()).toISOString(),
   };
 }
@@ -2539,8 +2908,9 @@ export async function sendRecoveryEmail({
   `;
 
   try {
-    const transporter = createMailTransporter();
-    const adminEmail = (process.env.GMAIL_USER || "support@trinitymart.store").trim();
+    const smtp = await getAdminSmtpConfig();
+    const transporter = createMailTransporter(smtp);
+    const adminEmail = smtp.user || (process.env.GMAIL_USER || "support@trinitymart.store").trim().replace(/^["']|["']$/g, "");
 
     const info = await transporter.sendMail({
       from: `"TrinityMart Order Desk" <${adminEmail}>`,

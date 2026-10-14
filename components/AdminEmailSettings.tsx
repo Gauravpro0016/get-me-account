@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Upload, Sparkles, Send, CheckCircle, AlertCircle, RefreshCw, Eye, ShieldCheck, Mail, ExternalLink, Image as ImageIcon } from "lucide-react";
+import { Upload, Sparkles, Send, CheckCircle, AlertCircle, RefreshCw, Eye, ShieldCheck, Mail, ExternalLink, Image as ImageIcon, Key, Lock, Check, HelpCircle } from "lucide-react";
 
 interface AdminEmailSettingsProps {
   adminPassword: string;
@@ -36,9 +36,18 @@ export function AdminEmailSettings({ adminPassword }: AdminEmailSettingsProps) {
   // Preview device toggle
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
 
-  // Fetch current admin profile pic on mount
+  // SMTP credentials state
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [smtpLoading, setSmtpLoading] = useState(false);
+  const [smtpSaving, setSmtpSaving] = useState(false);
+  const [smtpStatus, setSmtpStatus] = useState<{ type: "success" | "error"; text: string; details?: string } | null>(null);
+  const [hasStoredPassword, setHasStoredPassword] = useState(false);
+
+  // Fetch current admin profile pic and SMTP config on mount
   useEffect(() => {
     fetchProfilePic();
+    fetchSmtpConfig();
   }, [adminPassword]);
 
   const fetchProfilePic = async () => {
@@ -60,6 +69,74 @@ export function AdminEmailSettings({ adminPassword }: AdminEmailSettingsProps) {
       console.warn("Failed to fetch admin profile pic:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchSmtpConfig = async () => {
+    setSmtpLoading(true);
+    try {
+      const res = await fetch("/api/admin/smtp", {
+        headers: {
+          "x-admin-password": adminPassword,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          setSmtpUser(data.user);
+        }
+        setHasStoredPassword(Boolean(data.hasPassword));
+      }
+    } catch (err) {
+      console.warn("Failed to fetch SMTP config:", err);
+    } finally {
+      setSmtpLoading(false);
+    }
+  };
+
+  const handleSaveSmtp = async () => {
+    if (!smtpUser.trim()) {
+      setSmtpStatus({ type: "error", text: "Please enter your Gmail address." });
+      return;
+    }
+    if (!smtpPass.trim()) {
+      setSmtpStatus({ type: "error", text: "Please enter your 16-character Google App Password." });
+      return;
+    }
+
+    setSmtpSaving(true);
+    setSmtpStatus(null);
+    try {
+      const res = await fetch("/api/admin/smtp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-password": adminPassword,
+        },
+        body: JSON.stringify({ user: smtpUser.trim(), pass: smtpPass.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setHasStoredPassword(true);
+        setSmtpPass("");
+        setSmtpStatus({
+          type: "success",
+          text: `Connected to Google SMTP! Verified & saved for ${data.user}`,
+        });
+      } else {
+        setSmtpStatus({
+          type: "error",
+          text: data.error || "Failed to authenticate with Google SMTP",
+          details: data.details,
+        });
+      }
+    } catch (err) {
+      setSmtpStatus({
+        type: "error",
+        text: err instanceof Error ? err.message : "Network error verifying SMTP",
+      });
+    } finally {
+      setSmtpSaving(false);
     }
   };
 
@@ -327,6 +404,159 @@ export function AdminEmailSettings({ adminPassword }: AdminEmailSettingsProps) {
             </div>
           </div>
         )}
+      </div>
+
+      {/* ── GMAIL SMTP AUTHENTICATION & DIAGNOSTICS CARD ── */}
+      <div className="p-6 sm:p-7 rounded-3xl bg-[#181c24] border border-[#262a33] shadow-xl space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#262a33]">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-[#8083ff]/15 text-[#8083ff]">
+              <Mail className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-[#dfe2ee] font-mono">
+                Gmail SMTP Server &amp; App Password Configuration
+              </h3>
+              <p className="text-xs text-[#908fa0]">
+                Used by Nodemailer to dispatch customer delivery receipts &amp; order tracking notifications
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[11px] font-mono text-[#908fa0] bg-[#0f131c] px-2.5 py-1 rounded-lg border border-[#262a33]">
+              Host: smtp.gmail.com:465
+            </span>
+            <span
+              className={`text-[11px] font-mono font-bold px-2.5 py-1 rounded-lg border ${
+                hasStoredPassword
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                  : "bg-amber-500/10 text-amber-400 border-amber-500/30"
+              }`}
+            >
+              {hasStoredPassword ? "● Authenticated" : "○ Needs Password"}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-mono font-bold text-[#c7c4d7] mb-1.5 flex items-center gap-1.5">
+              <span>Gmail Address (GMAIL_USER)</span>
+            </label>
+            <input
+              type="email"
+              value={smtpUser}
+              onChange={(e) => setSmtpUser(e.target.value)}
+              placeholder="e.g. yourname@gmail.com"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs font-mono text-[#dfe2ee] placeholder-[#908fa0]/50 focus:outline-none focus:border-[#8083ff] transition-all"
+            />
+            <p className="text-[11px] text-[#908fa0] mt-1">
+              The Google account that will send order emails and credentials.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-mono font-bold text-[#c7c4d7] mb-1.5 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Key className="w-3.5 h-3.5 text-amber-400" />
+                <span>16-Character Google App Password</span>
+              </span>
+              <a
+                href="https://myaccount.google.com/apppasswords"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] text-[#8083ff] hover:underline flex items-center gap-0.5"
+              >
+                <span>Generate App Password</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </label>
+            <input
+              type="text"
+              value={smtpPass}
+              onChange={(e) => setSmtpPass(e.target.value)}
+              placeholder={hasStoredPassword ? "•••••••••••••••• (Leave blank to keep current)" : "e.g. qimh ftzp fpid ybta"}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs font-mono text-amber-300 placeholder-[#908fa0]/50 focus:outline-none focus:border-amber-400 transition-all"
+            />
+            <p className="text-[11px] text-[#908fa0] mt-1">
+              Not your normal Google login password! Must be created at Google App Passwords.
+            </p>
+          </div>
+        </div>
+
+        {/* Step-by-Step Google BadCredentials Fix Box */}
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-2 text-xs">
+          <div className="flex items-center gap-2 text-amber-300 font-bold">
+            <HelpCircle className="w-4 h-4 shrink-0" />
+            <span>Getting error 535-5.7.8 BadCredentials? Here is how to fix it in 30 seconds:</span>
+          </div>
+          <ol className="list-decimal list-inside space-y-1 text-amber-200/90 leading-relaxed font-mono text-[11px] pl-1">
+            <li>
+              Log into the exact Gmail account above (<strong>{smtpUser || "your email"}</strong>).
+            </li>
+            <li>
+              Enable <strong>2-Step Verification</strong> at{" "}
+              <a href="https://myaccount.google.com/security" target="_blank" rel="noopener noreferrer" className="underline text-amber-300">
+                myaccount.google.com/security
+              </a>
+              . (Google requires 2FA to generate App Passwords).
+            </li>
+            <li>
+              Open{" "}
+              <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="underline text-amber-300 font-bold">
+                myaccount.google.com/apppasswords
+              </a>
+              . Name the app &quot;Trinitymart&quot; and click <strong>Create</strong>.
+            </li>
+            <li>
+              Copy the 16-character code (e.g. <span className="font-bold text-white">abcd efgh ijkl mnop</span>), paste it above, and click <strong>Verify &amp; Save</strong>.
+            </li>
+          </ol>
+        </div>
+
+        {/* Action Button & Status */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+          <button
+            type="button"
+            onClick={handleSaveSmtp}
+            disabled={smtpSaving || !smtpUser.trim() || !smtpPass.trim()}
+            className="px-5 py-2.5 rounded-xl bg-linear-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-black font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          >
+            {smtpSaving ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin text-black" />
+                <span>Verifying with Google SMTP…</span>
+              </>
+            ) : (
+              <>
+                <ShieldCheck className="w-4 h-4 text-black" />
+                <span>Verify &amp; Save Credentials</span>
+              </>
+            )}
+          </button>
+
+          {smtpStatus && (
+            <div
+              className={`p-3 rounded-xl border text-xs font-mono flex items-center gap-2 flex-1 max-w-xl ${
+                smtpStatus.type === "success"
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                  : "bg-red-500/10 border-red-500/30 text-red-300"
+              }`}
+            >
+              {smtpStatus.type === "success" ? (
+                <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+              )}
+              <div className="space-y-0.5">
+                <p className="font-bold">{smtpStatus.text}</p>
+                {smtpStatus.details && (
+                  <p className="text-[10px] opacity-75">{smtpStatus.details}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── GRID: PROFILE PIC MANAGER & FEATURES ── */}

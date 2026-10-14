@@ -3,7 +3,7 @@ import { getOrderById, getOrdersByEmail } from "@/lib/fulfillment";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const query = (searchParams.get("query") || searchParams.get("orderId") || searchParams.get("email") || "").trim();
+  const query = (searchParams.get("query") || searchParams.get("orderId") || searchParams.get("order_id") || searchParams.get("email") || "").trim();
 
   if (!query) {
     return NextResponse.json(

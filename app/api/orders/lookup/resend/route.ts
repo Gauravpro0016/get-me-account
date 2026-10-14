@@ -40,8 +40,16 @@ export async function POST(req: NextRequest) {
     const result = await resendOrderEmail(orderId, order.email);
 
     if (!result.success) {
+      const isSmtpAuth =
+        result.error?.includes("535") ||
+        result.error?.includes("BadCredentials") ||
+        result.error?.includes("EAUTH");
+      const userFriendlyError = isSmtpAuth
+        ? "Automated mail dispatch is temporarily undergoing mail server authentication update. Your credentials are completely safe and unlocked right above on this page — you can copy or download them now!"
+        : (result.error || "Failed to dispatch email. Please reach out on Discord Support.");
+
       return NextResponse.json(
-        { error: result.error || "Failed to dispatch email. Please reach out on Discord Support." },
+        { error: userFriendlyError },
         { status: 500 }
       );
     }

@@ -65,21 +65,81 @@ async function postWithRetry(
   }
 }
 
+import { redis, readEnvLocalValue } from "@/lib/fulfillment";
+
+export const DISCORD_CONFIG_KEY = "trinitymart_discord_config";
+
+export interface DiscordConfig {
+  salesWebhookUrl?: string;
+  restockWebhookUrl?: string;
+}
+
+export async function getDiscordConfig(): Promise<DiscordConfig> {
+  let redisConfig: DiscordConfig | null = null;
+  try {
+    redisConfig = await redis.get<DiscordConfig>(DISCORD_CONFIG_KEY);
+  } catch (e) {
+    console.warn("Could not read DISCORD_CONFIG_KEY from Redis:", e);
+  }
+
+  const salesFromDisk =
+    readEnvLocalValue("DISCORD_SALES_WEBHOOK_URL") ||
+    readEnvLocalValue("DISCORD_ORDERS_WEBHOOK_URL") ||
+    readEnvLocalValue("DISCORD_WEBHOOK_URL") ||
+    readEnvLocalValue("DISCORD_PURCHASE_WEBHOOK_URL");
+
+  const restockFromDisk =
+    readEnvLocalValue("DISCORD_RESTOCK_WEBHOOK_URL");
+
+  const salesWebhookUrl = (
+    redisConfig?.salesWebhookUrl ||
+    salesFromDisk ||
+    process.env.DISCORD_SALES_WEBHOOK_URL ||
+    process.env.DISCORD_ORDERS_WEBHOOK_URL ||
+    process.env.DISCORD_WEBHOOK_URL ||
+    process.env.DISCORD_PURCHASE_WEBHOOK_URL ||
+    ""
+  ).trim().replace(/^["']|["']$/g, "");
+
+  const restockWebhookUrl = (
+    redisConfig?.restockWebhookUrl ||
+    restockFromDisk ||
+    process.env.DISCORD_RESTOCK_WEBHOOK_URL ||
+    salesWebhookUrl
+  ).trim().replace(/^["']|["']$/g, "");
+
+  return { salesWebhookUrl, restockWebhookUrl };
+}
+
+export async function setDiscordConfig(config: DiscordConfig): Promise<void> {
+  const cleanSales = (config.salesWebhookUrl || "").trim().replace(/^["']|["']$/g, "");
+  const cleanRestock = (config.restockWebhookUrl || "").trim().replace(/^["']|["']$/g, "");
+  await redis.set(DISCORD_CONFIG_KEY, {
+    salesWebhookUrl: cleanSales,
+    restockWebhookUrl: cleanRestock,
+  });
+}
+
 /**
  * Dispatches an automated Discord announcement embed when a customer buys an item.
  */
 export async function sendDiscordPurchaseNotification(
   opts: DiscordPurchaseNotificationOptions
 ): Promise<boolean> {
-  const rawWebhookUrl =
-    process.env.DISCORD_SALES_WEBHOOK_URL ||
-    process.env.DISCORD_ORDERS_WEBHOOK_URL ||
-    process.env.DISCORD_WEBHOOK_URL ||
-    process.env.DISCORD_PURCHASE_WEBHOOK_URL;
-  const webhookUrl = rawWebhookUrl?.trim().replace(/^["']|["']$/g, "");
+  const { salesWebhookUrl } = await getDiscordConfig();
+  const webhookUrl = salesWebhookUrl;
 
-  const botToken = process.env.DISCORD_BOT_TOKEN?.trim().replace(/^["']|["']$/g, "");
-  const channelId = process.env.DISCORD_CHANNEL_ID?.trim().replace(/^["']|["']$/g, "");
+  const botToken = (
+    process.env.DISCORD_BOT_TOKEN ||
+    readEnvLocalValue("DISCORD_BOT_TOKEN") ||
+    ""
+  ).trim().replace(/^["']|["']$/g, "");
+
+  const channelId = (
+    process.env.DISCORD_CHANNEL_ID ||
+    readEnvLocalValue("DISCORD_CHANNEL_ID") ||
+    ""
+  ).trim().replace(/^["']|["']$/g, "");
 
   if (!webhookUrl && (!botToken || !channelId)) {
     console.log(
@@ -287,17 +347,22 @@ export interface DiscordRestockNotificationOptions {
 export async function sendDiscordRestockNotification(
   opts: DiscordRestockNotificationOptions
 ): Promise<boolean> {
-  const rawWebhookUrl =
-    process.env.DISCORD_RESTOCK_WEBHOOK_URL ||
-    process.env.DISCORD_SALES_WEBHOOK_URL ||
-    process.env.DISCORD_WEBHOOK_URL ||
-    process.env.DISCORD_PURCHASE_WEBHOOK_URL;
-  const webhookUrl = rawWebhookUrl?.trim().replace(/^["']|["']$/g, "");
+  const { restockWebhookUrl, salesWebhookUrl } = await getDiscordConfig();
+  const webhookUrl = restockWebhookUrl || salesWebhookUrl;
 
-  const botToken = process.env.DISCORD_BOT_TOKEN?.trim().replace(/^["']|["']$/g, "");
+  const botToken = (
+    process.env.DISCORD_BOT_TOKEN ||
+    readEnvLocalValue("DISCORD_BOT_TOKEN") ||
+    ""
+  ).trim().replace(/^["']|["']$/g, "");
+
   const channelId = (
-    process.env.DISCORD_RESTOCK_CHANNEL_ID || process.env.DISCORD_CHANNEL_ID
-  )?.trim().replace(/^["']|["']$/g, "");
+    process.env.DISCORD_RESTOCK_CHANNEL_ID ||
+    readEnvLocalValue("DISCORD_RESTOCK_CHANNEL_ID") ||
+    process.env.DISCORD_CHANNEL_ID ||
+    readEnvLocalValue("DISCORD_CHANNEL_ID") ||
+    ""
+  ).trim().replace(/^["']|["']$/g, "");
 
   if (!webhookUrl && (!botToken || !channelId)) {
     console.log(
@@ -459,11 +524,8 @@ export async function sendDiscordLowStockAlert(opts: {
   productId?: string;
   remainingStock: number;
 }): Promise<boolean> {
-  const rawWebhookUrl =
-    process.env.DISCORD_RESTOCK_WEBHOOK_URL ||
-    process.env.DISCORD_SALES_WEBHOOK_URL ||
-    process.env.DISCORD_WEBHOOK_URL;
-  const webhookUrl = rawWebhookUrl?.trim().replace(/^["']|["']$/g, "");
+  const { salesWebhookUrl, restockWebhookUrl } = await getDiscordConfig();
+  const webhookUrl = restockWebhookUrl || salesWebhookUrl;
 
   if (!webhookUrl) return false;
 
@@ -507,10 +569,8 @@ export async function sendDiscordEmailFailureAlert(opts: {
   email: string;
   error: string;
 }): Promise<boolean> {
-  const rawWebhookUrl =
-    process.env.DISCORD_SALES_WEBHOOK_URL ||
-    process.env.DISCORD_WEBHOOK_URL;
-  const webhookUrl = rawWebhookUrl?.trim().replace(/^["']|["']$/g, "");
+  const { salesWebhookUrl } = await getDiscordConfig();
+  const webhookUrl = salesWebhookUrl;
 
   if (!webhookUrl) return false;
 
@@ -542,6 +602,61 @@ export async function sendDiscordEmailFailureAlert(opts: {
     return res.ok;
   } catch (err) {
     console.warn("[DISCORD] Email failure alert error:", err);
+    return false;
+  }
+}
+
+/**
+ * Dispatches an automated Discord alert when a new order is registered/initiated by customer.
+ */
+export async function sendDiscordOrderInitiatedNotification(opts: {
+  orderId: string;
+  email: string;
+  amount: number | string;
+  productName?: string;
+  quantity?: number;
+  paymentMethod?: string;
+}): Promise<boolean> {
+  const { salesWebhookUrl } = await getDiscordConfig();
+  const webhookUrl = salesWebhookUrl;
+  if (!webhookUrl) return false;
+
+  const appUrl = (
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    readEnvLocalValue("APP_URL") ||
+    "https://get-me-account.vercel.app"
+  ).replace(/\/$/, "");
+
+  const embed = {
+    title: `🛒 Order #${opts.orderId} Initiated — Awaiting Payment`,
+    description: `A customer has registered an order for **${opts.productName || "Trinitymart Digital Asset"}**.`,
+    color: 0x06b6d4, // Cyan
+    fields: [
+      { name: "🆔 Order ID", value: `\`${opts.orderId}\``, inline: true },
+      { name: "💰 Total", value: `**₹${opts.amount}**`, inline: true },
+      { name: "💳 Method", value: (opts.paymentMethod || "UPI").toUpperCase(), inline: true },
+      { name: "👤 Customer", value: maskEmail(opts.email), inline: true },
+      { name: "📦 Quantity", value: `${opts.quantity || 1} Unit(s)`, inline: true },
+      { name: "🔍 Tracking Link", value: `[View Order Lookup](${appUrl}/orders/lookup?orderId=${opts.orderId})`, inline: false },
+    ],
+    footer: { text: "TrinityMart Order System • Live Dispatch" },
+    timestamp: new Date().toISOString(),
+  };
+
+  try {
+    const res = await postWithRetry(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: "TrinityMart Orders",
+        embeds: [embed],
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn("[DISCORD] Order initiated alert error:", err);
     return false;
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readPool, recordNewOrder } from "@/lib/fulfillment";
+import { readPool, recordNewOrder, sendOrderInitiatedEmail } from "@/lib/fulfillment";
 import { APP_CONFIG } from "@/lib/config";
+import { sendDiscordOrderInitiatedNotification } from "@/lib/discord";
 
 export const maxDuration = 30;
 
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
     const baseUrl = appUrl || (host ? `${proto}://${host}` : req.nextUrl.origin);
 
     const webhookUrl = `${baseUrl}/api/webhook`;
-    const redirectUrl = `${baseUrl}/?payment_success=1`;
+    const redirectUrl = `${baseUrl}/orders/lookup?payment_success=1`;
 
     const cleanUsername = email.split("@")[0].slice(0, 30);
     const passedAmount = Number(body.amount);
@@ -108,6 +109,35 @@ export async function POST(req: NextRequest) {
       discountAmount,
       paymentMethod: "upi",
     });
+
+    // Send order ID and live tracking link to customer email
+    try {
+      sendOrderInitiatedEmail({
+        orderId,
+        email,
+        amount,
+        quantity,
+        productName: productName || APP_CONFIG.productName,
+        cartItems,
+        paymentMethod: "upi",
+      }).catch((e) => console.warn("[FAMGATEWAY INITIATED EMAIL ERROR]:", e));
+    } catch (e) {
+      console.warn("Could not dispatch initiated order email:", e);
+    }
+
+    // Also dispatch Discord Order Initiated Alert
+    try {
+      sendDiscordOrderInitiatedNotification({
+        orderId,
+        email,
+        amount,
+        quantity,
+        productName: productName || APP_CONFIG.productName,
+        paymentMethod: "upi",
+      }).catch((e) => console.warn("[DISCORD ORDER INITIATED ALERT ERROR]:", e));
+    } catch (e) {
+      console.warn("Could not dispatch Discord order initiated alert:", e);
+    }
 
     return NextResponse.json({
       status: "success",

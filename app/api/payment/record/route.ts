@@ -5,6 +5,7 @@ import {
   markOrderConfirmedInHistory,
   getOrder,
   sendCredentialEmail,
+  sendOrderInitiatedEmail,
   storeFulfilledCredentials,
   Credential,
   redis,
@@ -49,6 +50,21 @@ export async function POST(req: NextRequest) {
         productName,
         cartItems,
       });
+
+      // Send order tracking email to customer
+      try {
+        sendOrderInitiatedEmail({
+          orderId,
+          email,
+          amount,
+          quantity,
+          productName: productName || APP_CONFIG.productName,
+          cartItems,
+          paymentMethod: "upi",
+        }).catch((e) => console.warn("[PAYMENT RECORD INITIATED EMAIL ERROR]:", e));
+      } catch (e) {
+        console.warn("Could not dispatch payment record initiated email:", e);
+      }
 
       // Save additional meta info
       try {
