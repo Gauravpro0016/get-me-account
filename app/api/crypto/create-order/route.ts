@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { recordNewOrder, redis, sendOrderInitiatedEmail } from "@/lib/fulfillment";
+import { recordNewOrder, redis, sendOrderInitiatedEmail, calculateAuthoritativeAmount } from "@/lib/fulfillment";
 import { APP_CONFIG } from "@/lib/config";
-import { sendDiscordOrderInitiatedNotification } from "@/lib/discord";
 
 export const maxDuration = 30;
 
@@ -20,9 +19,21 @@ export async function POST(req: NextRequest) {
     const rawQty = Number(body.quantity);
     const quantity = Math.max(1, Math.min(100, Number.isInteger(rawQty) && rawQty > 0 ? rawQty : 1));
 
-    const passedAmount = Number(body.amount);
-    const unitPrice = APP_CONFIG.price;
-    const amountInr = Number.isFinite(passedAmount) && passedAmount > 0 ? passedAmount : unitPrice * quantity;
+    const productId = typeof body.productId === "string" ? body.productId.trim() : undefined;
+    const productName = typeof body.productName === "string" ? body.productName.trim() : undefined;
+    const cartItems = Array.isArray(body.cartItems) ? body.cartItems : undefined;
+    const couponCode = typeof body.couponCode === "string" ? body.couponCode.trim().toUpperCase() : undefined;
+
+    // Server-side authoritative price calculation (prevents client price tampering)
+    const priceCalc = await calculateAuthoritativeAmount({
+      productId,
+      quantity,
+      cartItems,
+      couponCode,
+      clientAmount: Number(body.amount),
+    });
+    const amountInr = priceCalc.finalAmount;
+    const discountAmount = priceCalc.discountAmount;
 
     // Convert INR to USD for Atlos widget (Atlos accepts USD or major fiat/crypto)
     const rate = APP_CONFIG.inrToUsdRate || 0.0118;
@@ -33,12 +44,6 @@ export async function POST(req: NextRequest) {
     // Generate unique crypto order identifier
     const orderId = `ORD-CR-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
-    const productId = typeof body.productId === "string" ? body.productId.trim() : undefined;
-    const productName = typeof body.productName === "string" ? body.productName.trim() : undefined;
-    const cartItems = Array.isArray(body.cartItems) ? body.cartItems : undefined;
-    const couponCode = typeof body.couponCode === "string" ? body.couponCode.trim().toUpperCase() : undefined;
-    const discountAmount = Number(body.discountAmount) || 0;
-
     // Persist order in Redis order records
     await recordNewOrder({
       orderId,
@@ -48,7 +53,7 @@ export async function POST(req: NextRequest) {
       productId,
       productName,
       cartItems,
-      couponCode,
+      couponCode: priceCalc.appliedCouponCode || couponCode,
       discountAmount,
       paymentMethod: "crypto",
     });
@@ -66,20 +71,6 @@ export async function POST(req: NextRequest) {
       }).catch((e) => console.warn("[CRYPTO INITIATED EMAIL ERROR]:", e));
     } catch (e) {
       console.warn("Could not dispatch crypto initiated order email:", e);
-    }
-
-    // Also dispatch Discord Order Initiated Alert
-    try {
-      sendDiscordOrderInitiatedNotification({
-        orderId,
-        email,
-        amount: amountInr,
-        quantity,
-        productName: productName || APP_CONFIG.productName,
-        paymentMethod: "crypto",
-      }).catch((e) => console.warn("[DISCORD CRYPTO INITIATED ALERT ERROR]:", e));
-    } catch (e) {
-      console.warn("Could not dispatch Discord crypto order initiated alert:", e);
     }
 
     // Save crypto-specific meta info

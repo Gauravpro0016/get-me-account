@@ -100,25 +100,29 @@ export async function POST(req: NextRequest) {
 
       if (!isPaid && potentialHash) {
         try {
-          const atlosSecret = process.env.ATLOS_API_SECRET || "6UCqzHHDmb5f0NbXOGCmLKFc2PVIMEYB";
-          const merchantId = process.env.ATLOS_MERCHANT_ID || "ADK7QABYR0";
-          const atlosRes = await fetch("https://api.atlos.io/gateway/rest/Transaction/FindByHash", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ApiSecret: atlosSecret },
-            body: JSON.stringify({ MerchantId: merchantId, BlockchainHash: potentialHash }),
-            cache: "no-store",
-            signal: AbortSignal.timeout(7000),
-          });
+          const atlosSecret = (process.env.ATLOS_API_SECRET || "").trim();
+          const merchantId = (process.env.ATLOS_MERCHANT_ID || process.env.NEXT_PUBLIC_ATLOS_MERCHANT_ID || "").trim();
+          if (!atlosSecret) {
+            console.warn("ATLOS_API_SECRET is not configured for FindByHash lookup.");
+          } else {
+            const atlosRes = await fetch("https://api.atlos.io/gateway/rest/Transaction/FindByHash", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ApiSecret: atlosSecret },
+              body: JSON.stringify({ MerchantId: merchantId, BlockchainHash: potentialHash }),
+              cache: "no-store",
+              signal: AbortSignal.timeout(7000),
+            });
 
-          if (atlosRes.ok) {
-            const data = await atlosRes.json();
-            const tx = data.Transaction || data;
-            if (data.IsFound || tx.Status === 100 || String(tx.Status) === "100" || tx.Txid) {
-              isPaid = true;
-              paymentStatus = "confirmed";
-              detectedTxid = potentialHash;
-              detectedAmount = Number(tx.PaidAmount || tx.OrderAmount || tx.amount) || undefined;
-              gatewayDetails = { checkType: "atlos_find_by_hash", ...data };
+            if (atlosRes.ok) {
+              const data = await atlosRes.json();
+              const tx = data.Transaction || data;
+              if (data.IsFound || tx.Status === 100 || String(tx.Status) === "100" || tx.Txid) {
+                isPaid = true;
+                paymentStatus = "confirmed";
+                detectedTxid = potentialHash;
+                detectedAmount = Number(tx.PaidAmount || tx.OrderAmount || tx.amount) || undefined;
+                gatewayDetails = { checkType: "atlos_find_by_hash", ...data };
+              }
             }
           }
         } catch (e) {

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readPool, recordNewOrder, sendOrderInitiatedEmail } from "@/lib/fulfillment";
+import { readPool, recordNewOrder, sendOrderInitiatedEmail, calculateAuthoritativeAmount } from "@/lib/fulfillment";
 import { APP_CONFIG } from "@/lib/config";
-import { sendDiscordOrderInitiatedNotification } from "@/lib/discord";
 
 export const maxDuration = 30;
 
@@ -43,14 +42,26 @@ export async function POST(req: NextRequest) {
     const redirectUrl = `${baseUrl}/orders/lookup?payment_success=1`;
 
     const cleanUsername = email.split("@")[0].slice(0, 30);
-    const passedAmount = Number(body.amount);
-    const unitPrice = APP_CONFIG.price;
-    const amount = Number.isFinite(passedAmount) && passedAmount > 0 ? passedAmount : unitPrice * quantity;
+    const productId = typeof body.productId === "string" ? body.productId.trim() : undefined;
+    const productName = typeof body.productName === "string" ? body.productName.trim() : undefined;
+    const cartItems = Array.isArray(body.cartItems) ? body.cartItems : undefined;
+    const couponCode = typeof body.couponCode === "string" ? body.couponCode.trim().toUpperCase() : undefined;
+
+    // Server-side authoritative price calculation (prevents client price tampering)
+    const priceCalc = await calculateAuthoritativeAmount({
+      productId,
+      quantity,
+      cartItems,
+      couponCode,
+      clientAmount: Number(body.amount),
+    });
+    const amount = priceCalc.finalAmount;
+    const discountAmount = priceCalc.discountAmount;
 
     console.log("Creating FamGateway order:", {
       quantity,
-      unitPrice,
       amount,
+      discountAmount,
       email,
       webhookUrl,
     });
@@ -90,12 +101,6 @@ export async function POST(req: NextRequest) {
     const orderDetails = data.data;
     const orderId = orderDetails.order_id;
 
-    const productId = typeof body.productId === "string" ? body.productId.trim() : undefined;
-    const productName = typeof body.productName === "string" ? body.productName.trim() : undefined;
-    const cartItems = Array.isArray(body.cartItems) ? body.cartItems : undefined;
-    const couponCode = typeof body.couponCode === "string" ? body.couponCode.trim().toUpperCase() : undefined;
-    const discountAmount = Number(body.discountAmount) || 0;
-
     // Persist order in Redis and global orders history
     await recordNewOrder({
       orderId,
@@ -105,7 +110,7 @@ export async function POST(req: NextRequest) {
       productId,
       productName,
       cartItems,
-      couponCode,
+      couponCode: priceCalc.appliedCouponCode || couponCode,
       discountAmount,
       paymentMethod: "upi",
     });
@@ -123,20 +128,6 @@ export async function POST(req: NextRequest) {
       }).catch((e) => console.warn("[FAMGATEWAY INITIATED EMAIL ERROR]:", e));
     } catch (e) {
       console.warn("Could not dispatch initiated order email:", e);
-    }
-
-    // Also dispatch Discord Order Initiated Alert
-    try {
-      sendDiscordOrderInitiatedNotification({
-        orderId,
-        email,
-        amount,
-        quantity,
-        productName: productName || APP_CONFIG.productName,
-        paymentMethod: "upi",
-      }).catch((e) => console.warn("[DISCORD ORDER INITIATED ALERT ERROR]:", e));
-    } catch (e) {
-      console.warn("Could not dispatch Discord order initiated alert:", e);
     }
 
     return NextResponse.json({

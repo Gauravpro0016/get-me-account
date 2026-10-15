@@ -24,7 +24,7 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product, featured = false }: ProductCardProps) {
-  const { addToCart, openCheckoutWithProduct } = useCart();
+  const { addToCart, openCheckoutWithProduct, setIsCartOpen } = useCart();
   const { currency, formatPrice } = useCurrency();
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
@@ -39,6 +39,7 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
     if (isOutOfStock) return;
     addToCart(product, quantity);
     setAdded(true);
+    setIsCartOpen(true);
     setTimeout(() => setAdded(false), 2000);
   };
 

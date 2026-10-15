@@ -109,12 +109,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Verify transaction with Atlos REST API if API Secret is configured
-    const atlosSecret =
-      process.env.ATLOS_API_SECRET || "6UCqzHHDmb5f0NbXOGCmLKFc2PVIMEYB";
-    const merchantId =
-      process.env.ATLOS_MERCHANT_ID ||
-      process.env.ATLOS_MERCHANT_ID ||
-      "ADK7QABYR0";
+    const atlosSecret = process.env.ATLOS_API_SECRET || "";
+    const merchantId = process.env.ATLOS_MERCHANT_ID || process.env.NEXT_PUBLIC_ATLOS_MERCHANT_ID || "";
     let gatewayVerified = false;
 
     if (atlosSecret) {

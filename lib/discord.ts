@@ -222,66 +222,25 @@ export async function sendDiscordPurchaseNotification(
 
   const deliveredUnits = opts.deliveredCount || qty;
 
-  // Build modern Discord Rich Embed
+  const paymentMethodSimple = isCrypto ? "Crypto" : "UPI";
+  const itemsDetail =
+    Array.isArray(opts.cartItems) && opts.cartItems.length > 0
+      ? opts.cartItems
+          .map((ci) => ci.productName || ci.productId)
+          .filter(Boolean)
+          .join(", ")
+      : productName;
+
+  const saleMessage = `🎉 **${rawUsername}** have just purchased **${qty}x ${productName}** (${itemsDetail}) using **${paymentMethodSimple}**. Thank you for trusting **TRINITYMART**! 🚀`;
+
+  // Embed card with side gradient accent line (Electric Indigo 0x8083ff for Crypto, Emerald 0x10b981 for UPI)
+  const sideLineColor = isCrypto ? 0x8083ff : 0x10b981;
+
   const embed = {
-    title: "🛒 New Purchase Completed!",
-    description: `🎉 **${rawUsername}** just paid **₹${amountStr}** via **${
-      isCrypto ? "🪙 Crypto" : "💳 UPI"
-    }** for **${productName}**!\n\n✅ **Account credentials have been successfully delivered to customer email.**`,
-    color: isCrypto ? 0x8083ff : 0x10b981, // Indigo for Crypto, Emerald for UPI
-    fields: [
-      {
-        name: "📦 Items Purchased",
-        value: itemsDescription.slice(0, 1024),
-        inline: false,
-      },
-      {
-        name: "💳 Payment Method",
-        value: `**${paymentMethodLabel}**`,
-        inline: true,
-      },
-      {
-        name: "💰 Amount Paid",
-        value: `**₹${amountStr}**${
-          opts.usdAmount
-            ? ` (~$${opts.usdAmount} USD)`
-            : isCrypto
-            ? ` (~$${(Number(amountStr) * 0.011).toFixed(2)} USD)`
-            : ""
-        }`,
-        inline: true,
-      },
-      {
-        name: "✅ Credentials Status",
-        value: `**Delivered via Email** (\`${deliveredUnits} unit${
-          deliveredUnits > 1 ? "s" : ""
-        }\`)`,
-        inline: true,
-      },
-      {
-        name: "👤 Customer",
-        value: `${rawUsername} (\`${displayEmail}\`)`,
-        inline: true,
-      },
-      {
-        name: "🆔 Order ID",
-        value: `\`#${opts.orderId}\``,
-        inline: true,
-      },
-      ...(opts.utr
-        ? [
-            {
-              name: isCrypto ? "⛓️ Blockchain TxID / Hash" : "🧾 Bank UTR Reference",
-              value: `\`${opts.utr.replace(/^CRYPTO:/i, "").slice(0, 36)}${
-                opts.utr.length > 36 ? "…" : ""
-              }\``,
-              inline: true,
-            },
-          ]
-        : []),
-    ],
+    description: saleMessage,
+    color: sideLineColor,
     footer: {
-      text: "TrinityMart Automated Store • Instant Auto-Delivery & Stock Sync",
+      text: "TrinityMart Automated Store • Instant Auto-Delivery",
       icon_url: avatarUrl,
     },
     timestamp: new Date().toISOString(),
@@ -292,7 +251,6 @@ export async function sendDiscordPurchaseNotification(
     avatar_url: avatarUrl,
     embeds: [embed],
   };
-
 
   try {
     // 1. Webhook Mode (Preferred)
@@ -330,9 +288,6 @@ export async function sendDiscordPurchaseNotification(
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            content: `🎉 **${rawUsername}** just bought **${productName}** via **${
-              isCrypto ? "Crypto" : "UPI"
-            }**!`,
             embeds: [embed],
           }),
           signal: AbortSignal.timeout(12000),
@@ -361,6 +316,20 @@ export async function sendDiscordPurchaseNotification(
   }
 }
 
+export function resolveProductImageUrl(productId?: string, customImage?: string): string | undefined {
+  if (customImage && customImage.startsWith("http")) return customImage;
+  const pId = (productId || "").toLowerCase();
+  if (pId.includes("minecraft")) return "https://images.unsplash.com/photo-1627856013091-fed6e4e30025?w=1000&auto=format&fit=crop&q=80";
+  if (pId.includes("nitro") || pId.includes("discord")) return "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0a6a49cf127bf92de1e2_icon_clyde_blurple_RGB.png";
+  if (pId.includes("chatgpt") || pId.includes("openai") || pId.includes("gpt")) return "https://images.unsplash.com/photo-1677442136019-21780efad99a?w=1000&auto=format&fit=crop&q=80";
+  if (pId.includes("netflix")) return "https://assets.nflxext.com/ffe/siteui/common/icons/monet/seo-metadata.jpg";
+  if (pId.includes("spotify")) return "https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png";
+  if (pId.includes("steam") || pId.includes("cs2")) return "https://cdn.cloudflare.steamstatic.com/store/home/store_home_share.jpg";
+  if (pId.includes("gta") || pId.includes("rockstar")) return "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1000&auto=format&fit=crop&q=80";
+  if (pId.includes("windows")) return "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1000&auto=format&fit=crop&q=80";
+  return undefined;
+}
+
 export interface DiscordRestockNotificationOptions {
   productName: string;
   productId?: string;
@@ -369,6 +338,7 @@ export interface DiscordRestockNotificationOptions {
   totalStock?: number;
   price?: number | string;
   customLogoUrl?: string;
+  productImage?: string;
 }
 
 /**
@@ -403,8 +373,17 @@ export async function sendDiscordRestockNotification(
 
   const productName = opts.productName || "TrinityMart Digital Asset";
   const unitsAdded = Math.max(1, opts.unitsAdded || 1);
-  const totalStock = opts.totalStock;
-  const price = opts.price;
+  const totalStock = opts.totalStock ?? unitsAdded;
+  const rawPrice = opts.price;
+  const priceFormatted =
+    rawPrice !== undefined && rawPrice !== null && rawPrice !== ""
+      ? String(rawPrice).startsWith("₹") ||
+        String(rawPrice).startsWith("€") ||
+        String(rawPrice).startsWith("$") ||
+        String(rawPrice).startsWith("£")
+        ? String(rawPrice)
+        : `₹${rawPrice}`
+      : "₹499";
 
   const appUrl = (
     process.env.APP_URL ||
@@ -412,59 +391,30 @@ export async function sendDiscordRestockNotification(
     "https://get-me-account.vercel.app"
   ).replace(/\/$/, "");
   const avatarUrl = `${appUrl}/favicon.ico`;
-  const storeUrl = opts.productId
-    ? `${appUrl}/#product-${opts.productId}`
+  const productUrl = opts.productId
+    ? `${appUrl}/product/${opts.productId}`
     : `${appUrl}/#products`;
 
-  // Build modern Discord Restock Rich Embed
-  const embed = {
-    title: "🚀 Restock Alert — TrinityMart",
-    description: `🔥 **${unitsAdded} new unit${unitsAdded > 1 ? "s" : ""}** of **${productName}** have just been loaded into TrinityMart! Grab yours while keys last.`,
-    color: 0x6366f1, // Electric Indigo
-    fields: [
-      {
-        name: "📦 Item",
-        value: `**${productName}**`,
-        inline: true,
-      },
-      {
-        name: "⚡ Restocked",
-        value: `**+${unitsAdded} unit${unitsAdded > 1 ? "s" : ""}**`,
-        inline: true,
-      },
-      ...(totalStock !== undefined
-        ? [
-            {
-              name: "📊 Available Now",
-              value: `**${totalStock} in stock**`,
-              inline: true,
-            },
-          ]
-        : []),
-      ...(price !== undefined && price !== null && price !== ""
-        ? [
-            {
-              name: "💰 Price",
-              value: `**₹${price}**`,
-              inline: true,
-            },
-          ]
-        : []),
-      ...(opts.category
-        ? [
-            {
-              name: "🏷️ Category",
-              value: opts.category,
-              inline: true,
-            },
-          ]
-        : []),
-      {
-        name: "🛒 Storefront",
-        value: `[**Instant Delivery Store →**](${storeUrl})`,
-        inline: true,
-      },
-    ],
+  const resolvedImage =
+    (opts.productImage && opts.productImage.startsWith("http") ? opts.productImage : undefined) ||
+    (opts.customLogoUrl && opts.customLogoUrl.startsWith("http") ? opts.customLogoUrl : undefined) ||
+    resolveProductImageUrl(opts.productId, opts.customLogoUrl);
+
+  const alertContent = `[${productName} - RESTOCKED](<${productUrl}>)`;
+
+  const embedDescription = [
+    `**Service:** ${productName}`,
+    `**Available stock:** ${totalStock} unit${totalStock === 1 ? "" : "s"}`,
+    `**Price:** ${priceFormatted}`,
+    `**Information:** We have recently restocked this product!`,
+  ].join("\n");
+
+  // Build clean modern Discord Restock Rich Embed with embedded product image underneath
+  const embed: Record<string, any> = {
+    title: `${productName} - RESTOCKED`,
+    url: productUrl,
+    description: embedDescription,
+    color: 0x10b981, // Vibrant Emerald
     footer: {
       text: "TrinityMart Automated Inventory • Instant Restock Alert",
       icon_url: avatarUrl,
@@ -472,7 +422,9 @@ export async function sendDiscordRestockNotification(
     timestamp: new Date().toISOString(),
   };
 
-  const alertContent = `🚀 **RESTOCK ALERT:** **${productName}** has just been restocked with **+${unitsAdded} unit${unitsAdded > 1 ? "s" : ""}**! Get yours now: ${storeUrl}`;
+  if (resolvedImage) {
+    embed.image = { url: resolvedImage };
+  }
 
   const payload = {
     username: "TrinityMart Restock Bot",
@@ -553,26 +505,66 @@ export async function sendDiscordLowStockAlert(opts: {
   productName: string;
   productId?: string;
   remainingStock: number;
+  price?: number | string;
+  productImage?: string;
+  customLogoUrl?: string;
 }): Promise<boolean> {
   const { salesWebhookUrl, restockWebhookUrl } = await getDiscordConfig();
   const webhookUrl = restockWebhookUrl || salesWebhookUrl;
 
   if (!webhookUrl) return false;
 
-  const embed = {
-    title: `⚠️ LOW STOCK WARNING: ${opts.productName}`,
-    description: `Inventory for **${opts.productName}** has dropped to **${opts.remainingStock} unit${opts.remainingStock === 1 ? "" : "s"}** remaining!\n\nPlease restock accounts in the Admin Dashboard to avoid overselling.`,
+  const appUrl = (
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "https://get-me-account.vercel.app"
+  ).replace(/\/$/, "");
+  const avatarUrl = `${appUrl}/favicon.ico`;
+  const productUrl = opts.productId
+    ? `${appUrl}/product/${opts.productId}`
+    : `${appUrl}/#products`;
+
+  const productName = opts.productName || "TrinityMart Digital Asset";
+  const rawPrice = opts.price;
+  const priceFormatted =
+    rawPrice !== undefined && rawPrice !== null && rawPrice !== ""
+      ? String(rawPrice).startsWith("₹") ||
+        String(rawPrice).startsWith("€") ||
+        String(rawPrice).startsWith("$") ||
+        String(rawPrice).startsWith("£")
+        ? String(rawPrice)
+        : `₹${rawPrice}`
+      : "Best Price";
+
+  const resolvedImage =
+    (opts.productImage && opts.productImage.startsWith("http") ? opts.productImage : undefined) ||
+    (opts.customLogoUrl && opts.customLogoUrl.startsWith("http") ? opts.customLogoUrl : undefined) ||
+    resolveProductImageUrl(opts.productId, opts.customLogoUrl);
+
+  const alertContent = `[${productName} - LOW STOCK](<${productUrl}>)`;
+
+  const embedDescription = [
+    `**Service:** ${productName}`,
+    `**Available stock:** ${opts.remainingStock} unit${opts.remainingStock === 1 ? "" : "s"}`,
+    `**Price:** ${priceFormatted}`,
+    `**Information:** Hurry! This product is almost sold out. Grab yours before keys run out!`,
+  ].join("\n");
+
+  const embed: Record<string, any> = {
+    title: `${productName} - LOW STOCK`,
+    url: productUrl,
+    description: embedDescription,
     color: 0xf59e0b, // Amber warning
-    fields: [
-      { name: "📦 Product", value: opts.productName, inline: true },
-      { name: "📉 Remaining Units", value: String(opts.remainingStock), inline: true },
-      { name: "⚙️ Action Required", value: "Restock via Admin Stock Manager", inline: false },
-    ],
     footer: {
       text: "TrinityMart Inventory Radar • Low Stock Guard",
+      icon_url: avatarUrl,
     },
     timestamp: new Date().toISOString(),
   };
+
+  if (resolvedImage) {
+    embed.image = { url: resolvedImage };
+  }
 
   try {
     const res = await postWithRetry(webhookUrl, {
@@ -580,6 +572,8 @@ export async function sendDiscordLowStockAlert(opts: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         username: "TrinityMart Stock Radar",
+        avatar_url: avatarUrl,
+        content: alertContent,
         embeds: [embed],
       }),
       signal: AbortSignal.timeout(8000),
@@ -638,6 +632,7 @@ export async function sendDiscordEmailFailureAlert(opts: {
 
 /**
  * Dispatches an automated Discord alert when a new order is registered/initiated by customer.
+ * Disabled: Alert for awaiting payment has been removed per merchant request.
  */
 export async function sendDiscordOrderInitiatedNotification(opts: {
   orderId: string;
@@ -647,48 +642,8 @@ export async function sendDiscordOrderInitiatedNotification(opts: {
   quantity?: number;
   paymentMethod?: string;
 }): Promise<boolean> {
-  const { salesWebhookUrl } = await getDiscordConfig();
-  const webhookUrl = salesWebhookUrl;
-  if (!webhookUrl) return false;
-
-  const appUrl = (
-    process.env.APP_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    readEnvLocalValue("APP_URL") ||
-    "https://get-me-account.vercel.app"
-  ).replace(/\/$/, "");
-
-  const embed = {
-    title: `🛒 Order #${opts.orderId} Initiated — Awaiting Payment`,
-    description: `A customer has registered an order for **${opts.productName || "Trinitymart Digital Asset"}**.`,
-    color: 0x06b6d4, // Cyan
-    fields: [
-      { name: "🆔 Order ID", value: `\`${opts.orderId}\``, inline: true },
-      { name: "💰 Total", value: `**₹${opts.amount}**`, inline: true },
-      { name: "💳 Method", value: (opts.paymentMethod || "UPI").toUpperCase(), inline: true },
-      { name: "👤 Customer", value: maskEmail(opts.email), inline: true },
-      { name: "📦 Quantity", value: `${opts.quantity || 1} Unit(s)`, inline: true },
-      { name: "🔍 Tracking Link", value: `[View Order Lookup](${appUrl}/orders/lookup?orderId=${opts.orderId})`, inline: false },
-    ],
-    footer: { text: "TrinityMart Order System • Live Dispatch" },
-    timestamp: new Date().toISOString(),
-  };
-
-  try {
-    const res = await postWithRetry(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username: "TrinityMart Orders",
-        embeds: [embed],
-      }),
-      signal: AbortSignal.timeout(8000),
-    });
-    return res.ok;
-  } catch (err) {
-    console.warn("[DISCORD] Order initiated alert error:", err);
-    return false;
-  }
+  // Alert for awaiting payment is disabled
+  return false;
 }
 
 

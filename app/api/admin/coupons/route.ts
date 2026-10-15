@@ -8,9 +8,11 @@ import {
 export const dynamic = "force-dynamic";
 
 function checkAdminAuth(req: NextRequest): boolean {
+  const adminPass = (process.env.ADMIN_PASSWORD || "").trim().replace(/^["']|["']$/g, "");
+  if (!adminPass) return false;
+
   const headerPwd = req.headers.get("x-admin-password");
   const authHeader = req.headers.get("authorization");
-  const adminPass = process.env.ADMIN_PASSWORD || "Ansh@24";
 
   if (headerPwd && headerPwd === adminPass) return true;
   if (authHeader) {

@@ -29,13 +29,19 @@ export async function POST(req: NextRequest) {
       req.headers.get("x-webhook-signature") ||
       req.headers.get("signature") ||
       req.headers.get("x-atlos-signature");
-    const atlosSecret =
-      process.env.ATLOS_API_SECRET || "6UCqzHHDmb5f0NbXOGCmLKFc2PVIMEYB";
+    const atlosSecret = (process.env.ATLOS_API_SECRET || "").trim();
 
     console.log("POST /api/atlos/webhook received from Atlos. Signature present:", !!signature);
 
-    // Cryptographic HMAC-SHA256 signature verification if secret is configured
-    if (signature && atlosSecret) {
+    // Cryptographic HMAC-SHA256 signature verification
+    if (atlosSecret) {
+      if (!signature) {
+        return NextResponse.json(
+          { error: "Missing cryptographic webhook signature" },
+          { status: 401 }
+        );
+      }
+
       try {
         const expected = crypto.createHmac("sha256", atlosSecret).update(rawBody).digest("hex");
         const sigBuf = Buffer.from(signature, "hex");
@@ -45,17 +51,18 @@ export async function POST(req: NextRequest) {
           sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
 
         if (!isMatch) {
-          console.warn("Invalid webhook signature from Atlos:", {
-            received: signature,
-            expected,
-          });
+          console.warn("Invalid webhook signature from Atlos");
           return NextResponse.json(
             { error: "Invalid cryptographic signature" },
             { status: 401 }
           );
         }
       } catch (sigErr) {
-        console.warn("Signature verification error (proceeding if valid JSON):", sigErr);
+        console.warn("Signature verification failed:", sigErr);
+        return NextResponse.json(
+          { error: "Cryptographic signature verification error" },
+          { status: 401 }
+        );
       }
     }
 

@@ -11,15 +11,15 @@ import { APP_CONFIG } from "@/lib/config";
 
 function checkAdmin(req: NextRequest): boolean {
   const adminPassword = (process.env.ADMIN_PASSWORD || "").trim().replace(/^["']|["']$/g, "");
+  if (!adminPassword) return false;
   const authHeader = req.headers.get("authorization");
   const bearer = authHeader?.replace(/^Bearer\s+/i, "");
   const provided = (
     req.headers.get("x-admin-password") ||
-    req.nextUrl.searchParams.get("password") ||
     bearer ||
     ""
   ).trim().replace(/^["']|["']$/g, "");
-  return (!!adminPassword && provided === adminPassword) || provided === "Ansh@24" || provided === "123";
+  return provided === adminPassword;
 }
 
 export async function POST(req: NextRequest) {
@@ -77,8 +77,11 @@ export async function POST(req: NextRequest) {
         const passedHash = body.txHash || (order?.utr?.startsWith("CRYPTO:") ? order.utr.replace(/^CRYPTO:/i, "") : order?.utr);
         if (!isPaid && passedHash && typeof passedHash === "string" && passedHash.length >= 20) {
           try {
-            const atlosSecret = process.env.ATLOS_API_SECRET || "6UCqzHHDmb5f0NbXOGCmLKFc2PVIMEYB";
-            const merchantId = process.env.ATLOS_MERCHANT_ID || "ADK7QABYR0";
+            const atlosSecret = (process.env.ATLOS_API_SECRET || "").trim();
+            const merchantId = (process.env.ATLOS_MERCHANT_ID || "").trim();
+            if (!atlosSecret) {
+              return;
+            }
             const atlosRes = await fetch("https://api.atlos.io/gateway/rest/Transaction/FindByHash", {
               method: "POST",
               headers: { "Content-Type": "application/json", ApiSecret: atlosSecret },

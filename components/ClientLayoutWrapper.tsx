@@ -4,15 +4,10 @@ import React from "react";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
+import { CartDrawer } from "@/components/CartDrawer";
 import { FloatingCartButton } from "@/components/FloatingCartButton";
+import { CheckoutModal } from "@/components/CheckoutModal";
 import { Footer } from "@/components/Footer";
-
-const CartDrawer = dynamic(() => import("@/components/CartDrawer").then((m) => m.CartDrawer), {
-  ssr: false,
-});
-const CheckoutModal = dynamic(() => import("@/components/CheckoutModal").then((m) => m.CheckoutModal), {
-  ssr: false,
-});
 
 export function ClientLayoutWrapper({
   children,

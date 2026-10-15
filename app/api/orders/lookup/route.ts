@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
         type: "email",
         query,
         count: orders.length,
-        orders: orders.map(sanitizeOrderForCustomer),
+        orders: orders.map((o) => sanitizeOrderForCustomer(o, true)),
       });
     }
 
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       type: "order",
       query,
-      order: sanitizeOrderForCustomer(order),
+      order: sanitizeOrderForCustomer(order, false),
     });
   } catch (err: any) {
     console.error("[ORDER LOOKUP ERROR]:", err);
@@ -49,9 +49,10 @@ export async function GET(req: NextRequest) {
 
 /**
  * Sanitizes order object for customer view:
- * Keeps delivery credentials if confirmed, masks sensitive admin telemetry.
+ * Keeps delivery credentials if confirmed AND accessed via specific Order ID.
+ * When searched by email alone, credentials are kept secure and can be resent to the verified mailbox.
  */
-function sanitizeOrderForCustomer(order: any) {
+function sanitizeOrderForCustomer(order: any, isEmailLookup: boolean = false) {
   return {
     orderId: order.orderId,
     email: order.email,
@@ -65,9 +66,10 @@ function sanitizeOrderForCustomer(order: any) {
     confirmedAt: order.confirmedAt,
     utr: order.utr,
     paymentMethod: order.paymentMethod,
-    // Delivered credentials (only visible to customer if confirmed/fulfilled)
+    isEmailLookup,
+    // Delivered credentials (only visible if confirmed and accessed with capability orderId)
     deliveredCredentials:
-      order.status === "confirmed"
+      !isEmailLookup && order.status === "confirmed"
         ? order.deliveredCredentials || (order.deliveredCredential ? [order.deliveredCredential] : [])
         : [],
     // Email delivery receipt status

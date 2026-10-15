@@ -122,7 +122,8 @@ export function Navbar() {
             aria-label="View Shopping Cart"
             className="relative flex items-center gap-1.5 h-8 px-3 rounded bg-[#181c24] border border-[#262a33] text-[#dfe2ee] hover:border-[#6184d8]/60 hover:bg-[#1c2028] transition-all cursor-pointer"
           >
-            <ShoppingBag className="w-4 h-4 text-[#c7c4d7]" />
+            <ShoppingBag className="w-4 h-4 text-[#8083ff]" />
+            <span className="hidden sm:inline font-mono text-xs font-semibold">Cart</span>
             {totalItems > 0 && (
               <span className="font-mono text-[10px] font-bold bg-[#6184d8] text-white px-1.5 py-0.2 rounded-full">
                 {totalItems}
@@ -153,6 +154,21 @@ export function Navbar() {
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
         <div className="lg:hidden bg-[#0f131c] border-b border-[#262a33] px-4 py-4 space-y-2 animate-in fade-in">
+          <button
+            onClick={() => {
+              setMobileMenuOpen(false);
+              setIsCartOpen(true);
+            }}
+            className="w-full text-left flex items-center justify-between px-3 py-2 rounded-lg bg-[#262a33] text-sm font-semibold text-[#dfe2ee] border border-[#31353e]"
+          >
+            <span className="flex items-center gap-2">
+              <ShoppingBag className="w-4 h-4 text-[#8083ff]" />
+              <span>View Shopping Cart</span>
+            </span>
+            <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-full bg-[#6184d8] text-white">
+              {totalItems}
+            </span>
+          </button>
           <Link
             href="/"
             onClick={() => setMobileMenuOpen(false)}

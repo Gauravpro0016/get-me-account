@@ -107,18 +107,22 @@ export async function POST(req: NextRequest) {
       Number(payload.amount || payload.data?.amount || payload.PaidAmount || payload.OrderAmount) ||
       undefined;
 
-    let isPaymentConfirmed =
-      eventName === "payment.success" ||
-      rawStatus === "success" ||
-      rawStatus === "completed" ||
-      atlosStatus === 100 ||
-      String(atlosStatus) === "100";
+    let isPaymentConfirmed = false;
+
+    if (isSignatureValid) {
+      isPaymentConfirmed =
+        eventName === "payment.success" ||
+        rawStatus === "success" ||
+        rawStatus === "completed" ||
+        atlosStatus === 100 ||
+        String(atlosStatus) === "100";
+    }
 
     // ── CRITICAL FAIL-SAFE ──
-    // If signature is missing or status is uncertain, but an orderId is provided,
-    // authoritatively verify with the gateway API directly.
-    if (!isSignatureValid && orderId) {
-      console.log(`[WEBHOOK] Checking gateway authoritatively for order ${orderId}...`);
+    // If signature is missing or invalid, but an orderId is provided,
+    // authoritatively verify with the gateway API directly before fulfilling.
+    if (!isPaymentConfirmed && orderId) {
+      console.log(`[WEBHOOK] Verifying with gateway authoritatively for order ${orderId}...`);
       if (orderId.startsWith("ORD-CR-") || orderId.startsWith("crypto_")) {
         const cryptoCheck = await checkAtlosOrderStatus(orderId);
         if (cryptoCheck.status === "success") {

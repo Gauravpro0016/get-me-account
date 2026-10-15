@@ -81,11 +81,11 @@ export async function POST(req: NextRequest) {
       let isCryptoPaid = cryptoStatus.status === "success";
       let cryptoTxid = cryptoStatus.txid;
 
-      if (!isCryptoPaid && (queryId.startsWith("0x") || queryId.length >= 64)) {
         try {
-          const atlosSecret = process.env.ATLOS_API_SECRET || "6UCqzHHDmb5f0NbXOGCmLKFc2PVIMEYB";
-          const merchantId = process.env.ATLOS_MERCHANT_ID || "ADK7QABYR0";
-          const cleanHash = queryId.replace(/^CRYPTO:/i, "").trim();
+          const atlosSecret = process.env.ATLOS_API_SECRET || "";
+          const merchantId = process.env.ATLOS_MERCHANT_ID || process.env.NEXT_PUBLIC_ATLOS_MERCHANT_ID || "";
+          if (atlosSecret) {
+            const cleanHash = queryId.replace(/^CRYPTO:/i, "").trim();
           const atlosRes = await fetch("https://api.atlos.io/gateway/rest/Transaction/FindByHash", {
             method: "POST",
             headers: { "Content-Type": "application/json", ApiSecret: atlosSecret },

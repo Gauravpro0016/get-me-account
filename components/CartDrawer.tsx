@@ -38,21 +38,22 @@ export function CartDrawer() {
   const { currency, formatPrice } = useCurrency();
 
   const [inputCode, setInputCode] = useState("");
+  const [isApplyingPromo, setIsApplyingPromo] = useState(false);
 
   if (!isCartOpen) return null;
 
-  const rawSubtotal = items.reduce(
-    (acc, curr) => acc + curr.product.price * curr.quantity,
+  const validItems = items.filter((item) => item && item.product && item.product.id);
+
+  const rawSubtotal = validItems.reduce(
+    (acc, curr) => acc + (curr.product.price || 0) * (curr.quantity || 1),
     0
   );
 
-  const hasOutOfStockItems = items.some(
+  const hasOutOfStockItems = validItems.some(
     (item) =>
       !item.product.inStock ||
       (item.product.stockCount !== undefined && item.product.stockCount <= 0)
   );
-
-  const [isApplyingPromo, setIsApplyingPromo] = useState(false);
 
   const handleApplyPromo = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,7 +100,7 @@ export function CartDrawer() {
 
           {/* Cart Items List */}
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-            {items.length === 0 ? (
+            {validItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-16 space-y-4">
                 <div className="w-20 h-20 rounded-full bg-[#1c2028] border border-[#262a33] flex items-center justify-center text-[#908fa0]">
                   <ShoppingCart className="w-10 h-10 stroke-1" />
@@ -120,7 +121,7 @@ export function CartDrawer() {
                 </button>
               </div>
             ) : (
-              items.map(({ product, quantity }) => (
+              validItems.map(({ product, quantity }) => (
                 <div
                   key={product.id}
                   className="flex items-center gap-3.5 p-3.5 rounded-xl bg-[#181c24] border border-[#262a33] hover:border-[#8083ff]/40 transition-all group"
@@ -199,7 +200,7 @@ export function CartDrawer() {
           </div>
 
           {/* Footer & Checkout Area */}
-          {items.length > 0 && (
+          {validItems.length > 0 && (
             <div className="p-6 border-t border-[#262a33] bg-[#0a0e16]/95 space-y-4">
               {/* Promo code field */}
               <form onSubmit={handleApplyPromo} className="flex gap-2">
@@ -308,3 +309,5 @@ export function CartDrawer() {
     </div>
   );
 }
+
+export default CartDrawer;

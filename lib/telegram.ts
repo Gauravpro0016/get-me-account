@@ -99,6 +99,14 @@ export async function sendTelegramMessage(text: string): Promise<boolean> {
   }
 }
 
+function escapeHtml(str: string | number | undefined | null): string {
+  if (str === undefined || str === null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 /**
  * Dispatches Telegram alert when a new order is paid and fulfilled
  */
@@ -111,24 +119,44 @@ export async function sendTelegramPurchaseNotification(opts: {
   quantity?: number;
   utr?: string;
   paymentType?: string;
+  senderName?: string;
+  cartItems?: Array<{ productName?: string; productId?: string; quantity?: number; price?: number }>;
 }): Promise<boolean> {
   const config = await getTelegramConfig();
   if (!config.notifyOnSale) return false;
 
-  const maskedEmail = opts.email.includes("@")
-    ? opts.email.slice(0, 2) + "***@" + opts.email.split("@")[1]
-    : opts.email;
-  const paymentBadge = opts.paymentType === "Crypto" ? "🪙 Crypto (Atlos)" : "💳 UPI (Instant)";
-  const usdText = opts.usdAmount ? ` (~$${opts.usdAmount} USD)` : "";
-  const utrText = opts.utr ? `<code>${opts.utr}</code>` : "<i>Confirmed</i>";
+  const rawEmail = opts.email || "";
+  const rawUsername =
+    opts.senderName?.trim() ||
+    (rawEmail ? rawEmail.split("@")[0] : "Customer");
+  const maskedEmail = rawEmail.includes("@")
+    ? rawEmail.slice(0, 2) + "***@" + rawEmail.split("@")[1]
+    : rawEmail;
+
+  const isCrypto = (opts.paymentType || "").toLowerCase().includes("crypto");
+  const paymentMethodSimple = isCrypto ? "Crypto" : "UPI";
+  const paymentBadge = isCrypto ? "🪙 Crypto (Atlos)" : "💳 UPI (Instant)";
+  const usdText = opts.usdAmount ? ` (~$${escapeHtml(opts.usdAmount)} USD)` : "";
+  const utrText = opts.utr ? `<code>${escapeHtml(opts.utr)}</code>` : "<i>Confirmed</i>";
+  const qty = Math.max(1, opts.quantity || 1);
+  const productName = opts.productName || "TrinityMart Digital Asset";
+  const itemsDetail =
+    Array.isArray(opts.cartItems) && opts.cartItems.length > 0
+      ? opts.cartItems
+          .map((ci) => ci.productName || ci.productId)
+          .filter(Boolean)
+          .join(", ")
+      : productName;
+
+  const saleLine = `🎉 <b>${escapeHtml(rawUsername)}</b> have just purchased <b>${qty}x ${escapeHtml(productName)}</b> (${escapeHtml(itemsDetail)}) using <b>${paymentMethodSimple}</b>. Thank you for trusting TRINITYMART! 🚀`;
 
   const msg = [
-    `💰 <b>NEW ORDER PAID &amp; FULFILLED!</b>`,
+    saleLine,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `🆔 <b>Order ID:</b> <code>#${opts.orderId}</code>`,
-    `📦 <b>Product:</b> <b>${opts.productName || "TrinityMart Digital Asset"}</b> (x${opts.quantity || 1})`,
-    `💵 <b>Amount:</b> <b>₹${opts.amount}</b>${usdText}`,
-    `👤 <b>Customer:</b> <code>${maskedEmail}</code>`,
+    `🆔 <b>Order ID:</b> <code>#${escapeHtml(opts.orderId)}</code>`,
+    `📦 <b>Product:</b> <b>${escapeHtml(productName)}</b> (x${qty})`,
+    `💵 <b>Amount:</b> <b>₹${escapeHtml(opts.amount)}</b>${usdText}`,
+    `👤 <b>Customer:</b> <code>${escapeHtml(maskedEmail)}</code>`,
     `💳 <b>Payment:</b> ${paymentBadge}`,
     `🏦 <b>Tx / UTR:</b> ${utrText}`,
     `⚡ <b>Status:</b> Auto-Fulfilled &amp; Emailed`,
@@ -142,23 +170,96 @@ export async function sendTelegramPurchaseNotification(opts: {
 /**
  * Dispatches Telegram alert when product stock reaches critical low threshold
  */
+export async function sendTelegramRestockNotification(opts: {
+  productName: string;
+  productId?: string;
+  unitsAdded: number;
+  totalStock?: number;
+  price?: number | string;
+  productImage?: string;
+}): Promise<boolean> {
+  const config = await getTelegramConfig();
+  if (!config.notifyOnSale && !config.notifyOnLowStock) return false;
+
+  const appUrl = (
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "https://get-me-account.vercel.app"
+  ).replace(/\/$/, "");
+  const productUrl = opts.productId
+    ? `${appUrl}/product/${opts.productId}`
+    : `${appUrl}/#products`;
+
+  const productName = opts.productName || "TrinityMart Digital Asset";
+  const totalStock = opts.totalStock ?? opts.unitsAdded;
+  const rawPrice = opts.price;
+  const priceFormatted =
+    rawPrice !== undefined && rawPrice !== null && rawPrice !== ""
+      ? String(rawPrice).startsWith("₹") ||
+        String(rawPrice).startsWith("€") ||
+        String(rawPrice).startsWith("$") ||
+        String(rawPrice).startsWith("£")
+        ? String(rawPrice)
+        : `₹${rawPrice}`
+      : "₹499";
+
+  const msg = [
+    `<a href="${productUrl}"><b>[${escapeHtml(productName)} - RESTOCKED]</b></a>`,
+    ``,
+    `<b>Service:</b> ${escapeHtml(productName)}`,
+    `<b>Available stock:</b> ${escapeHtml(totalStock)} unit${totalStock === 1 ? "" : "s"}`,
+    `<b>Price:</b> ${escapeHtml(priceFormatted)}`,
+    `<b>Information:</b> We have recently restocked this product!`,
+    ``,
+    `<a href="${productUrl}">👉 <b>Buy Now on TrinityMart</b></a>`,
+  ].join("\n");
+
+  return sendTelegramMessage(msg);
+}
+
+/**
+ * Dispatches Telegram alert when product stock reaches critical low threshold
+ */
 export async function sendTelegramLowStockAlert(opts: {
   productName: string;
   productId?: string;
   remainingStock: number;
+  price?: number | string;
+  productImage?: string;
 }): Promise<boolean> {
   const config = await getTelegramConfig();
   if (!config.notifyOnLowStock) return false;
 
+  const appUrl = (
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "https://get-me-account.vercel.app"
+  ).replace(/\/$/, "");
+  const productUrl = opts.productId
+    ? `${appUrl}/product/${opts.productId}`
+    : `${appUrl}/#products`;
+
+  const productName = opts.productName || "TrinityMart Digital Asset";
+  const rawPrice = opts.price;
+  const priceFormatted =
+    rawPrice !== undefined && rawPrice !== null && rawPrice !== ""
+      ? String(rawPrice).startsWith("₹") ||
+        String(rawPrice).startsWith("€") ||
+        String(rawPrice).startsWith("$") ||
+        String(rawPrice).startsWith("£")
+        ? String(rawPrice)
+        : `₹${rawPrice}`
+      : "Best Price";
+
   const msg = [
-    `⚠️ <b>LOW STOCK WARNING!</b>`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `📦 <b>Product:</b> <b>${opts.productName}</b>`,
-    `📉 <b>Remaining Stock:</b> <b>${opts.remainingStock} unit${opts.remainingStock === 1 ? "" : "s"}</b>`,
-    `🚨 Inventory is below threshold (${config.lowStockThreshold}).`,
-    `👉 Log in to the Admin Dashboard to restock accounts.`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `🕒 <i>${new Date().toLocaleTimeString()} • Inventory Radar</i>`,
+    `<a href="${productUrl}"><b>[${escapeHtml(productName)} - LOW STOCK]</b></a>`,
+    ``,
+    `<b>Service:</b> ${escapeHtml(productName)}`,
+    `<b>Available stock:</b> ${escapeHtml(opts.remainingStock)} unit${opts.remainingStock === 1 ? "" : "s"}`,
+    `<b>Price:</b> ${escapeHtml(priceFormatted)}`,
+    `<b>Information:</b> Hurry! This product is almost sold out. Grab yours before keys run out!`,
+    ``,
+    `<a href="${productUrl}">👉 <b>Claim Last Units on TrinityMart</b></a>`,
   ].join("\n");
 
   return sendTelegramMessage(msg);
@@ -178,9 +279,9 @@ export async function sendTelegramEmailFailureAlert(opts: {
   const msg = [
     `🚨 <b>EMAIL DELIVERY FAILED!</b>`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `🆔 <b>Order ID:</b> <code>#${opts.orderId}</code>`,
-    `👤 <b>Customer:</b> <code>${opts.email}</code>`,
-    `❌ <b>Error:</b> <i>${opts.error}</i>`,
+    `🆔 <b>Order ID:</b> <code>#${escapeHtml(opts.orderId)}</code>`,
+    `👤 <b>Customer:</b> <code>${escapeHtml(opts.email)}</code>`,
+    `❌ <b>Error:</b> <i>${escapeHtml(opts.error)}</i>`,
     `⚠️ Please inspect in Admin -> Order Audit and resend manually.`,
     `━━━━━━━━━━━━━━━━━━━━`,
     `🕒 <i>${new Date().toLocaleTimeString()} • SMTP Monitor</i>`,

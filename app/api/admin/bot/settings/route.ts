@@ -70,12 +70,13 @@ export async function POST(req: NextRequest) {
       const ok = await sendDiscordPurchaseNotification({
         orderId: `TEST-${Math.floor(1000 + Math.random() * 9000)}`,
         email: "customer-test@example.com",
+        senderName: "Surya",
         amount: 149,
         usdAmount: "1.78",
-        productName: "Discord Nitro 3-Month (TEST VOUCH)",
+        productName: "Minecraft Account [LIFETIME]",
         quantity: 1,
         utr: "TEST_TX_99881122",
-        paymentType: "UPI",
+        paymentType: "Crypto",
         deliveredCount: 1,
         credentialsDelivered: true,
       });
@@ -109,11 +110,15 @@ export async function POST(req: NextRequest) {
       await Promise.allSettled([
         sendTelegramLowStockAlert({
           productName: "Discord Nitro Booster (TEST)",
+          productId: "discord-nitro",
           remainingStock: 2,
+          price: 149,
         }),
         sendDiscordLowStockAlert({
           productName: "Discord Nitro Booster (TEST)",
+          productId: "discord-nitro",
           remainingStock: 2,
+          price: 149,
         }),
       ]);
       return NextResponse.json({ success: true, message: "Test low-stock alert dispatched to Telegram & Discord!" });

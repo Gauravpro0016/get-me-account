@@ -145,7 +145,7 @@ async function handleOrderConfirmation(orderId: string, emailParam?: string, met
     return NextResponse.json({ status: "pending" });
   } catch (err: any) {
     console.error("handleOrderConfirmation error:", err);
-    return NextResponse.json({ error: err?.message || "Internal server error", stack: err?.stack }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error during payment verification" }, { status: 500 });
   }
 }
 
@@ -181,6 +181,6 @@ export async function GET(req: NextRequest) {
     return handleOrderConfirmation(orderId, email, method);
   } catch (err: any) {
     console.error("GET /api/confirm-payment error:", err);
-    return NextResponse.json({ error: err?.message || "Internal server error", stack: err?.stack }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error during payment verification" }, { status: 500 });
   }
 }

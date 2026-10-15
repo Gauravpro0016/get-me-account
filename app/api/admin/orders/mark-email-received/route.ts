@@ -3,15 +3,15 @@ import { manuallySetEmailStatus } from "@/lib/fulfillment";
 
 function checkAdmin(req: NextRequest): boolean {
   const adminPassword = (process.env.ADMIN_PASSWORD || "").trim().replace(/^["']|["']$/g, "");
+  if (!adminPassword) return false;
   const authHeader = req.headers.get("authorization");
   const bearer = authHeader?.replace(/^Bearer\s+/i, "");
   const provided = (
     req.headers.get("x-admin-password") ||
-    req.nextUrl.searchParams.get("password") ||
     bearer ||
     ""
   ).trim().replace(/^["']|["']$/g, "");
-  return (!!adminPassword && provided === adminPassword) || provided === "Ansh@24" || provided === "123";
+  return provided === adminPassword;
 }
 
 export async function POST(req: NextRequest) {

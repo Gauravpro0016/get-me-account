@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Plus,
   Trash2,
@@ -119,6 +119,8 @@ export function parseBulkCredentialLine(line: string): Record<string, string> {
     parts = trimmed.split("\t");
   } else if (trimmed.includes(" : ")) {
     parts = trimmed.split(" : ");
+  } else if (trimmed.includes(";")) {
+    parts = trimmed.split(";");
   } else if (trimmed.includes(":")) {
     parts = trimmed.split(":");
   } else if (trimmed.includes(",")) {
@@ -131,14 +133,33 @@ export function parseBulkCredentialLine(line: string): Record<string, string> {
   if (cleaned.length >= 2) {
     const item: Record<string, string> = {
       id: cleaned[0],
+      email: cleaned[0].includes("@") ? cleaned[0] : "",
       password: cleaned[1],
     };
-    if (cleaned[2]) item.token = cleaned[2];
-    if (cleaned[3]) item.pin = cleaned[3];
+    if (cleaned[2]) {
+      item.token = cleaned[2];
+      item.key = cleaned[2];
+    }
+    if (cleaned[3]) {
+      item.pin = cleaned[3];
+      item.twoFactorKey = cleaned[3];
+    }
+    if (cleaned[4]) {
+      item.twoFactorKey = cleaned[4];
+      item.pin = cleaned[4];
+    }
+    if (cleaned[5]) {
+      item.notes = cleaned.slice(5).join(" | ");
+    }
     return item;
-  } else {
-    return { token: trimmed };
+  } else if (cleaned.length === 1) {
+    const single = cleaned[0];
+    if (single.includes("@")) {
+      return { id: single, email: single };
+    }
+    return { token: single, id: single };
   }
+  return {};
 }
 
 interface AdminProductsManagerProps {
@@ -177,6 +198,10 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
   // Bulk Add form in Stock Manager
   const [stockBulkMode, setStockBulkMode] = useState(false);
   const [stockBulkText, setStockBulkText] = useState("");
+  const [stockBulkDedup, setStockBulkDedup] = useState(true);
+  const [stockBulkError, setStockBulkError] = useState("");
+  const [stockBulkPreviewExpanded, setStockBulkPreviewExpanded] = useState(true);
+  const [showBulkPasswords, setShowBulkPasswords] = useState(false);
 
   // Edit Product Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -254,6 +279,10 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
   const [stockInputPin, setStockInputPin] = useState("");
   const [bulkStockText, setBulkStockText] = useState("");
   const [bulkMode, setBulkMode] = useState(false);
+  const [createBulkDedup, setCreateBulkDedup] = useState(true);
+  const [createBulkError, setCreateBulkError] = useState("");
+  const [createBulkPreviewExpanded, setCreateBulkPreviewExpanded] = useState(true);
+  const [showCreateBulkPasswords, setShowCreateBulkPasswords] = useState(false);
 
   // Status message
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -331,6 +360,224 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
     loadProducts();
   }, [loadProducts]);
 
+  // Quick format sample injector
+  const handleInsertSample = (type: "userpass" | "userpass2fa" | "keys" | "tab", target: "stock" | "create") => {
+    let sample = "";
+    if (type === "userpass") {
+      sample = [
+        "john_gamer_01:P@ssw0rd99",
+        "sarah_pro_user:Secur3Pass#12",
+        "alex_elite_acc:ThunderPass991",
+        "crypto_vault_user:CryptoVault!4",
+      ].join("\n");
+    } else if (type === "userpass2fa") {
+      sample = [
+        "netflix_fan1@gmail.com:Pass#7890:4921",
+        "netflix_fan2@gmail.com:Pass#1234:8812",
+        "spotify_user3@outlook.com:StreamMusic2026:3349",
+      ].join("\n");
+    } else if (type === "keys") {
+      sample = [
+        "STEAM-XXXXX-YYYYY-ZZZZ1",
+        "STEAM-XXXXX-YYYYY-ZZZZ2",
+        "STEAM-XXXXX-YYYYY-ZZZZ3",
+      ].join("\n");
+    } else if (type === "tab") {
+      sample = [
+        "valorant_pro1\tViperPass#2026\tVALO-KEY-881",
+        "valorant_pro2\tJettSpeed#992\tVALO-KEY-882",
+      ].join("\n");
+    }
+
+    if (target === "stock") {
+      setStockBulkText(sample);
+      setStockBulkError("");
+    } else {
+      setBulkStockText(sample);
+      setCreateBulkError("");
+    }
+  };
+
+  // Real-time parsed items & preview for Stock Manager Bulk Paste
+  const stockBulkParsed = useMemo(() => {
+    if (!stockBulkText.trim()) {
+      return { totalLines: 0, items: [], validCount: 0, duplicateCount: 0, emptyCount: 0, invalidCount: 0, preview: [] };
+    }
+    const lines = stockBulkText.split("\n");
+    const seenBatchKeys = new Set<string>();
+
+    const existingDbKeys = new Set<string>();
+    if (targetProduct && Array.isArray(targetProduct.inventory)) {
+      for (const item of targetProduct.inventory) {
+        if (item.id) existingDbKeys.add(item.id.toLowerCase());
+        const f = item.fields || {};
+        if (f.id) existingDbKeys.add(String(f.id).toLowerCase());
+        if (f.email) existingDbKeys.add(String(f.email).toLowerCase());
+        if (f.token) existingDbKeys.add(String(f.token).toLowerCase());
+        if (f.key) existingDbKeys.add(String(f.key).toLowerCase());
+      }
+    }
+
+    const items: Record<string, string>[] = [];
+    const preview: {
+      lineNum: number;
+      raw: string;
+      item: Record<string, string>;
+      isDuplicateInBatch: boolean;
+      existsInDb: boolean;
+      isValid: boolean;
+    }[] = [];
+
+    let duplicateCount = 0;
+    let emptyCount = 0;
+    let invalidCount = 0;
+
+    lines.forEach((rawLine, idx) => {
+      const lineNum = idx + 1;
+      const trimmed = rawLine.trim();
+      if (!trimmed) {
+        emptyCount++;
+        return;
+      }
+      const item = parseBulkCredentialLine(trimmed);
+      const isValid = Object.keys(item).length > 0;
+      if (!isValid) {
+        invalidCount++;
+        preview.push({
+          lineNum,
+          raw: trimmed,
+          item: {},
+          isDuplicateInBatch: false,
+          existsInDb: false,
+          isValid: false,
+        });
+        return;
+      }
+
+      const uniqueKey = (item.id || item.email || item.token || item.key || JSON.stringify(item)).toLowerCase();
+      const isDuplicateInBatch = seenBatchKeys.has(uniqueKey);
+      const existsInDb = existingDbKeys.has(uniqueKey);
+
+      if (isDuplicateInBatch || existsInDb) {
+        duplicateCount++;
+      } else {
+        seenBatchKeys.add(uniqueKey);
+      }
+
+      const shouldInclude = !stockBulkDedup || (!isDuplicateInBatch && !existsInDb);
+      if (shouldInclude) {
+        items.push(item);
+      }
+
+      preview.push({
+        lineNum,
+        raw: trimmed,
+        item,
+        isDuplicateInBatch,
+        existsInDb,
+        isValid: true,
+      });
+    });
+
+    return {
+      totalLines: lines.length,
+      items,
+      validCount: items.length,
+      duplicateCount,
+      emptyCount,
+      invalidCount,
+      preview,
+    };
+  }, [stockBulkText, stockBulkDedup, targetProduct]);
+
+  // Real-time parsed items & preview for Add Product Bulk Paste
+  const createBulkParsed = useMemo(() => {
+    if (!bulkStockText.trim()) {
+      return { totalLines: 0, items: [], validCount: 0, duplicateCount: 0, emptyCount: 0, invalidCount: 0, preview: [] };
+    }
+    const lines = bulkStockText.split("\n");
+    const seenBatchKeys = new Set<string>();
+
+    const existingListKeys = new Set<string>();
+    for (const inv of inventoryList) {
+      if (inv.id) existingListKeys.add(inv.id.toLowerCase());
+      if (inv.email) existingListKeys.add(inv.email.toLowerCase());
+      if (inv.token) existingListKeys.add(inv.token.toLowerCase());
+      if (inv.key) existingListKeys.add(inv.key.toLowerCase());
+    }
+
+    const items: Record<string, string>[] = [];
+    const preview: {
+      lineNum: number;
+      raw: string;
+      item: Record<string, string>;
+      isDuplicateInBatch: boolean;
+      existsInList: boolean;
+      isValid: boolean;
+    }[] = [];
+
+    let duplicateCount = 0;
+    let emptyCount = 0;
+    let invalidCount = 0;
+
+    lines.forEach((rawLine, idx) => {
+      const lineNum = idx + 1;
+      const trimmed = rawLine.trim();
+      if (!trimmed) {
+        emptyCount++;
+        return;
+      }
+      const item = parseBulkCredentialLine(trimmed);
+      const isValid = Object.keys(item).length > 0;
+      if (!isValid) {
+        invalidCount++;
+        preview.push({
+          lineNum,
+          raw: trimmed,
+          item: {},
+          isDuplicateInBatch: false,
+          existsInList: false,
+          isValid: false,
+        });
+        return;
+      }
+
+      const uniqueKey = (item.id || item.email || item.token || item.key || JSON.stringify(item)).toLowerCase();
+      const isDuplicateInBatch = seenBatchKeys.has(uniqueKey);
+      const existsInList = existingListKeys.has(uniqueKey);
+
+      if (isDuplicateInBatch || existsInList) {
+        duplicateCount++;
+      } else {
+        seenBatchKeys.add(uniqueKey);
+      }
+
+      const shouldInclude = !createBulkDedup || (!isDuplicateInBatch && !existsInList);
+      if (shouldInclude) {
+        items.push(item);
+      }
+
+      preview.push({
+        lineNum,
+        raw: trimmed,
+        item,
+        isDuplicateInBatch,
+        existsInList,
+        isValid: true,
+      });
+    });
+
+    return {
+      totalLines: lines.length,
+      items,
+      validCount: items.length,
+      duplicateCount,
+      emptyCount,
+      invalidCount,
+      preview,
+    };
+  }, [bulkStockText, createBulkDedup, inventoryList]);
+
   // Handle adding a single stock credential to the pending list
   const handleAddStockItem = (e: React.FormEvent) => {
     e.preventDefault();
@@ -363,20 +610,29 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
 
   // Parse bulk text (e.g. user:pass:key, user|pass, user----pass, etc.)
   const handleParseBulk = () => {
-    if (!bulkStockText.trim()) return;
-    const lines = bulkStockText.split("\n").map((l) => l.trim()).filter(Boolean);
-    const parsed: Record<string, string>[] = [];
-
-    for (const line of lines) {
-      const item = parseBulkCredentialLine(line);
-      if (Object.keys(item).length > 0) {
-        parsed.push(item);
-      }
+    setCreateBulkError("");
+    if (!bulkStockText.trim()) {
+      setCreateBulkError("Please paste credential lines into the box before parsing.");
+      return;
+    }
+    if (createBulkParsed.items.length === 0) {
+      setCreateBulkError(
+        createBulkParsed.duplicateCount > 0
+          ? "All accounts were detected as duplicates. Uncheck 'Auto-Dedup' if you want to allow duplicates."
+          : "No valid credentials found. Please verify your formatting."
+      );
+      return;
     }
 
-    setInventoryList((prev) => [...prev, ...parsed]);
+    setInventoryList((prev) => [...prev, ...createBulkParsed.items]);
+    setStatusMsg({
+      type: "success",
+      text: `✅ Added ${createBulkParsed.items.length} credential(s) to the initial inventory queue!`,
+    });
     setBulkStockText("");
     setBulkMode(false);
+    setCreateBulkError("");
+
   };
 
   // Submit New Product
@@ -666,6 +922,10 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
     setShowSinglePass(false);
     setStockBulkText("");
     setStockBulkMode(false);
+    setStockBulkDedup(true);
+    setStockBulkError("");
+    setStockBulkPreviewExpanded(true);
+    setShowBulkPasswords(false);
 
     // Extract custom options defined on target product
     const existingCustom = (prod.customFields || [])
@@ -769,21 +1029,24 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
   const handleSaveStockToDatabase = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetProduct) return;
+    setStockBulkError("");
 
-    const itemsToAdd: Record<string, string>[] = [];
+    let itemsToAdd: Record<string, string>[] = [];
 
     if (stockBulkMode) {
       if (!stockBulkText.trim()) {
-        alert("Please paste credentials lines (e.g. username:password)");
+        setStockBulkError("Please paste account credentials into the bulk text area.");
         return;
       }
-      const lines = stockBulkText.split("\n").map((l) => l.trim()).filter(Boolean);
-      for (const line of lines) {
-        const item = parseBulkCredentialLine(line);
-        if (Object.keys(item).length > 0) {
-          itemsToAdd.push(item);
-        }
+      if (stockBulkParsed.items.length === 0) {
+        setStockBulkError(
+          stockBulkParsed.duplicateCount > 0
+            ? "All entered accounts are duplicates or already exist in the database! Disable 'Auto-Dedup' if you want to force add them."
+            : "No valid credentials found. Please check your formatting."
+        );
+        return;
       }
+      itemsToAdd = stockBulkParsed.items;
     } else {
       const item: Record<string, string> = {};
       if (singleStockId.trim()) item.id = singleStockId.trim();
@@ -799,7 +1062,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
       }
 
       if (Object.keys(item).length === 0) {
-        alert("Please provide at least one credential or custom option field!");
+        setStockBulkError("Please provide at least one credential or custom option field!");
         return;
       }
       itemsToAdd.push(item);
@@ -863,11 +1126,16 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
       setSingleStockCustomValues({});
       setStockBulkText("");
       setStockBulkMode(false);
+      setStockBulkError("");
 
       // Automatically switch to "view" tab to see newly added credentials
       setStockModalTab("view");
     } catch (err: any) {
-      alert(err.message || "Failed to update stock");
+      setStockBulkError(err.message || "Failed to update stock");
+      setStatusMsg({
+        type: "error",
+        text: err.message || "Failed to update stock",
+      });
     } finally {
       setAddingStock(false);
     }
@@ -1710,20 +1978,195 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 </div>
 
                 {bulkMode ? (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
+                    {/* Header with Quick Presets & Controls */}
+                    <div className="p-3 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono text-xs font-bold text-[#dfe2ee] flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-[#8083ff]" />
+                          <span>Initial Stock Bulk Ingestion</span>
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCreateBulkDedup(!createBulkDedup);
+                              setCreateBulkError("");
+                            }}
+                            className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                              createBulkDedup
+                                ? "bg-emerald-500/15 border-emerald-500/35 text-emerald-300"
+                                : "bg-[#181c24] border-[#262a33] text-[#908fa0] hover:text-[#dfe2ee]"
+                            }`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${createBulkDedup ? "bg-emerald-400 animate-pulse" : "bg-[#908fa0]"}`} />
+                            <span>{createBulkDedup ? "Auto-Dedup: ON" : "Auto-Dedup: OFF"}</span>
+                          </button>
+                          {bulkStockText && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBulkStockText("");
+                                setCreateBulkError("");
+                              }}
+                              className="px-2 py-0.5 rounded-lg text-[10px] font-mono bg-[#181c24] hover:bg-rose-950/40 text-[#908fa0] hover:text-rose-300 border border-[#262a33] transition-all cursor-pointer"
+                            >
+                              ✕ Clear
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Quick Sample Format Buttons */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-[#1e222b]">
+                        <span className="text-[10px] font-mono text-[#908fa0] mr-1">Presets:</span>
+                        <button
+                          type="button"
+                          onClick={() => handleInsertSample("userpass", "create")}
+                          className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-[#181c24] hover:bg-[#8083ff]/20 text-[#c7c4d7] hover:text-[#8083ff] border border-[#262a33] transition-colors cursor-pointer"
+                        >
+                          + user:pass
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInsertSample("userpass2fa", "create")}
+                          className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-[#181c24] hover:bg-[#8083ff]/20 text-[#c7c4d7] hover:text-[#8083ff] border border-[#262a33] transition-colors cursor-pointer"
+                        >
+                          + user:pass:2fa
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInsertSample("keys", "create")}
+                          className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-[#181c24] hover:bg-[#8083ff]/20 text-[#c7c4d7] hover:text-[#8083ff] border border-[#262a33] transition-colors cursor-pointer"
+                        >
+                          + License Keys
+                        </button>
+                      </div>
+                    </div>
+
                     <textarea
-                      rows={4}
-                      placeholder="Paste credentials line by line:&#10;username1:pass1&#10;username2:pass2"
+                      rows={5}
+                      placeholder={`Paste credentials lines here (one per line). Supported: user:pass, user:pass:token, user|pass, keys`}
                       value={bulkStockText}
-                      onChange={(e) => setBulkStockText(e.target.value)}
-                      className="w-full px-3 py-2 text-xs rounded-xl bg-[#0f131c] border border-[#262a33] text-[#dfe2ee] font-mono placeholder-[#908fa0]/60 resize-none focus:outline-none focus:border-[#8083ff]"
+                      onChange={(e) => {
+                        setBulkStockText(e.target.value);
+                        if (createBulkError) setCreateBulkError("");
+                      }}
+                      className="w-full px-3 py-2 text-xs rounded-xl bg-[#090d14] border border-[#262a33] text-[#dfe2ee] font-mono placeholder-[#908fa0]/50 focus:outline-none focus:border-[#8083ff] resize-y leading-relaxed"
                     />
+
+                    {/* Summary Badges & Live Preview Toggle */}
+                    {bulkStockText.trim() && (
+                      <div className="p-2.5 rounded-xl bg-[#10141d] border border-[#262a33] flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] text-[#908fa0]">
+                            Lines: <strong className="text-[#dfe2ee]">{createBulkParsed.totalLines}</strong>
+                          </span>
+                          <span className="text-[#262a33]">|</span>
+                          <span className="text-[11px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                            <strong>{createBulkParsed.validCount}</strong> valid accounts
+                          </span>
+                          {createBulkParsed.duplicateCount > 0 && (
+                            <span className="text-[11px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/25">
+                              <strong>{createBulkParsed.duplicateCount}</strong> duplicates {createBulkDedup ? "skipped" : "detected"}
+                            </span>
+                          )}
+                        </div>
+
+                        {createBulkParsed.preview.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setCreateBulkPreviewExpanded(!createBulkPreviewExpanded)}
+                            className="text-[11px] text-[#8083ff] hover:text-[#9fa1ff] font-bold cursor-pointer underline flex items-center gap-1"
+                          >
+                            <span>{createBulkPreviewExpanded ? "Hide Preview" : "Show Preview"}</span>
+                            <span>{createBulkPreviewExpanded ? "▲" : "▼"}</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Live Preview List */}
+                    {bulkStockText.trim() && createBulkPreviewExpanded && createBulkParsed.preview.length > 0 && (
+                      <div className="p-2.5 rounded-xl bg-[#090d14] border border-[#262a33] space-y-1.5 max-h-48 overflow-y-auto">
+                        <div className="flex items-center justify-between pb-1 text-[10px] font-mono text-[#908fa0] border-b border-[#1e222b]">
+                          <span>Previewing Parsed Accounts</span>
+                          <button
+                            type="button"
+                            onClick={() => setShowCreateBulkPasswords(!showCreateBulkPasswords)}
+                            className="text-[#8083ff] hover:underline cursor-pointer"
+                          >
+                            {showCreateBulkPasswords ? "Hide Passwords" : "Show Passwords"}
+                          </button>
+                        </div>
+                        {createBulkParsed.preview.map((p, idx) => {
+                          const isSkipped = createBulkDedup && (p.isDuplicateInBatch || p.existsInList);
+                          return (
+                            <div
+                              key={idx}
+                              className={`p-1.5 rounded-lg text-xs font-mono flex items-center justify-between gap-2 border ${
+                                !p.isValid
+                                  ? "bg-rose-950/20 border-rose-500/30 text-rose-300"
+                                  : isSkipped
+                                  ? "bg-amber-950/20 border-amber-500/30 text-amber-200/80 opacity-70"
+                                  : "bg-[#10141d] border-[#262a33] text-[#dfe2ee]"
+                              }`}
+                            >
+                              <span className="text-[10px] text-[#908fa0] w-6 shrink-0">#{p.lineNum}</span>
+                              <span className="truncate flex-1 min-w-0 text-[11px]">
+                                {p.isValid ? (
+                                  <>
+                                    <strong className="text-white">{p.item.id || p.item.email || "—"}</strong>
+                                    {p.item.password && (
+                                      <span className="text-[#908fa0] ml-2">
+                                        pass: {showCreateBulkPasswords ? p.item.password : "••••••••"}
+                                      </span>
+                                    )}
+                                    {p.item.token && <span className="text-[#8083ff] ml-2">key: {p.item.token}</span>}
+                                  </>
+                                ) : (
+                                  <span className="text-rose-300">Invalid: {p.raw}</span>
+                                )}
+                              </span>
+                              <span className="text-[10px] font-bold shrink-0">
+                                {!p.isValid ? (
+                                  <span className="text-rose-400">Invalid</span>
+                                ) : isSkipped ? (
+                                  <span className="text-amber-400">Duplicate</span>
+                                ) : (
+                                  <span className="text-emerald-400">Ready</span>
+                                )}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Inline Error */}
+                    {createBulkError && (
+                      <div className="p-2.5 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs flex items-center justify-between gap-2 font-mono">
+                        <div className="flex items-center gap-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                          <span>{createBulkError}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setCreateBulkError("")}
+                          className="text-rose-400 hover:text-white px-1 cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
+
                     <button
                       type="button"
                       onClick={handleParseBulk}
-                      className="px-4 py-2 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white text-xs font-bold transition-all cursor-pointer"
+                      disabled={createBulkParsed.validCount === 0}
+                      className="w-full py-2.5 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white text-xs font-bold transition-all cursor-pointer disabled:opacity-50 font-mono shadow-md shadow-[#8083ff]/20"
                     >
-                      Parse and Add Lines
+                      ⚡ Parse &amp; Queue {createBulkParsed.validCount} Accounts
                     </button>
                   </div>
                 ) : (
@@ -2338,30 +2781,258 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 </div>
 
                 {stockBulkMode ? (
-                  /* Bulk Paste Mode */
-                  <div className="space-y-2">
-                    <label className="block font-mono text-xs font-bold text-[#c7c4d7]">
-                      Paste Account Credentials (one per line)
-                    </label>
-                    <p className="text-[11px] text-[#908fa0]">
-                      Accepted format: <code className="text-[#8083ff] font-mono">username:password</code> or{" "}
-                      <code className="text-[#8083ff] font-mono">username:password:licenseKey</code> or{" "}
-                      <code className="text-[#8083ff] font-mono">licenseKeyCode</code>
-                    </p>
-                    <textarea
-                      rows={6}
-                      placeholder={`steam_user_01:Pass1234\nsteam_user_02:Pass5678\nnetflix_user1@gmail.com:Pass9999`}
-                      value={stockBulkText}
-                      onChange={(e) => setStockBulkText(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f131c] border border-[#262a33] text-xs text-[#dfe2ee] font-mono placeholder-[#908fa0]/60 focus:outline-none focus:border-[#8083ff] resize-none leading-relaxed"
-                    />
-                    <div className="text-[11px] text-[#908fa0] font-mono">
-                      Lines detected:{" "}
-                      <span className="font-bold text-[#8083ff]">
-                        {stockBulkText.split("\n").map((l) => l.trim()).filter(Boolean).length}
-                      </span>{" "}
-                      accounts ready to add.
+                  /* Redesigned Bulk Paste Mode */
+                  <div className="space-y-3">
+                    {/* Header with Quick Presets & Controls */}
+                    <div className="p-3.5 rounded-xl bg-[#0f131c] border border-[#262a33] space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label className="font-mono text-xs font-bold text-[#dfe2ee] flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-[#8083ff]" />
+                          <span>Bulk Credential Paste Engine</span>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStockBulkDedup(!stockBulkDedup);
+                              setStockBulkError("");
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                              stockBulkDedup
+                                ? "bg-emerald-500/15 border-emerald-500/35 text-emerald-300"
+                                : "bg-[#181c24] border-[#262a33] text-[#908fa0] hover:text-[#dfe2ee]"
+                            }`}
+                            title="When enabled, duplicates within pasted lines or accounts already in database will be filtered out automatically"
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${stockBulkDedup ? "bg-emerald-400 animate-pulse" : "bg-[#908fa0]"}`} />
+                            <span>{stockBulkDedup ? "Auto-Dedup: ON" : "Auto-Dedup: OFF"}</span>
+                          </button>
+                          {stockBulkText && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStockBulkText("");
+                                setStockBulkError("");
+                              }}
+                              className="px-2 py-1 rounded-lg text-[10px] font-mono font-semibold bg-[#181c24] hover:bg-rose-950/40 text-[#908fa0] hover:text-rose-300 border border-[#262a33] hover:border-rose-500/30 transition-all cursor-pointer"
+                              title="Clear all pasted text"
+                            >
+                              ✕ Clear
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Quick Sample Format Buttons */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-[#1e222b]">
+                        <span className="text-[10px] font-mono text-[#908fa0] mr-1">Quick Presets:</span>
+                        <button
+                          type="button"
+                          onClick={() => handleInsertSample("userpass", "stock")}
+                          className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-[#181c24] hover:bg-[#8083ff]/20 text-[#c7c4d7] hover:text-[#8083ff] border border-[#262a33] hover:border-[#8083ff]/40 transition-colors cursor-pointer"
+                        >
+                          + user:pass
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInsertSample("userpass2fa", "stock")}
+                          className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-[#181c24] hover:bg-[#8083ff]/20 text-[#c7c4d7] hover:text-[#8083ff] border border-[#262a33] hover:border-[#8083ff]/40 transition-colors cursor-pointer"
+                        >
+                          + user:pass:2fa
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInsertSample("keys", "stock")}
+                          className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-[#181c24] hover:bg-[#8083ff]/20 text-[#c7c4d7] hover:text-[#8083ff] border border-[#262a33] hover:border-[#8083ff]/40 transition-colors cursor-pointer"
+                        >
+                          + License Keys
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInsertSample("tab", "stock")}
+                          className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-[#181c24] hover:bg-[#8083ff]/20 text-[#c7c4d7] hover:text-[#8083ff] border border-[#262a33] hover:border-[#8083ff]/40 transition-colors cursor-pointer"
+                        >
+                          + Tab-Separated
+                        </button>
+                      </div>
+
+                      {/* Delimiters Supported */}
+                      <div className="text-[10px] font-mono text-[#908fa0] flex items-center gap-1.5 flex-wrap">
+                        <span>Delimiters supported:</span>
+                        <code className="text-[#8083ff] bg-[#181c24] px-1.5 py-0.5 rounded border border-[#262a33]">:</code>
+                        <code className="text-[#8083ff] bg-[#181c24] px-1.5 py-0.5 rounded border border-[#262a33]">|</code>
+                        <code className="text-[#8083ff] bg-[#181c24] px-1.5 py-0.5 rounded border border-[#262a33]">\t (tab)</code>
+                        <code className="text-[#8083ff] bg-[#181c24] px-1.5 py-0.5 rounded border border-[#262a33]">;</code>
+                        <code className="text-[#8083ff] bg-[#181c24] px-1.5 py-0.5 rounded border border-[#262a33]">,</code>
+                        <code className="text-[#8083ff] bg-[#181c24] px-1.5 py-0.5 rounded border border-[#262a33]">----</code>
+                      </div>
                     </div>
+
+                    {/* Textarea */}
+                    <div>
+                      <textarea
+                        rows={6}
+                        placeholder={`Paste credentials lines here (one per line). Examples:\nuser1:Password123\nuser2@email.com:SecretPass:2FA_PIN\nSTEAM-LICENSE-KEY-XXXXX\nuser4 | pass4 | token4`}
+                        value={stockBulkText}
+                        onChange={(e) => {
+                          setStockBulkText(e.target.value);
+                          if (stockBulkError) setStockBulkError("");
+                        }}
+                        className="w-full px-3.5 py-3 rounded-xl bg-[#090d14] border border-[#262a33] text-xs text-[#dfe2ee] font-mono placeholder-[#908fa0]/50 focus:outline-none focus:border-[#8083ff] focus:ring-1 focus:ring-[#8083ff]/40 resize-y leading-relaxed"
+                      />
+                    </div>
+
+                    {/* Live Parse Summary Badges */}
+                    {stockBulkText.trim() && (
+                      <div className="p-2.5 rounded-xl bg-[#10141d] border border-[#262a33] flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] text-[#908fa0]">
+                            Total lines: <strong className="text-[#dfe2ee]">{stockBulkParsed.totalLines}</strong>
+                          </span>
+                          <span className="text-[#262a33]">|</span>
+                          <span className="text-[11px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 flex items-center gap-1">
+                            <CheckCircle className="w-3 h-3" />
+                            <strong>{stockBulkParsed.validCount}</strong> ready to save
+                          </span>
+                          {stockBulkParsed.duplicateCount > 0 && (
+                            <span className="text-[11px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/25 flex items-center gap-1" title="Duplicate accounts">
+                              <AlertCircle className="w-3 h-3" />
+                              <strong>{stockBulkParsed.duplicateCount}</strong> duplicates {stockBulkDedup ? "filtered" : "detected"}
+                            </span>
+                          )}
+                          {stockBulkParsed.invalidCount > 0 && (
+                            <span className="text-[11px] text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/20">
+                              <strong>{stockBulkParsed.invalidCount}</strong> invalid lines
+                            </span>
+                          )}
+                        </div>
+
+                        {stockBulkParsed.preview.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setStockBulkPreviewExpanded(!stockBulkPreviewExpanded)}
+                            className="text-[11px] text-[#8083ff] hover:text-[#9fa1ff] font-bold cursor-pointer underline flex items-center gap-1"
+                          >
+                            <span>{stockBulkPreviewExpanded ? "Hide Preview" : "Live Preview Table"}</span>
+                            <span>{stockBulkPreviewExpanded ? "▲" : "▼"}</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Live Preview Table */}
+                    {stockBulkText.trim() && stockBulkPreviewExpanded && stockBulkParsed.preview.length > 0 && (
+                      <div className="p-3 rounded-xl bg-[#090d14] border border-[#262a33] space-y-2">
+                        <div className="flex items-center justify-between pb-1.5 border-b border-[#1e222b] text-[11px] font-mono text-[#908fa0]">
+                          <span className="font-bold text-[#dfe2ee]">
+                            Live Parsed Preview ({stockBulkParsed.preview.length} lines parsed)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowBulkPasswords(!showBulkPasswords)}
+                            className="text-[#8083ff] hover:underline cursor-pointer text-[10px] flex items-center gap-1"
+                          >
+                            {showBulkPasswords ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                            <span>{showBulkPasswords ? "Hide Passwords" : "Reveal Passwords"}</span>
+                          </button>
+                        </div>
+
+                        <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
+                          {stockBulkParsed.preview.map((p, idx) => {
+                            const isSkipped = stockBulkDedup && (p.isDuplicateInBatch || p.existsInDb);
+                            return (
+                              <div
+                                key={idx}
+                                className={`p-2 rounded-lg text-xs font-mono flex items-center justify-between gap-2 border transition-all ${
+                                  !p.isValid
+                                    ? "bg-rose-950/20 border-rose-500/30 text-rose-300"
+                                    : isSkipped
+                                    ? "bg-amber-950/20 border-amber-500/30 text-amber-200/80 opacity-70"
+                                    : "bg-[#10141d] border-[#262a33] text-[#dfe2ee]"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <span className="text-[10px] text-[#908fa0] w-6 shrink-0">#{p.lineNum}</span>
+                                  {p.isValid ? (
+                                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 flex-1 min-w-0 text-[11px]">
+                                      <div className="truncate">
+                                        <span className="text-[9px] text-[#908fa0] block">LOGIN / ID:</span>
+                                        <span className="font-bold text-white truncate block">
+                                          {p.item.id || p.item.email || "—"}
+                                        </span>
+                                      </div>
+                                      <div className="truncate">
+                                        <span className="text-[9px] text-[#908fa0] block">PASSWORD:</span>
+                                        <span className="text-[#dfe2ee] truncate block">
+                                          {p.item.password
+                                            ? showBulkPasswords
+                                              ? p.item.password
+                                              : "••••••••"
+                                            : "—"}
+                                        </span>
+                                      </div>
+                                      <div className="truncate">
+                                        <span className="text-[9px] text-[#908fa0] block">KEY / TOKEN:</span>
+                                        <span className="text-[#8083ff] truncate block">
+                                          {p.item.token || p.item.key || "—"}
+                                        </span>
+                                      </div>
+                                      <div className="truncate">
+                                        <span className="text-[9px] text-[#908fa0] block">2FA / PIN:</span>
+                                        <span className="text-cyan-300 truncate block">
+                                          {p.item.pin || p.item.twoFactorKey || "—"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[11px] text-rose-300 truncate">
+                                      Invalid format: {p.raw}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="shrink-0 text-[10px] font-bold">
+                                  {!p.isValid ? (
+                                    <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                      Invalid
+                                    </span>
+                                  ) : p.existsInDb ? (
+                                    <span className="px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                                      {stockBulkDedup ? "Skipped (In DB)" : "Warning: In DB"}
+                                    </span>
+                                  ) : p.isDuplicateInBatch ? (
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                      {stockBulkDedup ? "Skipped (Duplicate)" : "Duplicate"}
+                                    </span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                      ✓ Ready
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Inline Error Banner */}
+                    {stockBulkError && (
+                      <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs flex items-center justify-between gap-2.5 font-mono">
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                          <span>{stockBulkError}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setStockBulkError("")}
+                          className="text-rose-400 hover:text-white cursor-pointer px-1.5 py-0.5"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   /* Single Form Mode */
@@ -2503,17 +3174,23 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
                 <div className="pt-2">
                   <button
                     type="submit"
-                    disabled={addingStock}
-                    className="w-full py-3.5 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white font-black text-xs shadow-xl shadow-[#8083ff]/25 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
+                    disabled={addingStock || (stockBulkMode && stockBulkParsed.validCount === 0)}
+                    className="w-full py-3.5 rounded-xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white font-black text-xs shadow-xl shadow-[#8083ff]/25 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 transition-all font-mono"
                   >
                     {addingStock ? (
                       <>
                         <span className="w-4 h-4 border-2 border-[#0d0096] border-t-transparent rounded-full animate-spin" />
-                        <span>Saving to Database…</span>
+                        <span>Saving {stockBulkMode ? `${stockBulkParsed.validCount} Accounts` : "Credential"} to Database…</span>
                       </>
                     ) : (
                       <>
-                        <span>💾 Save Stock Credentials to Database</span>
+                        <span>
+                          💾 Save{" "}
+                          {stockBulkMode
+                            ? `${stockBulkParsed.validCount} Account${stockBulkParsed.validCount === 1 ? "" : "s"}`
+                            : "Credential"}{" "}
+                          to Database
+                        </span>
                       </>
                     )}
                   </button>

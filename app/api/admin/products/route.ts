@@ -3,6 +3,7 @@ import { Redis } from "@upstash/redis";
 import { Product, InventoryItem, PRODUCTS as DEFAULT_PRODUCTS } from "@/lib/products";
 import { getBlacklist, markCredentialDeleted, unblacklistCredentials } from "@/lib/fulfillment";
 import { sendDiscordRestockNotification } from "@/lib/discord";
+import { sendTelegramRestockNotification } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -19,20 +20,24 @@ export const INVENTORY_KEY = (id: string) => `trinitymart_inventory_${id}`;
 
 // Verify admin authorization
 function checkAdminAuth(req: NextRequest): boolean {
-  const adminPassword = (process.env.ADMIN_PASSWORD || "Ansh@24").trim().replace(/^["']|["']$/g, "");
+  const adminPassword = (process.env.ADMIN_PASSWORD || "").trim().replace(/^["']|["']$/g, "");
+  if (!adminPassword) return false;
   const authHeader = req.headers.get("authorization");
   const bearer = authHeader?.replace(/^Bearer\s+/i, "");
   const provided = (
     req.headers.get("x-admin-password") ||
-    req.nextUrl.searchParams.get("password") ||
     bearer ||
     ""
   ).trim().replace(/^["']|["']$/g, "");
-  return (!!adminPassword && provided === adminPassword) || provided === "Ansh@24" || provided === "123";
+  return provided === adminPassword;
 }
 
 // GET: Returns all active products and removed products with live database stock, overrides, and reviews
 export async function GET(req: NextRequest) {
+  if (!checkAdminAuth(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     let customProducts: Product[] = [];
     let removedIds: string[] = [];
@@ -328,7 +333,11 @@ export async function POST(req: NextRequest) {
 
       await redis.set(INVENTORY_KEY(slug), newProduct.inventory);
 
-      // Automated Discord Restock Notification
+      // Automated Discord & Telegram Restock Notification
+      const newProductImage =
+        (newProduct.customBgUrl?.startsWith("http") ? newProduct.customBgUrl : undefined) ||
+        (newProduct.customLogoUrl?.startsWith("http") ? newProduct.customLogoUrl : undefined);
+
       sendDiscordRestockNotification({
         productName: newProduct.name,
         productId: newProduct.id,
@@ -336,8 +345,21 @@ export async function POST(req: NextRequest) {
         unitsAdded: newProduct.inventory.length,
         totalStock: newProduct.inventory.length,
         price: newProduct.price,
+        productImage: newProductImage,
+        customLogoUrl: newProduct.customLogoUrl,
       }).catch((err) => {
         console.error("[DISCORD] Failed to send restock alert for new product:", err);
+      });
+
+      sendTelegramRestockNotification({
+        productName: newProduct.name,
+        productId: newProduct.id,
+        unitsAdded: newProduct.inventory.length,
+        totalStock: newProduct.inventory.length,
+        price: newProduct.price,
+        productImage: newProductImage,
+      }).catch((err) => {
+        console.error("[TELEGRAM] Failed to send restock alert for new product:", err);
       });
     }
 
@@ -757,7 +779,14 @@ export async function PUT(req: NextRequest) {
       if (overrides[id]?.name) targetName = overrides[id].name;
       if (overrides[id]?.category) targetCategory = overrides[id].category;
 
-      // Trigger automated Discord Restock Notification in background
+      let targetImage: string | undefined = undefined;
+      if (customProd?.customBgUrl?.startsWith("http")) targetImage = customProd.customBgUrl;
+      else if (customProd?.customLogoUrl?.startsWith("http")) targetImage = customProd.customLogoUrl;
+      else if (overrides[id]?.customBgUrl?.startsWith("http")) targetImage = overrides[id].customBgUrl;
+      else if (overrides[id]?.customLogoUrl?.startsWith("http")) targetImage = overrides[id].customLogoUrl;
+      else if (defaultProd?.customLogoUrl?.startsWith("http")) targetImage = defaultProd.customLogoUrl;
+
+      // Trigger automated Discord & Telegram Restock Notifications in background
       sendDiscordRestockNotification({
         productName: targetName,
         productId: id,
@@ -765,8 +794,20 @@ export async function PUT(req: NextRequest) {
         unitsAdded: newItems.length,
         totalStock: activeCount,
         price: targetPrice,
+        productImage: targetImage,
       }).catch((err) => {
         console.error("[DISCORD] Failed to send restock alert:", err);
+      });
+
+      sendTelegramRestockNotification({
+        productName: targetName,
+        productId: id,
+        unitsAdded: newItems.length,
+        totalStock: activeCount,
+        price: targetPrice,
+        productImage: targetImage,
+      }).catch((err) => {
+        console.error("[TELEGRAM] Failed to send restock alert:", err);
       });
 
       return NextResponse.json({

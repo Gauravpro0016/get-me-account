@@ -3,7 +3,8 @@ import fs from "fs";
 import path from "path";
 import { Redis } from "@upstash/redis";
 import { APP_CONFIG } from "@/lib/config";
-import { incrementCouponUsage } from "@/lib/coupons";
+import { incrementCouponUsage, validateCoupon } from "@/lib/coupons";
+import { PRODUCTS as DEFAULT_PRODUCTS } from "@/lib/products";
 import {
   sendDiscordPurchaseNotification,
   sendDiscordLowStockAlert,
@@ -1845,12 +1846,14 @@ export async function fulfillOrder({
     await sendTelegramPurchaseNotification({
       orderId,
       email,
+      senderName,
       amount: resolvedAmount,
       usdAmount: isCryptoOrder ? usdAmount : undefined,
       productName: resolvedProductName,
       quantity: targetQty,
       utr,
       paymentType,
+      cartItems: resolvedCartItems,
     });
   } catch (err) {
     console.warn("Failed to dispatch Telegram purchase notification:", err);
@@ -1879,16 +1882,28 @@ export async function fulfillOrder({
       const inv = (await redis.get<any[]>(`trinitymart_inventory_${prod.id}`)) || [];
       const remainingCount = Array.isArray(inv) ? inv.length : 0;
       if (remainingCount <= 3) {
+        let prodPrice: number | string | undefined = undefined;
+        let prodImage: string | undefined = undefined;
+        try {
+          const overrides = (await redis.get<Record<string, any>>("trinitymart_product_overrides")) || {};
+          prodPrice = overrides[prod.id]?.price;
+          prodImage = overrides[prod.id]?.customLogoUrl || overrides[prod.id]?.customBgUrl;
+        } catch {}
+
         Promise.allSettled([
           sendDiscordLowStockAlert({
             productName: prod.name,
             productId: prod.id,
             remainingStock: remainingCount,
+            price: prodPrice,
+            productImage: prodImage,
           }),
           sendTelegramLowStockAlert({
             productName: prod.name,
             productId: prod.id,
             remainingStock: remainingCount,
+            price: prodPrice,
+            productImage: prodImage,
           }),
         ]).catch(() => {});
       }
@@ -2106,8 +2121,8 @@ export async function checkAtlosOrderStatus(orderId: string): Promise<{
   txid?: string;
   amount?: number;
 }> {
-  const atlosSecret = process.env.ATLOS_API_SECRET || "6UCqzHHDmb5f0NbXOGCmLKFc2PVIMEYB";
-  const merchantId = process.env.ATLOS_MERCHANT_ID || "ADK7QABYR0";
+  const atlosSecret = process.env.ATLOS_API_SECRET || "";
+  const merchantId = process.env.ATLOS_MERCHANT_ID || process.env.NEXT_PUBLIC_ATLOS_MERCHANT_ID || "";
 
   if (!atlosSecret) {
     return { status: "pending" };
@@ -3103,5 +3118,93 @@ export async function sendRecoveryEmail({
     return { success: false, error: err?.message || String(err) };
   }
 }
+
+/**
+ * Calculates authoritative order amount on server side to prevent client price tampering.
+ */
+export async function calculateAuthoritativeAmount(params: {
+  productId?: string;
+  quantity?: number;
+  cartItems?: any[];
+  couponCode?: string;
+  clientAmount?: number;
+}): Promise<{
+  finalAmount: number;
+  subtotal: number;
+  discountAmount: number;
+  appliedCouponCode?: string;
+}> {
+  let customProducts: any[] = [];
+  let overrides: Record<string, any> = {};
+
+  try {
+    customProducts = (await redis.get<any[]>("trinitymart_custom_products")) || [];
+  } catch {}
+
+  try {
+    overrides = (await redis.get<Record<string, any>>("trinitymart_product_overrides")) || {};
+  } catch {}
+
+  const priceMap = new Map<string, number>();
+  for (const p of DEFAULT_PRODUCTS) {
+    priceMap.set(p.id, Number(p.price) || APP_CONFIG.price);
+  }
+  for (const cp of customProducts) {
+    if (cp?.id) {
+      priceMap.set(cp.id, Number(cp.price) || APP_CONFIG.price);
+    }
+  }
+  for (const [id, ov] of Object.entries(overrides)) {
+    if (ov && typeof ov.price === "number") {
+      priceMap.set(id, ov.price);
+    }
+  }
+
+  let subtotal = 0;
+  if (Array.isArray(params.cartItems) && params.cartItems.length > 0) {
+    for (const item of params.cartItems) {
+      const prodId = item?.productId || item?.product?.id;
+      const qty = Math.max(1, Math.min(100, Number(item?.quantity) || 1));
+      const authoritativeUnitPrice = prodId && priceMap.has(prodId)
+        ? priceMap.get(prodId)!
+        : Number(item?.price) || Number(item?.product?.price) || APP_CONFIG.price;
+      subtotal += authoritativeUnitPrice * qty;
+    }
+  } else if (params.productId && params.productId !== "cart" && priceMap.has(params.productId)) {
+    const qty = Math.max(1, Math.min(100, Number(params.quantity) || 1));
+    subtotal = priceMap.get(params.productId)! * qty;
+  } else {
+    const qty = Math.max(1, Math.min(100, Number(params.quantity) || 1));
+    subtotal = APP_CONFIG.price * qty;
+  }
+
+  // Ensure positive integer subtotal
+  subtotal = Math.max(1, Math.round(subtotal));
+
+  let discountAmount = 0;
+  let appliedCouponCode: string | undefined = undefined;
+
+  if (params.couponCode && typeof params.couponCode === "string" && params.couponCode.trim()) {
+    try {
+      const couponRes = await validateCoupon(params.couponCode.trim(), subtotal);
+      if (couponRes.valid) {
+        discountAmount = Math.max(0, couponRes.discountAmount || 0);
+        appliedCouponCode = couponRes.coupon?.code || params.couponCode.trim().toUpperCase();
+      }
+    } catch (e) {
+      console.warn("Coupon validation error in calculateAuthoritativeAmount:", e);
+    }
+  }
+
+  const finalAmount = Math.max(1, Math.round(subtotal - discountAmount));
+
+  return {
+    finalAmount,
+    subtotal,
+    discountAmount,
+    appliedCouponCode,
+  };
+}
+
 
 

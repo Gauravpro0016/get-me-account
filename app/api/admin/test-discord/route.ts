@@ -7,11 +7,16 @@ import {
 export const maxDuration = 30;
 
 function checkAdmin(req: NextRequest): boolean {
-  const adminPassword = process.env.ADMIN_PASSWORD;
-  const provided =
+  const adminPassword = (process.env.ADMIN_PASSWORD || "").trim().replace(/^["']|["']$/g, "");
+  if (!adminPassword) return false;
+  const authHeader = req.headers.get("authorization");
+  const bearer = authHeader?.replace(/^Bearer\s+/i, "");
+  const provided = (
     req.headers.get("x-admin-password") ||
-    req.nextUrl.searchParams.get("password");
-  return !adminPassword || provided === adminPassword;
+    bearer ||
+    ""
+  ).trim().replace(/^["']|["']$/g, "");
+  return provided === adminPassword;
 }
 
 export async function GET(req: NextRequest) {
@@ -65,9 +70,10 @@ export async function GET(req: NextRequest) {
         email: "buyer.example@gmail.com",
         senderName: "GauravPro",
         amount: 199,
-        productName: "Discord Nitro 1 Month [Live Test]",
+        productName: "Minecraft Account [LIFETIME]",
         quantity: 1,
         utr: "TEST-TXID-99281729",
+        paymentType: "Crypto",
       });
     }
 

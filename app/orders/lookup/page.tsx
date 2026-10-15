@@ -543,10 +543,34 @@ function OrderLookupContent() {
 
                 {/* Credentials Items List */}
                 <div className="space-y-3">
-                  {(order.deliveredCredentials || []).map((cred, cIdx) => {
-                    const credKey = `${order.orderId}-${cIdx}`;
-                    const isPassVisible = revealedPasswords.has(credKey);
-                    const effectivePass = cred.password || cred.emailPassword || cred.discordPassword;
+                  {(order.deliveredCredentials || []).length === 0 ? (
+                    <div className="p-5 rounded-xl bg-[#0a0e16] border border-[#262a33] text-center space-y-3 font-mono">
+                      <div className="w-10 h-10 rounded-full bg-[#8083ff]/10 border border-[#8083ff]/30 text-[#8083ff] flex items-center justify-center mx-auto">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-bold text-[#dfe2ee]">Credentials Securely Protected</p>
+                        <p className="text-xs text-[#908fa0] max-w-md mx-auto">
+                          To protect your accounts from unauthorized viewing via public email search, sensitive login credentials are sent directly to your verified email address or accessed using your private Order ID.
+                        </p>
+                      </div>
+                      <div className="pt-1 flex flex-col sm:flex-row justify-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleResendCredentials(order)}
+                          disabled={resendingEmail}
+                          className="px-4 py-2.5 rounded-xl bg-[#8083ff] hover:bg-[#6d70ff] text-[#0d0096] hover:text-white font-bold text-xs transition-all inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-md shadow-[#8083ff]/20"
+                        >
+                          <Mail className="w-4 h-4" />
+                          <span>{resendingEmail ? "Dispatching..." : `Email Credentials to ${order.email}`}</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    (order.deliveredCredentials || []).map((cred, cIdx) => {
+                      const credKey = `${order.orderId}-${cIdx}`;
+                      const isPassVisible = revealedPasswords.has(credKey);
+                      const effectivePass = cred.password || cred.emailPassword || cred.discordPassword;
 
                     return (
                       <div
@@ -671,7 +695,7 @@ function OrderLookupContent() {
                         )}
                       </div>
                     );
-                  })}
+                  }))}
                 </div>
               </div>
             )}

@@ -111,6 +111,7 @@ export default function ProductDetailPage() {
     if (isOutOfStock) return;
     addToCart(product, quantity);
     setAdded(true);
+    setIsCartOpen(true);
     setTimeout(() => setAdded(false), 2000);
   };
 

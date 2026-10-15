@@ -3,7 +3,24 @@ import { fulfillOrder } from "@/lib/fulfillment";
 
 export const dynamic = "force-dynamic";
 
+function checkAdmin(req: NextRequest): boolean {
+  const adminPassword = (process.env.ADMIN_PASSWORD || "").trim().replace(/^["']|["']$/g, "");
+  if (!adminPassword) return false;
+  const authHeader = req.headers.get("authorization");
+  const bearer = authHeader?.replace(/^Bearer\s+/i, "");
+  const provided = (
+    req.headers.get("x-admin-password") ||
+    bearer ||
+    ""
+  ).trim().replace(/^["']|["']$/g, "");
+  return provided === adminPassword;
+}
+
 export async function POST(req: NextRequest) {
+  if (!checkAdmin(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await req.json().catch(() => ({}));
     const { email, orderId, txId, utr, productId, productName, amount, quantity, cartItems } = body;
