@@ -39,25 +39,25 @@ export function Footer() {
               href={discordUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 font-mono text-xs text-[#c7c4d7] hover:text-[#8083ff] transition-colors"
+              className="flex items-center gap-1.5 font-mono text-xs text-[#c7c4d7] hover:text-[#6184d8] transition-colors"
             >
-              <MessageSquare className="w-4 h-4 text-[#8083ff]" />
+              <MessageSquare className="w-4 h-4 text-[#6184d8]" />
               <span>Discord Support</span>
             </a>
             <a
               href="https://t.me"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 font-mono text-xs text-[#c7c4d7] hover:text-[#8083ff] transition-colors"
+              className="flex items-center gap-1.5 font-mono text-xs text-[#c7c4d7] hover:text-[#6184d8] transition-colors"
             >
               <Send className="w-4 h-4 text-[#4edea3]" />
               <span>Telegram Desk</span>
             </a>
             <Link
               href="/orders/lookup"
-              className="flex items-center gap-1.5 font-mono text-xs text-[#c7c4d7] hover:text-[#8083ff] transition-colors"
+              className="flex items-center gap-1.5 font-mono text-xs text-[#c7c4d7] hover:text-[#6184d8] transition-colors"
             >
-              <Zap className="w-3.5 h-3.5 text-[#8083ff]" />
+              <Zap className="w-3.5 h-3.5 text-[#6184d8]" />
               <span>Track Order</span>
             </Link>
             <Link

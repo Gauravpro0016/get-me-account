@@ -53,6 +53,8 @@ export function ProductIcon({
         <img
           src={customLogoUrl}
           alt="Product Logo"
+          loading="lazy"
+          decoding="async"
           className={`w-full h-full object-contain drop-shadow-md transition-transform duration-300 ${scaleClass}`}
           onError={() => setImageError(true)}
         />

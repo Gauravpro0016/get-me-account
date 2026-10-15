@@ -26,7 +26,7 @@ export function FloatingCartButton() {
 
   return (
     <div className="fixed bottom-6 right-6 z-40 animate-in fade-in slide-in-from-bottom-5">
-      <div className="flex items-center gap-3.5 bg-[#0a0e16]/95 backdrop-blur-xl p-2 pl-4 rounded-xl border border-[#262a33] shadow-2xl shadow-black/80 hover:border-[#8083ff]/50 transition-all">
+      <div className="flex items-center gap-3.5 bg-[#0a0e16]/95 backdrop-blur-xl p-2 pl-4 rounded-xl border border-[#262a33] shadow-2xl shadow-black/80 hover:border-[#6184d8]/50 transition-all">
         <div className="flex items-center gap-2.5">
           <div className="w-2 h-2 rounded-full bg-[#4edea3] animate-pulse" />
           <div className="flex flex-col text-left">
@@ -41,7 +41,7 @@ export function FloatingCartButton() {
 
         <button
           onClick={openCheckoutWithCart}
-          className="h-9 px-4 rounded-lg bg-[#8083ff] text-[#0d0096] hover:bg-[#6366f1] hover:text-white font-mono text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+          className="h-9 px-4 rounded-lg bg-[#6184d8] text-white hover:bg-[#4d6ec4] font-mono text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
         >
           <span>Checkout</span>
           <ArrowRight className="w-3.5 h-3.5" />

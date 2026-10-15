@@ -1,4 +1,4 @@
-import nodemailer, { type SentMessageInfo } from "nodemailer";
+import nodemailer, { type SendMailOptions, type SentMessageInfo } from "nodemailer";
 import fs from "fs";
 import path from "path";
 import { Redis } from "@upstash/redis";
@@ -125,6 +125,42 @@ export async function markCredentialClaimed(identifiers: (string | undefined | n
     await redis.set(CLAIMED_CREDENTIALS_KEY, Array.from(set));
   } catch (err) {
     console.warn("Failed to mark credential as claimed:", err);
+  }
+}
+
+/**
+ * Remove credentials from blacklist when an admin explicitly restocks / adds them,
+ * ensuring newly added accounts are never auto-purged from inventory.
+ */
+export async function unblacklistCredentials(identifiers: (string | undefined | null)[]): Promise<void> {
+  const valid = identifiers
+    .filter((x): x is string => !!x && typeof x === "string" && x.trim().length > 0)
+    .map((x) => x.trim().toLowerCase());
+  if (valid.length === 0) return;
+
+  const validSet = new Set(valid);
+
+  try {
+    const [deleted, claimed] = await Promise.all([
+      redis.get<string[]>(DELETED_CREDENTIALS_KEY),
+      redis.get<string[]>(CLAIMED_CREDENTIALS_KEY),
+    ]);
+
+    if (Array.isArray(deleted) && deleted.length > 0) {
+      const filteredDeleted = deleted.filter((d) => d && !validSet.has(String(d).toLowerCase().trim()));
+      if (filteredDeleted.length !== deleted.length) {
+        await redis.set(DELETED_CREDENTIALS_KEY, filteredDeleted);
+      }
+    }
+
+    if (Array.isArray(claimed) && claimed.length > 0) {
+      const filteredClaimed = claimed.filter((c) => c && !validSet.has(String(c).toLowerCase().trim()));
+      if (filteredClaimed.length !== claimed.length) {
+        await redis.set(CLAIMED_CREDENTIALS_KEY, filteredClaimed);
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to unblacklist credentials:", err);
   }
 }
 
@@ -365,9 +401,17 @@ export async function claimProductCredentials({
     // Mark claimed items in persistent blacklist
     const identifiersToMark: string[] = [];
     for (const c of claimedCredentials) {
-      if (c.id) identifiersToMark.push(c.id);
-      if (c.email) identifiersToMark.push(c.email);
-      if (c.token) identifiersToMark.push(c.token);
+      if (c.id && !c.id.startsWith("cred-")) identifiersToMark.push(c.id);
+      const rawItemEmail = (c.fields?.email || c.fields?.id || "").trim();
+      if (
+        rawItemEmail &&
+        rawItemEmail.toLowerCase() !== "account delivered" &&
+        (!customerEmail || rawItemEmail.toLowerCase() !== customerEmail.toLowerCase())
+      ) {
+        identifiersToMark.push(rawItemEmail);
+      }
+      const rawToken = (c.fields?.token || c.token || "").trim();
+      if (rawToken) identifiersToMark.push(rawToken);
     }
     await markCredentialClaimed(identifiersToMark);
   }
@@ -381,7 +425,7 @@ export async function claimProductCredentials({
   const stillNeeded = count - claimedCredentials.length;
 
   // 1. Try legacy credentials pool ONLY if product is specifically discord-nitro-booster
-  if (productId === "discord-nitro-booster") {
+  if (productId === "discord-nitro-booster" && stillNeeded > 0) {
     try {
       const fromPool = await claimCredentials(stillNeeded);
       if (fromPool && fromPool.length > 0) {
@@ -396,31 +440,6 @@ export async function claimProductCredentials({
     } catch (e) {
       console.warn("Legacy pool fallback error:", e);
     }
-  }
-
-  // 2. If still needed, generate emergency guaranteed credentials for the product
-  while (claimedCredentials.length < count) {
-    const i = claimedCredentials.length;
-    const fallbackToken = `TM-${(productId || "PROD").toUpperCase().slice(0, 8)}-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-    const fallbackPass = `Trinity_${Math.random().toString(36).substring(2, 8).toUpperCase()}!`;
-    const fallbackUser = customerEmail ? customerEmail.split("@")[0] + `_${Math.random().toString(36).substring(2, 5)}` : `user_${Math.random().toString(36).substring(2, 7)}`;
-    claimedCredentials.push({
-      id: `cred-${Date.now()}-${i}`,
-      email: customerEmail || fallbackUser,
-      password: fallbackPass,
-      emailPassword: fallbackPass,
-      token: fallbackToken,
-      domain: "trinitymart.store",
-      twoFactorKey: Math.random().toString(36).substring(2, 8).toUpperCase(),
-      addedAt: nowIso,
-      productId,
-      productName: productName || "Trinitymart Digital Asset",
-      fields: {
-        id: fallbackUser,
-        password: fallbackPass,
-        token: fallbackToken,
-      },
-    });
   }
 
   return claimedCredentials;
@@ -566,7 +585,10 @@ export async function setAdminSmtpConfig(config: { user: string; pass: string })
   await redis.set(ADMIN_SMTP_CONFIG_KEY, { user: cleanUser, pass: cleanPass });
 }
 
-export function createMailTransporter(customCreds?: { user?: string; pass?: string }) {
+export function createMailTransporter(
+  customCreds?: { user?: string; pass?: string },
+  port: 465 | 587 = 465
+) {
   const fileUser = readEnvLocalValue("GMAIL_USER");
   const filePass = readEnvLocalValue("GMAIL_APP_PASSWORD");
 
@@ -578,18 +600,82 @@ export function createMailTransporter(customCreds?: { user?: string; pass?: stri
     .replace(/^["']|["']$/g, "")
     .replace(/\s+/g, "");
 
+  const isSecure = port === 465;
+
   return nodemailer.createTransport({
     host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
+    port,
+    secure: isSecure,
+    requireTLS: !isSecure,
     auth: {
       user,
       pass,
     },
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 20000,
+    connectionTimeout: 12000,
+    greetingTimeout: 12000,
+    socketTimeout: 15000,
   });
+}
+
+/**
+ * Robust email dispatch with dual-port (465 SSL & 587 TLS) and credential fallback.
+ * Automatically tries port 465 first; on timeout/connection drops, tries port 587.
+ * If authentication fails with Redis credentials, automatically falls back to .env.local/process.env credentials.
+ */
+export async function sendMailWithFallback(
+  mailOptions: SendMailOptions,
+  customCreds?: { user?: string; pass?: string }
+): Promise<SentMessageInfo> {
+  // 1. Try port 465 with provided credentials
+  try {
+    const transporter465 = createMailTransporter(customCreds, 465);
+    return await transporter465.sendMail(mailOptions);
+  } catch (err465: any) {
+    console.warn("[MAIL] Port 465 attempt failed:", err465?.message || err465);
+
+    const isAuthError =
+      err465?.code === "EAUTH" ||
+      err465?.responseCode === 535 ||
+      String(err465?.message).includes("535") ||
+      String(err465?.message).includes("BadCredentials");
+
+    const fileUser = readEnvLocalValue("GMAIL_USER") || process.env.GMAIL_USER;
+    const filePass = readEnvLocalValue("GMAIL_APP_PASSWORD") || process.env.GMAIL_APP_PASSWORD;
+    const envCreds = fileUser && filePass ? { user: fileUser, pass: filePass } : undefined;
+
+    // If auth error occurred on Redis config, retry with .env.local / process.env config
+    if (isAuthError && envCreds && (envCreds.user !== customCreds?.user || envCreds.pass !== customCreds?.pass)) {
+      console.log("[MAIL] Retrying with environment / .env.local credentials due to auth failure...");
+      try {
+        const envTransporter465 = createMailTransporter(envCreds, 465);
+        return await envTransporter465.sendMail(mailOptions);
+      } catch (envErr) {
+        console.warn("[MAIL] Environment credentials on port 465 failed, trying port 587...", envErr);
+        const envTransporter587 = createMailTransporter(envCreds, 587);
+        return await envTransporter587.sendMail(mailOptions);
+      }
+    }
+
+    // 2. Try port 587 with STARTTLS
+    console.log("[MAIL] Retrying delivery on Port 587 (STARTTLS)...");
+    try {
+      const transporter587 = createMailTransporter(customCreds, 587);
+      return await transporter587.sendMail(mailOptions);
+    } catch (err587: any) {
+      // 3. If attachments were present, try without attachments in case of size timeout
+      if (mailOptions.attachments && mailOptions.attachments.length > 0) {
+        console.warn("[MAIL] Retrying without attachments to avoid payload limits/timeouts...");
+        try {
+          const strippedOptions = { ...mailOptions, attachments: [] };
+          const transporterFallback = createMailTransporter(customCreds, 587);
+          return await transporterFallback.sendMail(strippedOptions);
+        } catch {
+          // If still fails, throw error
+        }
+      }
+      throw err587;
+    }
+  }
 }
 
 export async function sendCredentialEmail({
@@ -611,6 +697,11 @@ export async function sendCredentialEmail({
   amount?: number | string;
   productName?: string;
 }): Promise<SentMessageInfo> {
+  const cleanEmail = (email || "").trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes("@")) {
+    throw new Error(`Invalid recipient email for order ${orderId}: "${email}"`);
+  }
+
   const allCreds = credentials && credentials.length > 0 ? credentials : (credential ? [credential] : []);
   const qty = allCreds.length;
   const primaryTitle = productName || allCreds[0]?.productName || "Trinitymart Digital Asset";
@@ -803,12 +894,11 @@ export async function sendCredentialEmail({
 
   const smtp = await getAdminSmtpConfig();
   const adminUser = smtp.user || (process.env.GMAIL_USER || "").trim().replace(/^["']|["']$/g, "");
-  const mailTransporter = createMailTransporter(smtp);
 
-  return await mailTransporter.sendMail({
+  return await sendMailWithFallback({
     from: `"Trinitymart Store" <${adminUser}>`,
-    to: email,
-    bcc: adminUser && adminUser.toLowerCase() !== email.toLowerCase() ? adminUser : undefined,
+    to: cleanEmail,
+    bcc: adminUser && adminUser.toLowerCase() !== cleanEmail.toLowerCase() ? adminUser : undefined,
     subject: `✅ Your ${primaryTitle} [Order #${orderId}] — Payment Confirmed & Delivered`,
     attachments,
     html: `
@@ -1011,7 +1101,7 @@ export async function sendCredentialEmail({
       </body>
       </html>
     `,
-  });
+  }, smtp);
 }
 
 /**
@@ -1122,9 +1212,8 @@ export async function sendOrderInitiatedEmail({
 
   const smtp = await getAdminSmtpConfig();
   const adminUser = smtp.user || (process.env.GMAIL_USER || "").trim().replace(/^["']|["']$/g, "");
-  const mailTransporter = createMailTransporter(smtp);
 
-  const info = await mailTransporter.sendMail({
+  const info = await sendMailWithFallback({
     from: `"Trinitymart Store" <${adminUser}>`,
     to: email,
     subject: `📦 Order #${orderId} Initiated — Track Your Order Status`,
@@ -1268,7 +1357,7 @@ export async function sendOrderInitiatedEmail({
       </body>
       </html>
     `,
-  });
+  }, smtp);
 
   try {
     await redis.set(lockKey, "1", { ex: 86400 }); // 24 hours TTL
@@ -1375,12 +1464,13 @@ export async function sendMerchantSaleNotification({
       })
       .join("");
 
-    await mailTransporter.sendMail({
-      from: `"Trinitymart Store" <${adminEmail}>`,
-      to: adminEmail,
-      subject: `💰 Money Received! ₹${amount} from ${customerEmail} (Order #${orderId})`,
-      attachments,
-      html: `
+    await sendMailWithFallback(
+      {
+        from: `"Trinitymart Store" <${adminEmail}>`,
+        to: adminEmail,
+        subject: `💰 Money Received! ₹${amount} from ${customerEmail} (Order #${orderId})`,
+        attachments,
+        html: `
         <!DOCTYPE html>
         <html>
         <head><meta charset="UTF-8"/></head>
@@ -1458,7 +1548,9 @@ export async function sendMerchantSaleNotification({
         </body>
         </html>
       `,
-    });
+      },
+      smtp
+    );
     console.log(`Merchant sale notification sent to ${adminEmail} for order ${orderId}`);
   } catch (err) {
     console.warn("Failed to send merchant sale notification:", err);
@@ -1496,26 +1588,45 @@ export async function fulfillOrder({
   alreadySent?: boolean;
   error?: string;
 }> {
+  // Helper to wait for a concurrent in-flight fulfillment to complete and save credentials
+  const waitForFulfilled = async (maxAttempts = 5): Promise<Credential[]> => {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const existing = await getFulfilledCredentials(orderId);
+      if (existing && existing.length > 0) return existing;
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    return [];
+  };
+
   // Check if credentials have already been delivered
   if (await isAlreadySent(orderId)) {
-    const existingList = await getFulfilledCredentials(orderId);
-    return {
-      success: true,
-      alreadySent: true,
-      credential: existingList[0] ?? undefined,
-      credentials: existingList,
-    };
+    const existingList = await waitForFulfilled(4);
+    if (existingList.length > 0) {
+      return {
+        success: true,
+        alreadySent: true,
+        credential: existingList[0] ?? undefined,
+        credentials: existingList,
+      };
+    }
   }
 
   // Acquire lock
   const isFirst = await markAsSent(orderId);
   if (!isFirst) {
-    const existingList = await getFulfilledCredentials(orderId);
+    const existingList = await waitForFulfilled(6);
+    if (existingList.length > 0) {
+      return {
+        success: true,
+        alreadySent: true,
+        credential: existingList[0] ?? undefined,
+        credentials: existingList,
+      };
+    }
+    // Prevent duplicate fulfillment race condition
     return {
-      success: true,
-      alreadySent: true,
-      credential: existingList[0] ?? undefined,
-      credentials: existingList,
+      success: false,
+      error: "Order fulfillment is already in progress. Please refresh in a moment.",
     };
   }
 
@@ -1526,15 +1637,22 @@ export async function fulfillOrder({
     orderMeta = (await redis.hgetall(`order_meta:${orderId}`)) || {};
   } catch {}
 
-  const targetQty = Math.max(1, quantity || orderData?.quantity || Number(orderMeta?.quantity) || 1);
-  const resolvedProductId = productId || orderData?.productId || (orderMeta?.productId as string) || "";
-  const resolvedProductName = productName || orderData?.productName || (orderMeta?.productName as string) || "Trinitymart Digital Asset";
   let resolvedCartItems = cartItems || orderData?.cartItems;
   if (!resolvedCartItems && orderMeta?.cartItems) {
     try {
       resolvedCartItems = JSON.parse(orderMeta.cartItems);
     } catch {}
   }
+
+  const totalCartQty = Array.isArray(resolvedCartItems) && resolvedCartItems.length > 0
+    ? resolvedCartItems.reduce((acc, ci) => acc + Math.max(1, ci.quantity || 1), 0)
+    : 0;
+
+  const targetQty = totalCartQty > 0
+    ? totalCartQty
+    : Math.max(1, quantity || orderData?.quantity || Number(orderMeta?.quantity) || 1);
+  const resolvedProductId = productId || orderData?.productId || (orderMeta?.productId as string) || "";
+  const resolvedProductName = productName || orderData?.productName || (orderMeta?.productName as string) || "Trinitymart Digital Asset";
 
   const rawPassedAmount = Number(amount);
   const resolvedAmount =
@@ -1571,21 +1689,41 @@ export async function fulfillOrder({
       productName: resolvedProductName,
     });
     claimedList.push(...creds);
+
+    // Nitro fallback: if product is nitro and stock was insufficient, check legacy credentials_pool for remainder
+    const stillNeeded = targetQty - claimedList.length;
+    if (stillNeeded > 0 && (resolvedProductId === "discord-nitro-booster" || resolvedProductId.includes("nitro"))) {
+      const poolCreds = await claimCredentials(stillNeeded);
+      if (poolCreds && poolCreds.length > 0) {
+        claimedList.push(...poolCreds);
+      }
+    }
   } else {
     // Fallback: claim from legacy pool
     const poolCreds = await claimCredentials(targetQty);
     if (poolCreds && poolCreds.length > 0) {
       claimedList.push(...poolCreds);
     } else {
-      // Fallback emergency credential
-      const fallbackCreds = await claimProductCredentials({
-        productId: "digital-asset",
+      // Fallback: check if discord-nitro-booster or digital-asset has stock
+      const nitroCreds = await claimProductCredentials({
+        productId: "discord-nitro-booster",
         quantity: targetQty,
         orderId,
         customerEmail: email,
         productName: resolvedProductName,
       });
-      claimedList.push(...fallbackCreds);
+      if (nitroCreds && nitroCreds.length > 0) {
+        claimedList.push(...nitroCreds);
+      } else {
+        const fallbackCreds = await claimProductCredentials({
+          productId: "digital-asset",
+          quantity: targetQty,
+          orderId,
+          customerEmail: email,
+          productName: resolvedProductName,
+        });
+        claimedList.push(...fallbackCreds);
+      }
     }
   }
 
@@ -1628,8 +1766,21 @@ export async function fulfillOrder({
       response: sentInfo?.response,
     });
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
     console.error("Failed to send email:", err);
-    await recordEmailFailed(orderId, err instanceof Error ? err.message : String(err));
+    await recordEmailFailed(orderId, errMsg);
+    Promise.allSettled([
+      sendDiscordEmailFailureAlert({
+        orderId,
+        email,
+        error: errMsg,
+      }),
+      sendTelegramEmailFailureAlert({
+        orderId,
+        email,
+        error: errMsg,
+      }),
+    ]).catch(() => {});
   }
 
   // Also send merchant owner notification so the seller receives the sale & credentials alert
@@ -1706,26 +1857,43 @@ export async function fulfillOrder({
   }
 
   // Check inventory levels and trigger low-stock alerts if stock drops <= 3
-  if (resolvedProductId) {
+  const productsToCheckStock: { id: string; name: string }[] = [];
+  if (Array.isArray(resolvedCartItems) && resolvedCartItems.length > 0) {
+    for (const item of resolvedCartItems) {
+      if (item.productId && item.productId !== "cart") {
+        productsToCheckStock.push({
+          id: item.productId,
+          name: item.productName || item.productId,
+        });
+      }
+    }
+  } else if (resolvedProductId && resolvedProductId !== "cart") {
+    productsToCheckStock.push({
+      id: resolvedProductId,
+      name: resolvedProductName,
+    });
+  }
+
+  for (const prod of productsToCheckStock) {
     try {
-      const inv = (await redis.get<any[]>(`trinitymart_inventory_${resolvedProductId}`)) || [];
+      const inv = (await redis.get<any[]>(`trinitymart_inventory_${prod.id}`)) || [];
       const remainingCount = Array.isArray(inv) ? inv.length : 0;
       if (remainingCount <= 3) {
         Promise.allSettled([
           sendDiscordLowStockAlert({
-            productName: resolvedProductName,
-            productId: resolvedProductId,
+            productName: prod.name,
+            productId: prod.id,
             remainingStock: remainingCount,
           }),
           sendTelegramLowStockAlert({
-            productName: resolvedProductName,
-            productId: resolvedProductId,
+            productName: prod.name,
+            productId: prod.id,
             remainingStock: remainingCount,
           }),
         ]).catch(() => {});
       }
     } catch (e) {
-      console.warn("Failed to check inventory for low-stock alert:", e);
+      console.warn(`Failed to check inventory for low-stock alert on ${prod.id}:`, e);
     }
   }
 
@@ -2909,15 +3077,17 @@ export async function sendRecoveryEmail({
 
   try {
     const smtp = await getAdminSmtpConfig();
-    const transporter = createMailTransporter(smtp);
     const adminEmail = smtp.user || (process.env.GMAIL_USER || "support@trinitymart.store").trim().replace(/^["']|["']$/g, "");
 
-    const info = await transporter.sendMail({
-      from: `"TrinityMart Order Desk" <${adminEmail}>`,
-      to: order.email,
-      subject: `⚠️ Did you forget your order? We reserved your ${prodName} for you!`,
-      html,
-    });
+    const info = await sendMailWithFallback(
+      {
+        from: `"TrinityMart Order Desk" <${adminEmail}>`,
+        to: order.email,
+        subject: `⚠️ Did you forget your order? We reserved your ${prodName} for you!`,
+        html,
+      },
+      smtp
+    );
 
     const nowIso = new Date().toISOString();
     const idx = history.findIndex((o) => o.orderId === orderId);

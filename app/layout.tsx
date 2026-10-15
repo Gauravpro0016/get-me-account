@@ -12,11 +12,13 @@ import { ClientLayoutWrapper } from "@/components/ClientLayoutWrapper";
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
+  display: "swap",
 });
 
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
   subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -53,16 +55,8 @@ export default function RootLayout({
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased dark`}
       suppressHydrationWarning
     >
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
-          rel="stylesheet"
-        />
-      </head>
       <body
-        className="min-h-full flex flex-col bg-[#0f131c] text-[#dfe2ee] font-sans antialiased selection:bg-[#6366f1] selection:text-white"
+        className="min-h-full flex flex-col bg-[#0f131c] text-[#dfe2ee] font-sans antialiased selection:bg-[#6184d8] selection:text-white"
         suppressHydrationWarning
       >
         <ThemeProvider>
@@ -78,12 +72,12 @@ export default function RootLayout({
           async
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4139303489598317"
           crossOrigin="anonymous"
-          strategy="afterInteractive"
+          strategy="lazyOnload"
         />
         <Script
           async
           src="https://atlos.io/packages/app/atlos.js"
-          strategy="afterInteractive"
+          strategy="lazyOnload"
         />
       </body>
     </html>

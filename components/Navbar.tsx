@@ -34,11 +34,11 @@ export function Navbar() {
         {/* Brand Logo & Telemetry Indicator */}
         <div className="flex items-center gap-4">
           <Link href="/" className="flex items-center gap-2.5 group cursor-pointer select-none">
-            <div className="w-9 h-9 rounded-lg bg-[#262a33] border border-[#464554] flex items-center justify-center group-hover:border-[#8083ff] group-hover:shadow-[0_0_12px_rgba(99,102,241,0.35)] transition-all">
-              <Zap className="w-5 h-5 text-[#8083ff] fill-[#8083ff]" />
+            <div className="w-9 h-9 rounded-lg bg-[#262a33] border border-[#464554] flex items-center justify-center group-hover:border-[#6184d8] group-hover:shadow-[0_0_12px_rgba(99,102,241,0.35)] transition-all">
+              <Zap className="w-5 h-5 text-[#6184d8] fill-[#6184d8]" />
             </div>
             <span className="text-xl tracking-tight text-[#dfe2ee] font-black">
-              Trinity<span className="text-[#8083ff]">mart</span>
+              Trinity<span className="text-[#6184d8]">mart</span>
             </span>
           </Link>
 
@@ -120,11 +120,11 @@ export function Navbar() {
           <button
             onClick={() => setIsCartOpen(true)}
             aria-label="View Shopping Cart"
-            className="relative flex items-center gap-1.5 h-8 px-3 rounded bg-[#181c24] border border-[#262a33] text-[#dfe2ee] hover:border-[#8083ff]/60 hover:bg-[#1c2028] transition-all cursor-pointer"
+            className="relative flex items-center gap-1.5 h-8 px-3 rounded bg-[#181c24] border border-[#262a33] text-[#dfe2ee] hover:border-[#6184d8]/60 hover:bg-[#1c2028] transition-all cursor-pointer"
           >
             <ShoppingBag className="w-4 h-4 text-[#c7c4d7]" />
             {totalItems > 0 && (
-              <span className="font-mono text-[10px] font-bold bg-[#8083ff] text-white px-1.5 py-0.2 rounded-full">
+              <span className="font-mono text-[10px] font-bold bg-[#6184d8] text-white px-1.5 py-0.2 rounded-full">
                 {totalItems}
               </span>
             )}
@@ -133,7 +133,7 @@ export function Navbar() {
           {/* Admin Terminal Link */}
           <Link
             href="/admin"
-            className="hidden sm:flex items-center gap-1.5 h-8 px-3 rounded bg-[#1c2028] border border-[#31353e] font-mono text-[11px] text-[#8083ff] hover:border-[#8083ff] hover:bg-[#262a33] transition-colors"
+            className="hidden sm:flex items-center gap-1.5 h-8 px-3 rounded bg-[#1c2028] border border-[#31353e] font-mono text-[11px] text-[#6184d8] hover:border-[#6184d8] hover:bg-[#262a33] transition-colors"
           >
             <Terminal className="w-3.5 h-3.5" />
             <span>Admin</span>

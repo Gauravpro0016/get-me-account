@@ -97,13 +97,15 @@ export async function POST(req: NextRequest) {
     const alreadySent = await isAlreadySent(orderId);
     if (alreadySent) {
       const credentialsList = await getFulfilledCredentials(orderId);
-      return NextResponse.json({
-        success: true,
-        already_sent: true,
-        credential: credentialsList[0] || undefined,
-        credentials: credentialsList,
-        txHash,
-      });
+      if (credentialsList && credentialsList.length > 0) {
+        return NextResponse.json({
+          success: true,
+          already_sent: true,
+          credential: credentialsList[0] || undefined,
+          credentials: credentialsList,
+          txHash,
+        });
+      }
     }
 
     // 5. Verify transaction with Atlos REST API if API Secret is configured

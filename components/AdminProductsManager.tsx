@@ -104,6 +104,43 @@ const handleImageFileToBase64 = (
   reader.readAsDataURL(file);
 };
 
+export function parseBulkCredentialLine(line: string): Record<string, string> {
+  const trimmed = line.trim();
+  if (!trimmed) return {};
+
+  let parts: string[] = [];
+  if (trimmed.includes("----")) {
+    parts = trimmed.split("----");
+  } else if (trimmed.includes(" | ")) {
+    parts = trimmed.split(" | ");
+  } else if (trimmed.includes("|")) {
+    parts = trimmed.split("|");
+  } else if (trimmed.includes("\t")) {
+    parts = trimmed.split("\t");
+  } else if (trimmed.includes(" : ")) {
+    parts = trimmed.split(" : ");
+  } else if (trimmed.includes(":")) {
+    parts = trimmed.split(":");
+  } else if (trimmed.includes(",")) {
+    parts = trimmed.split(",");
+  } else {
+    parts = [trimmed];
+  }
+
+  const cleaned = parts.map((p) => p.trim()).filter((p) => p.length > 0);
+  if (cleaned.length >= 2) {
+    const item: Record<string, string> = {
+      id: cleaned[0],
+      password: cleaned[1],
+    };
+    if (cleaned[2]) item.token = cleaned[2];
+    if (cleaned[3]) item.pin = cleaned[3];
+    return item;
+  } else {
+    return { token: trimmed };
+  }
+}
+
 interface AdminProductsManagerProps {
   adminPassword: string;
 }
@@ -264,7 +301,10 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
     setLoading(true);
     try {
       const res = await fetch("/api/admin/products", {
-        headers: { Authorization: `Bearer ${adminPassword}` },
+        headers: {
+          Authorization: `Bearer ${adminPassword}`,
+          "x-admin-password": adminPassword,
+        },
         cache: "no-store",
       });
       const data = await res.json();
@@ -321,23 +361,17 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
     setCustomStockInputs({});
   };
 
-  // Parse bulk text (e.g. user:pass:key or user:pass)
+  // Parse bulk text (e.g. user:pass:key, user|pass, user----pass, etc.)
   const handleParseBulk = () => {
     if (!bulkStockText.trim()) return;
     const lines = bulkStockText.split("\n").map((l) => l.trim()).filter(Boolean);
     const parsed: Record<string, string>[] = [];
 
     for (const line of lines) {
-      const parts = line.split(":");
-      const item: Record<string, string> = {};
-      if (parts.length >= 2) {
-        item.id = parts[0].trim();
-        item.password = parts[1].trim();
-        if (parts[2]) item.token = parts[2].trim();
-      } else {
-        item.token = line.trim();
+      const item = parseBulkCredentialLine(line);
+      if (Object.keys(item).length > 0) {
+        parsed.push(item);
       }
-      parsed.push(item);
     }
 
     setInventoryList((prev) => [...prev, ...parsed]);
@@ -373,6 +407,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${adminPassword}`,
+          "x-admin-password": adminPassword,
         },
         body: JSON.stringify({
           name: name.trim(),
@@ -440,7 +475,10 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
     try {
       const res = await fetch(`/api/admin/products?id=${encodeURIComponent(id)}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${adminPassword}` },
+        headers: {
+          Authorization: `Bearer ${adminPassword}`,
+          "x-admin-password": adminPassword,
+        },
       });
       const data = await res.json();
       if (data.success) {
@@ -477,6 +515,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${adminPassword}`,
+          "x-admin-password": adminPassword,
         },
         body: JSON.stringify({ id, restore: true }),
       });
@@ -566,6 +605,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${adminPassword}`,
+          "x-admin-password": adminPassword,
         },
         body: JSON.stringify({
           action: "edit",
@@ -676,6 +716,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${adminPassword}`,
+          "x-admin-password": adminPassword,
         },
         body: JSON.stringify({
           id: targetProduct.id,
@@ -738,18 +779,9 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
       }
       const lines = stockBulkText.split("\n").map((l) => l.trim()).filter(Boolean);
       for (const line of lines) {
-        const parts = line.split(":");
-        if (parts.length >= 2) {
-          itemsToAdd.push({
-            id: parts[0].trim(),
-            password: parts[1].trim(),
-            ...(parts[2] ? { token: parts[2].trim() } : {}),
-            ...(parts[3] ? { pin: parts[3].trim() } : {}),
-          });
-        } else {
-          itemsToAdd.push({
-            token: line.trim(),
-          });
+        const item = parseBulkCredentialLine(line);
+        if (Object.keys(item).length > 0) {
+          itemsToAdd.push(item);
         }
       }
     } else {
@@ -780,6 +812,7 @@ export function AdminProductsManager({ adminPassword }: AdminProductsManagerProp
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${adminPassword}`,
+          "x-admin-password": adminPassword,
         },
         body: JSON.stringify({
           id: targetProduct.id,

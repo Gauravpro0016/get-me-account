@@ -60,8 +60,8 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
 
   return (
     <div
-      className={`product-card flex flex-col justify-between bg-[#181c24] rounded-xl p-5 hover:bg-[#1c2028] border border-[#262a33] hover:border-[#8083ff]/40 transition-all duration-300 shadow-md group ${
-        featured ? "ring-1 ring-[#8083ff]/40" : ""
+      className={`product-card flex flex-col justify-between bg-[#181c24] rounded-xl p-5 hover:bg-[#1c2028] border border-[#262a33] hover:border-[#6184d8]/40 transition-all duration-300 shadow-md group ${
+        featured ? "ring-1 ring-[#6184d8]/40" : ""
       }`}
     >
       <div className="flex flex-col gap-4">
@@ -71,7 +71,7 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
             type={product.iconType}
             customLogoUrl={product.customLogoUrl}
             logoSize={product.logoSize}
-            className="w-13 h-13 sm:w-14 sm:h-14 shrink-0 rounded-xl border border-[#262a33] group-hover:border-[#8083ff]/60 group-hover:shadow-[0_0_15px_rgba(128,131,255,0.25)] transition-all shadow-md"
+            className="w-13 h-13 sm:w-14 sm:h-14 shrink-0 rounded-xl border border-[#262a33] group-hover:border-[#6184d8]/60 group-hover:shadow-[0_0_15px_rgba(128,131,255,0.25)] transition-all shadow-md"
             size={28}
           />
 
@@ -98,12 +98,12 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
 
         {/* Title & Service Type */}
         <div>
-          <div className="font-mono text-[11px] text-[#8083ff] uppercase tracking-wide font-medium">
+          <div className="font-mono text-[11px] text-[#6184d8] uppercase tracking-wide font-medium">
             {product.deliveryType || "Instant Activation Link"}
           </div>
           <Link
             href={`/product/${product.id}`}
-            className="block mt-0.5 font-bold text-lg text-[#dfe2ee] group-hover:text-[#8083ff] transition-colors line-clamp-1"
+            className="block mt-0.5 font-bold text-lg text-[#dfe2ee] group-hover:text-[#6184d8] transition-colors line-clamp-1"
           >
             {product.name}
           </Link>
@@ -119,7 +119,7 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
             {product.warranty || "Replacement SLA"}
           </span>
           <span className="px-2 py-0.5 rounded bg-[#262a33] text-[#c7c4d7] font-mono text-[10px] flex items-center gap-1">
-            <Zap className="w-3 h-3 text-[#8083ff]" />
+            <Zap className="w-3 h-3 text-[#6184d8]" />
             Instant Delivery
           </span>
         </div>
@@ -212,7 +212,7 @@ export function ProductCard({ product, featured = false }: ProductCardProps) {
             <button
               type="button"
               onClick={handleInstantBuy}
-              className="flex-1 h-9 rounded-lg bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white font-bold text-xs transition-all flex items-center justify-center gap-1 shadow-md hover:shadow-[0_0_12px_rgba(128,131,255,0.4)] cursor-pointer"
+              className="flex-1 h-9 rounded-lg bg-[#6184d8] hover:bg-[#4d6ec4] text-white font-bold text-xs transition-all flex items-center justify-center gap-1 shadow-md hover:shadow-[0_0_12px_rgba(97,132,216,0.4)] cursor-pointer"
             >
               <span>Instant Buy</span>
               <Zap className="w-3.5 h-3.5 fill-current" />

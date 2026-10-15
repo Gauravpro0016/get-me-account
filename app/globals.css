@@ -15,11 +15,11 @@
   --color-outline: #908fa0;
   --color-outline-variant: #464554;
 
-  --color-primary: #8083ff;
-  --color-primary-dim: #c0c1ff;
-  --color-primary-container: #6366f1;
+  --color-primary: #6184d8;
+  --color-primary-dim: #90aef5;
+  --color-primary-container: #476bc2;
   --color-on-primary: #ffffff;
-  --color-on-primary-container: #0d0096;
+  --color-on-primary-container: #0c1836;
 
   --color-secondary: #4edea3;
   --color-secondary-dim: #4edea3;
@@ -45,6 +45,7 @@
     --card-main: #181c24;
     --text-main: #dfe2ee;
     --border-main: #262a33;
+    --primary-main: #6184d8;
     color-scheme: dark;
   }
 
@@ -79,7 +80,7 @@
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6366f1;
+  background: #6184d8;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -90,20 +91,20 @@
   scrollbar-width: none;
 }
 
-/* Right-to-Left Continuous Scrolling Animation */
+/* Right-to-Left Continuous Scrolling Animation (Hardware Accelerated) */
 @keyframes marquee-rtl {
   0% {
-    transform: translateX(0%);
+    transform: translate3d(0%, 0, 0);
   }
   100% {
-    transform: translateX(-50%);
+    transform: translate3d(-50%, 0, 0);
   }
 }
 
 .animate-marquee-rtl {
   display: flex;
   width: max-content;
-  animation: marquee-rtl 38s linear infinite;
+  animation: marquee-rtl 40s linear infinite;
   will-change: transform;
 }
 

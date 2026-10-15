@@ -28,13 +28,15 @@ async function handleOrderConfirmation(orderId: string, emailParam?: string, met
     const alreadySent = await isAlreadySent(orderId);
     if (alreadySent) {
       const credentialsList = await getFulfilledCredentials(orderId);
-      const credential = credentialsList[0] || null;
-      return NextResponse.json({
-        status: "confirmed",
-        already_sent: true,
-        credential: credential || undefined,
-        credentials: credentialsList,
-      });
+      if (credentialsList && credentialsList.length > 0) {
+        const credential = credentialsList[0] || null;
+        return NextResponse.json({
+          status: "confirmed",
+          already_sent: true,
+          credential: credential || undefined,
+          credentials: credentialsList,
+        });
+      }
     }
 
     const isCrypto =

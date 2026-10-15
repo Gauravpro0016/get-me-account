@@ -212,7 +212,7 @@ export default function HomePage() {
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-[#8083ff] font-semibold">GLOBAL GUARANTEE: ZERO LOGS POLICY</span>
+            <span className="text-[#6184d8] font-semibold">GLOBAL GUARANTEE: ZERO LOGS POLICY</span>
             <span className="bg-[#1c2028] border border-[#262a33] px-2 py-0.5 rounded text-[#dfe2ee]">
               API v3.8.4
             </span>
@@ -222,41 +222,15 @@ export default function HomePage() {
 
       {/* 2. HERO ANNOUNCEMENT & HIGH-INTENT COMMAND SEARCH */}
       <section className="relative w-full bg-[#181c24] px-4 sm:px-6 lg:px-8 py-8 md:py-12 border-b border-[#262a33] overflow-hidden">
-        {/* Glow ambient background accents */}
-        <div className="absolute -top-32 left-1/3 w-96 h-96 bg-[#8083ff]/10 rounded-full blur-3xl pointer-events-none" />
+        {/* Glow ambient background accents (hardware accelerated) */}
+        <div className="absolute -top-32 left-1/3 w-96 h-96 bg-[#6184d8]/15 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute top-20 right-10 w-80 h-80 bg-[#4edea3]/10 rounded-full blur-3xl pointer-events-none" />
-
-        {/* Ambient Cards Background (Continuous Right-to-Left Scrolling behind search) */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-20 select-none flex flex-col justify-around">
-          <div className="animate-marquee-rtl flex gap-6">
-            {allProducts.concat(allProducts).map((prod, idx) => (
-              <div
-                key={`bg-card-${prod.id}-${idx}`}
-                className="w-60 p-3 rounded-2xl bg-[#0f131c]/80 border border-[#8083ff]/30 shadow-lg shrink-0 flex items-center gap-3 backdrop-blur-xs"
-              >
-                <ProductIcon
-                  type={prod.iconType}
-                  customLogoUrl={prod.customLogoUrl}
-                  logoSize={prod.logoSize}
-                  className="w-9 h-9 shrink-0 rounded-lg border border-[#262a33]"
-                  size={18}
-                />
-                <div className="min-w-0">
-                  <div className="text-xs font-bold text-[#dfe2ee] truncate">{prod.name}</div>
-                  <div className="text-[10px] font-mono text-[#8083ff]">
-                    {formatPrice(prod.price)} • ⚡ Instant Pool
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
 
         <div className="max-w-7xl mx-auto flex flex-col gap-6 relative z-10">
           {/* Announcement Banner Bar */}
           <div className="w-full bg-[#262a33] rounded-xl p-4 md:p-5 flex flex-col lg:flex-row items-center justify-between gap-4 border border-[#31353e] shadow-md">
             <div className="flex items-center gap-4 flex-wrap justify-center lg:justify-start">
-              <div className="w-10 h-10 rounded-lg bg-[#6366f1] flex items-center justify-center text-white shadow-md">
+              <div className="w-10 h-10 rounded-lg bg-[#6184d8] flex items-center justify-center text-white shadow-md">
                 <Zap className="w-5 h-5 fill-current" />
               </div>
               <div className="text-center lg:text-left">
@@ -291,7 +265,7 @@ export default function HomePage() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search accounts, subscriptions, keys, or tags e.g. Netflix, Discord, CS2, Spotify..."
-                  className="w-full h-14 pl-12 pr-24 rounded-xl bg-[#0a0e16] border border-[#262a33] text-[#dfe2ee] placeholder:text-[#908fa0] font-sans text-sm md:text-base focus:outline-none focus:border-[#8083ff] focus:ring-1 focus:ring-[#8083ff] transition-all shadow-inner"
+                  className="w-full h-14 pl-12 pr-24 rounded-xl bg-[#0a0e16] border border-[#262a33] text-[#dfe2ee] placeholder:text-[#908fa0] font-sans text-sm md:text-base focus:outline-none focus:border-[#6184d8] focus:ring-1 focus:ring-[#6184d8] transition-all shadow-inner"
                 />
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1">
                   <kbd className="px-2 py-0.5 rounded bg-[#262a33] font-mono text-[10px] text-[#c7c4d7] border border-[#31353e]">
@@ -306,7 +280,7 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => searchInputRef.current?.focus()}
-                className="w-full md:w-auto px-6 h-14 rounded-xl bg-[#6366f1] hover:bg-[#8083ff] text-white font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#6366f1]/25 cursor-pointer"
+                className="w-full md:w-auto px-6 h-14 rounded-xl bg-[#6184d8] hover:bg-[#4d6ec4] text-white font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#6184d8]/25 cursor-pointer"
               >
                 <span>Query Catalog</span>
                 <ArrowRight className="w-4 h-4" />
@@ -326,7 +300,7 @@ export default function HomePage() {
                     onClick={() => handleVectorClick(item)}
                     className={`px-3.5 py-1.5 rounded-lg font-mono text-xs whitespace-nowrap transition-all cursor-pointer ${
                       isActive
-                        ? "bg-[#8083ff] text-[#0d0096] font-bold shadow-sm"
+                        ? "bg-[#6184d8] text-white font-bold shadow-sm"
                         : "bg-[#181c24] text-[#dfe2ee] hover:bg-[#262a33] border border-[#262a33]"
                     }`}
                   >
@@ -348,7 +322,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#4edea3] animate-ping" />
-            <span className="font-mono text-xs font-bold uppercase tracking-wider text-[#8083ff]">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-[#6184d8]">
               Live Inventory Telemetry
             </span>
  
@@ -365,7 +339,7 @@ export default function HomePage() {
               <Link
                 key={`marquee-card-${prod.id}-${idx}`}
                 href={`/product/${prod.id}`}
-                className="w-64 sm:w-72 p-3.5 rounded-2xl bg-[#181c24] border border-[#262a33] hover:border-[#8083ff] shadow-md hover:shadow-[#8083ff]/15 transition-all cursor-pointer flex flex-col justify-between shrink-0 group/card"
+                className="w-64 sm:w-72 p-3.5 rounded-2xl bg-[#181c24] border border-[#262a33] hover:border-[#6184d8] shadow-md hover:shadow-[#6184d8]/15 transition-all cursor-pointer flex flex-col justify-between shrink-0 group/card"
               >
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2.5 min-w-0">
@@ -373,20 +347,20 @@ export default function HomePage() {
                       type={prod.iconType}
                       customLogoUrl={prod.customLogoUrl}
                       logoSize={prod.logoSize}
-                      className="w-10 h-10 shrink-0 rounded-xl border border-[#262a33] group-hover/card:border-[#8083ff]/50 transition-colors shadow-sm"
+                      className="w-10 h-10 shrink-0 rounded-xl border border-[#262a33] group-hover/card:border-[#6184d8]/50 transition-colors shadow-sm"
                       size={20}
                     />
                     <div className="min-w-0">
-                      <span className="text-[10px] font-mono uppercase font-bold text-[#8083ff] block truncate">
+                      <span className="text-[10px] font-mono uppercase font-bold text-[#6184d8] block truncate">
                         {prod.category}
                       </span>
-                      <h4 className="text-xs font-bold text-[#dfe2ee] truncate group-hover/card:text-[#8083ff] transition-colors">
+                      <h4 className="text-xs font-bold text-[#dfe2ee] truncate group-hover/card:text-[#6184d8] transition-colors">
                         {prod.name}
                       </h4>
                     </div>
                   </div>
                   {prod.badge && (
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase bg-[#8083ff]/15 text-[#8083ff] border border-[#8083ff]/30 shrink-0">
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase bg-[#6184d8]/15 text-[#6184d8] border border-[#6184d8]/30 shrink-0">
                       {prod.badge}
                     </span>
                   )}
@@ -425,8 +399,8 @@ export default function HomePage() {
           {/* Catalog Section Header & Sorting Bar */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <div className="flex items-center gap-1.5 text-[#8083ff] font-mono text-xs uppercase tracking-widest font-semibold">
-                <span className="w-2 h-2 rounded bg-[#8083ff]" />
+              <div className="flex items-center gap-1.5 text-[#6184d8] font-mono text-xs uppercase tracking-widest font-semibold">
+                <span className="w-2 h-2 rounded bg-[#6184d8]" />
                 Tier-1 Verified Inventory
               </div>
               <h2 className="text-2xl md:text-3xl font-black text-[#dfe2ee] tracking-tight mt-1">
@@ -490,7 +464,7 @@ export default function HomePage() {
                   setSearchQuery("");
                   setActiveVector("All Stock");
                 }}
-                className="px-4 py-2 bg-[#262a33] text-[#8083ff] rounded-lg font-mono text-xs font-semibold hover:bg-[#31353e] transition-colors"
+                className="px-4 py-2 bg-[#262a33] text-[#6184d8] rounded-lg font-mono text-xs font-semibold hover:bg-[#31353e] transition-colors"
               >
                 Reset Filter
               </button>
@@ -536,7 +510,7 @@ export default function HomePage() {
           <div className="bg-[#181c24] border border-[#262a33] rounded-xl p-5 flex flex-col gap-1.5 shadow-sm">
             <div className="flex items-center justify-between">
               <span className="font-mono text-xs text-[#908fa0] uppercase">Escrow Settlement</span>
-              <ShieldCheck className="w-4 h-4 text-[#8083ff]" />
+              <ShieldCheck className="w-4 h-4 text-[#6184d8]" />
             </div>
             <div className="text-3xl font-black text-[#dfe2ee] font-mono">{telemetry.escrowSettlement}</div>
             <div className="font-mono text-xs text-[#c7c4d7]">
@@ -592,7 +566,7 @@ export default function HomePage() {
           {/* 3-Column Reviews */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Review 1 */}
-            <div className="bg-[#181c24] border border-[#262a33] rounded-xl p-6 flex flex-col justify-between gap-4 shadow-sm hover:border-[#8083ff]/40 transition-colors">
+            <div className="bg-[#181c24] border border-[#262a33] rounded-xl p-6 flex flex-col justify-between gap-4 shadow-sm hover:border-[#6184d8]/40 transition-colors">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex text-[#4edea3] gap-1">
@@ -611,7 +585,7 @@ export default function HomePage() {
 
               <div className="flex items-center justify-between pt-3 border-t border-[#262a33]">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-full bg-[#262a33] border border-[#31353e] flex items-center justify-center font-mono text-xs font-bold text-[#8083ff]">
+                  <div className="w-8 h-8 rounded-full bg-[#262a33] border border-[#31353e] flex items-center justify-center font-mono text-xs font-bold text-[#6184d8]">
                     K
                   </div>
                   <div className="flex flex-col">
@@ -626,7 +600,7 @@ export default function HomePage() {
             </div>
 
             {/* Review 2 */}
-            <div className="bg-[#181c24] border border-[#262a33] rounded-xl p-6 flex flex-col justify-between gap-4 shadow-sm hover:border-[#8083ff]/40 transition-colors">
+            <div className="bg-[#181c24] border border-[#262a33] rounded-xl p-6 flex flex-col justify-between gap-4 shadow-sm hover:border-[#6184d8]/40 transition-colors">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex text-[#4edea3] gap-1">
@@ -660,7 +634,7 @@ export default function HomePage() {
             </div>
 
             {/* Review 3 */}
-            <div className="bg-[#181c24] border border-[#262a33] rounded-xl p-6 flex flex-col justify-between gap-4 shadow-sm hover:border-[#8083ff]/40 transition-colors">
+            <div className="bg-[#181c24] border border-[#262a33] rounded-xl p-6 flex flex-col justify-between gap-4 shadow-sm hover:border-[#6184d8]/40 transition-colors">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex text-[#4edea3] gap-1">
@@ -700,8 +674,8 @@ export default function HomePage() {
       <section className="w-full bg-[#181c24] px-4 sm:px-6 lg:px-8 py-12 md:py-16 border-t border-[#262a33]">
         <div className="max-w-4xl mx-auto flex flex-col gap-8">
           <div className="text-center flex flex-col items-center gap-1.5">
-            <div className="flex items-center gap-1.5 text-[#8083ff] font-mono text-xs uppercase tracking-widest font-semibold">
-              <span className="w-2 h-2 rounded bg-[#8083ff]" />
+            <div className="flex items-center gap-1.5 text-[#6184d8] font-mono text-xs uppercase tracking-widest font-semibold">
+              <span className="w-2 h-2 rounded bg-[#6184d8]" />
               Knowledge Architecture
             </div>
             <h2 className="text-2xl md:text-3xl font-black text-[#dfe2ee] tracking-tight">
@@ -726,7 +700,7 @@ export default function HomePage() {
                     className="w-full px-5 py-4 flex items-center justify-between text-left focus:outline-none cursor-pointer"
                   >
                     <span className="font-bold text-sm md:text-base text-[#dfe2ee] flex items-center gap-2.5">
-                      <Zap className="w-4 h-4 text-[#8083ff]" />
+                      <Zap className="w-4 h-4 text-[#6184d8]" />
                       {faq.q}
                     </span>
                     <ChevronDown

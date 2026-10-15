@@ -65,7 +65,37 @@ async function postWithRetry(
   }
 }
 
-import { redis, readEnvLocalValue } from "@/lib/fulfillment";
+import { Redis } from "@upstash/redis";
+import fs from "fs";
+import path from "path";
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
+
+function readEnvLocalValue(key: string): string | undefined {
+  try {
+    const envPath = path.join(process.cwd(), ".env.local");
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, "utf-8");
+      for (const line of content.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith("#")) {
+          const idx = trimmed.indexOf("=");
+          if (idx !== -1) {
+            const k = trimmed.substring(0, idx).trim();
+            if (k === key) {
+              const val = trimmed.substring(idx + 1).trim();
+              return val.replace(/^["']|["']$/g, "");
+            }
+          }
+        }
+      }
+    }
+  } catch {}
+  return undefined;
+}
 
 export const DISCORD_CONFIG_KEY = "trinitymart_discord_config";
 

@@ -204,7 +204,7 @@ export default function ProductDetailPage() {
                 </span>
               </div>
               <div className="p-3.5 rounded-2xl bg-[#181c24] border border-[#262a33] flex items-center gap-2.5">
-                <Zap className="w-5 h-5 text-[#8083ff] shrink-0" />
+                <Zap className="w-5 h-5 text-[#6184d8] shrink-0" />
                 <span className="text-xs font-bold text-[#dfe2ee]">
                   10-Second Automated Delivery
                 </span>
@@ -334,7 +334,7 @@ export default function ProductDetailPage() {
                     </>
                   ) : (
                     <>
-                      <ShoppingCart className="w-4 h-4 text-[#8083ff]" />
+                      <ShoppingCart className="w-4 h-4 text-[#6184d8]" />
                       <span>Add to Cart</span>
                     </>
                   )}
@@ -342,7 +342,7 @@ export default function ProductDetailPage() {
 
                 <button
                   onClick={handleBuyNow}
-                  className="flex items-center justify-center gap-2 py-4 rounded-2xl bg-[#8083ff] hover:bg-[#6366f1] text-[#0d0096] hover:text-white font-black text-sm shadow-xl shadow-[#8083ff]/25 hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer"
+                  className="flex items-center justify-center gap-2 py-4 rounded-2xl bg-[#6184d8] hover:bg-[#4d6ec4] text-white font-black text-sm shadow-xl shadow-[#6184d8]/25 hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer"
                 >
                   <span>Instant Buy Now</span>
                   <ArrowRight className="w-4 h-4" />
