@@ -74,22 +74,33 @@ export async function GET() {
         redis.get<Record<string, any>>(PRODUCT_OVERRIDES_KEY).catch(() => ({} as Record<string, any>)),
       ]);
 
-    const history = Array.isArray(historyRaw) ? historyRaw : [];
+    let history: any[] = [];
+    if (Array.isArray(historyRaw)) {
+      history = historyRaw;
+    } else if (typeof historyRaw === "string") {
+      try {
+        const parsed = JSON.parse(historyRaw);
+        if (Array.isArray(parsed)) history = parsed;
+      } catch {}
+    }
+
     const pool = Array.isArray(poolRaw) ? poolRaw : [];
     const customProds: Product[] = Array.isArray(customProdsRaw) ? customProdsRaw : [];
     const removedIds: string[] = Array.isArray(removedIdsRaw) ? removedIdsRaw : [];
     const overrides: Record<string, any> =
       overridesRaw && typeof overridesRaw === "object" ? overridesRaw : {};
 
-    // Filter confirmed & delivered orders from Redis history
+    // Filter confirmed & delivered orders from Redis history (excluding failed/expired)
     const confirmedOrders = history.filter(
       (o) =>
         o &&
+        o.status !== "failed" &&
+        o.status !== "expired" &&
         (o.status === "confirmed" ||
           o.emailStatus === "sent" ||
           o.emailStatus === "opened" ||
-          o.deliveredCredential ||
-          (o.deliveredCredentials && o.deliveredCredentials.length > 0))
+          Boolean(o.deliveredCredential) ||
+          (Array.isArray(o.deliveredCredentials) && o.deliveredCredentials.length > 0))
     );
 
     // ── 1. REAL LATEST DISPATCHED KEY (DATABASE BASED) ──
@@ -246,9 +257,9 @@ export async function GET() {
 
     // ── 7. REAL KEYS SOLD TODAY & ALL TIME (DATABASE BASED) ──
     const istOffsetMs = 5.5 * 60 * 60 * 1000;
-    const istNow = new Date(Date.now() + istOffsetMs);
-    const todayIstStr = istNow.toISOString().slice(0, 10); // "YYYY-MM-DD"
     const now = new Date();
+    const todayIstStr = new Date(now.getTime() + istOffsetMs).toISOString().slice(0, 10); // "YYYY-MM-DD" in IST
+    const todayUtcStr = now.toISOString().slice(0, 10); // "YYYY-MM-DD" in UTC
     const todayMidnightUtc = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
     ).getTime();
@@ -257,29 +268,43 @@ export async function GET() {
     let totalKeysSoldCount = 0;
 
     for (const o of confirmedOrders) {
-      const qty = Math.max(
-        1,
-        Number(o.quantity) ||
-          (Array.isArray(o.deliveredCredentials) ? o.deliveredCredentials.length : 1)
-      );
+      // Authoritative count of keys delivered/ordered for this confirmed order
+      let qty = 1;
+      if (Array.isArray(o.deliveredCredentials) && o.deliveredCredentials.length > 0) {
+        qty = o.deliveredCredentials.length;
+      } else if (Array.isArray(o.cartItems) && o.cartItems.length > 0) {
+        qty = o.cartItems.reduce(
+          (sum: number, item: any) => sum + Math.max(1, Number(item?.quantity) || 1),
+          0
+        );
+      } else if (Number(o.quantity) > 0) {
+        qty = Number(o.quantity);
+      } else if (o.deliveredCredential) {
+        qty = 1;
+      }
+
       totalKeysSoldCount += qty;
 
-      const orderTime = new Date(o.confirmedAt || o.createdAt || 0).getTime();
-      const orderIstStr = new Date(orderTime + istOffsetMs).toISOString().slice(0, 10);
-      const isToday = orderTime >= todayMidnightUtc || orderIstStr === todayIstStr;
+      const dateVal = o.confirmedAt || o.createdAt;
+      if (dateVal) {
+        const orderTime = new Date(dateVal).getTime();
+        if (!isNaN(orderTime)) {
+          const orderIstStr = new Date(orderTime + istOffsetMs).toISOString().slice(0, 10);
+          const orderUtcStr = new Date(orderTime).toISOString().slice(0, 10);
+          const isToday =
+            orderIstStr === todayIstStr ||
+            orderUtcStr === todayUtcStr ||
+            orderTime >= todayMidnightUtc;
 
-      if (isToday) {
-        keysSoldTodayCount += qty;
+          if (isToday) {
+            keysSoldTodayCount += qty;
+          }
+        }
       }
     }
 
-    const claimedRaw = await redis.get<string[]>("trinitymart_claimed_credentials").catch(() => []);
-    const claimedCount = Array.isArray(claimedRaw) ? claimedRaw.length : 0;
-    const verifiedTotalKeys = Math.max(totalKeysSoldCount, claimedCount);
-
-    // If sales happened today, use today's count. Otherwise if there are confirmed keys in DB, use verified total.
-    const displayKeysCount = keysSoldTodayCount > 0 ? keysSoldTodayCount : (verifiedTotalKeys > 0 ? verifiedTotalKeys : 0);
-    const keysSoldTodayText = `${displayKeysCount.toLocaleString("en-US")} Keys Sold Today`;
+    // Direct database match: display the exact keys sold today
+    const keysSoldTodayText = `${keysSoldTodayCount.toLocaleString("en-US")} Keys Sold Today`;
 
     return NextResponse.json(
       {
@@ -297,9 +322,9 @@ export async function GET() {
         escrowSettlement,
         totalTrades: totalVerifiedTrades,
         confirmedOrdersCount: realTradesCount,
-        keysSoldToday: displayKeysCount,
+        keysSoldToday: keysSoldTodayCount,
         keysSoldTodayExact: keysSoldTodayCount,
-        totalKeysSold: verifiedTotalKeys,
+        totalKeysSold: totalKeysSoldCount,
         keysSoldTodayText,
         systemStatus: "DISPATCH OPERATIONAL",
         isDatabaseBased: true,
